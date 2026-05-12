@@ -1,0 +1,37 @@
+
+
+# Zephyr / west
+.venv/
+.zephyr/
+zephyr/
+modules/
+tools/
+bootloader/
+**/.west/
+
+# Build outputs
+build/
+**/build*/
+out/
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+
+# CMake / Ninja
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+*.ninja
+.ninja_deps
+.ninja_log
+
+# IDE
+.vscode/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db

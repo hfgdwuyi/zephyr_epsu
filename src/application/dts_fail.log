@@ -1,0 +1,27 @@
+Loading Zephyr default modules (Zephyr base (cached)).
+-- Application: /mnt/d/Project/CiosZhong_psu/30_Dev/10_Codes/zephyr/src/application
+-- CMake version: 3.31.6
+-- Cache files will be written to: /root/.cache/zephyr
+-- Zephyr version: 4.4.99 (/root/zephyr/zephyrproject/zephyr)
+-- Found west (found suitable version "1.5.0", minimum required is "0.14.0")
+-- Board: nucleo_h745zi_q, qualifiers: stm32h745xx/m7
+-- Found host-tools: zephyr 1.0.1 (/root/zephyr-sdk-1.0.1)
+-- Found toolchain: zephyr 1.0.1 (/root/zephyr-sdk-1.0.1)
+-- Found BOARD.dts: /root/zephyr/zephyrproject/zephyr/boards/st/nucleo_h745zi_q/nucleo_h745zi_q_stm32h745xx_m7.dts
+-- Found devicetree overlay: /mnt/d/Project/CiosZhong_psu/30_Dev/10_Codes/zephyr/src/application/app.overlay
+devicetree error: 'st,adc-clock-source' is marked as required in 'properties:' in '/root/zephyr/zephyrproject/zephyr/dts/bindings/adc/st,stm32-adc.yaml', but does not appear in <Node /soc/adc@40022000 in /root/zephyr/zephyrproject/zephyr/dts/arm/st/h7/stm32h7.dtsi:992>
+CMake Error at /root/zephyr/zephyrproject/zephyr/cmake/modules/dts.cmake:325 (execute_process):
+  execute_process failed command indexes:
+
+    1: "Child return code: 1"
+
+Call Stack (most recent call first):
+  /root/zephyr/zephyrproject/zephyr/cmake/modules/dts.cmake:439 (dts_edt_pickle)
+  /root/zephyr/zephyrproject/zephyr/cmake/modules/zephyr_default.cmake:133 (dts_init)
+  /root/zephyr/zephyrproject/zephyr/cmake/modules/zephyr_default.cmake:133 (cmake_language)
+  /root/zephyr/zephyrproject/zephyr/share/zephyr-package/cmake/ZephyrConfig.cmake:66 (include)
+  /root/zephyr/zephyrproject/zephyr/share/zephyr-package/cmake/ZephyrConfig.cmake:97 (include_boilerplate)
+  CMakeLists.txt:3 (find_package)
+
+
+-- Configuring incomplete, errors occurred!
