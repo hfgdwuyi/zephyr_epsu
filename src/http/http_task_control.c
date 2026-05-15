@@ -164,9 +164,6 @@ static int control_post_handler(struct http_client_ctx *client, enum http_transa
     cursor = 0;
 
     if (prc != 0) {
-        LOG_ERR("control: bad_json mask=0x%X (expected=0x%X) action=%d index=%d on=%d value=%d",
-            mask, BIT_MASK(ARRAY_SIZE(control_cmd_descr)),
-            cmd.action, cmd.index, cmd.on, cmd.value);
         dump_prefix_hex(parse_buf, parse_len);
 
         int n = snprintk(reply, sizeof(reply),

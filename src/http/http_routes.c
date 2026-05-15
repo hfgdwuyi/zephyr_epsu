@@ -25,7 +25,9 @@ extern struct http_resource_detail_dynamic control_resource_detail;
 
 extern struct http_resource_detail_dynamic diag_resource_detail;
 extern struct http_resource_detail_dynamic diag_clear_resource_detail;
+#ifdef CONFIG_HTTP_DIAG_DEBUG
 extern struct http_resource_detail_dynamic diag_inject_resource_detail;
+#endif
 
 extern struct http_resource_detail_dynamic update_start_resource_detail;
 extern struct http_resource_detail_dynamic update_status_resource_detail;
@@ -51,7 +53,10 @@ HTTP_RESOURCE_DEFINE(control_resource, test_http_service,
 /* Diagnostics */
 HTTP_RESOURCE_DEFINE(diag_resource, test_http_service, "/diag", &diag_resource_detail);
 HTTP_RESOURCE_DEFINE(diag_clear_resource, test_http_service, "/diag/clear", &diag_clear_resource_detail);
-HTTP_RESOURCE_DEFINE(diag_inject_resource, test_http_service, "/diag/inject", &diag_inject_resource_detail);
+#ifdef CONFIG_HTTP_DIAG_DEBUG
+HTTP_RESOURCE_DEFINE(diag_inject_resource, test_http_service, "/diag/inject",
+             &diag_inject_resource_detail);
+#endif
 
 /* Update */
 HTTP_RESOURCE_DEFINE(update_start_resource, test_http_service, "/update/start", &update_start_resource_detail);

@@ -1,0 +1,3 @@
+name: zephyr_epsu
+build:
+  kconfig: zephyr/Kconfig

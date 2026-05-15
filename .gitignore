@@ -3,7 +3,6 @@
 # Zephyr / west
 .venv/
 .zephyr/
-zephyr/
 modules/
 tools/
 bootloader/

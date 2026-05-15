@@ -7,6 +7,9 @@ target_sources(app PRIVATE
     http_task_update.c
     http_task_control.c
     http_task_diag.c
+)
+
+target_sources_ifdef(CONFIG_HTTP_DIAG_DEBUG app PRIVATE
     http_task_diag_debug.c
 )
 

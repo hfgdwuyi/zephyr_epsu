@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.20.0)
 
+# Make Zephyr Kconfig also parse our project Kconfig fragment(s)
+list(APPEND KCONFIG_EXTENSIONS
+  ${CMAKE_CURRENT_LIST_DIR}/Kconfig.project
+)
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(CiosZhong_psu)
 

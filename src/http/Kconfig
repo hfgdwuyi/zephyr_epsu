@@ -1,0 +1,9 @@
+menu "CiosZhong PSU HTTP options"
+
+config HTTP_DIAG_DEBUG
+    bool "Enable HTTP diagnostics debug endpoints"
+    default n
+    help
+      Enables /diag/inject endpoint and related debug features.
+
+endmenu
