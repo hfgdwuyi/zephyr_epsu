@@ -1,4 +1,4 @@
-/* ...existing code...
+/*
  * Copyright © Siemens Healthcare GmbH 2022, All Rights Reserved
  *
  * Project: Building Block Low End MCU

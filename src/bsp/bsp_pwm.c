@@ -66,15 +66,15 @@ void bspPwmInit(void)
         init_one(i, &pwm_specs[i]);
     }
 }
-
-// ...existing code (bspPwmStart/Stop/SetCarrierFreq/SetDutyCycle)...
-
 void bspPwmStart(uint8_t pwmNum)
 {
     if (!pwm_idx_valid(pwmNum) || !pwm_out[pwmNum].valid) {
         return;
     }
-    (void)pwm_set_dt(&pwm_out[pwmNum].spec, pwm_out[pwmNum].spec.period, 0U);
+    /* Restore last duty cycle */
+    const uint32_t period = pwm_out[pwmNum].spec.period;
+    const uint32_t pulse  = (uint32_t)(((uint64_t)period * pwm_out[pwmNum].last_duty) / DUTY_MAX);
+    (void)pwm_set_dt(&pwm_out[pwmNum].spec, period, pulse);
 }
 
 void bspPwmStop(uint8_t pwmNum)

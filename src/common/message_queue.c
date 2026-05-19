@@ -23,26 +23,19 @@
 /*----------------------------------------------------------------------------*/
 msgQueueStatus msgQueuePush(messageQueue *queue, const void *data)
 {
-    // Check pointers
-    if ((queue == NULL) || (data == NULL))
-    {
+    if ((queue == NULL) || (data == NULL)) {
         return MSGQ_ARGS;
     }
-    // Check if there is room in the queue
-    if (queue->wrIdx - queue->rdIdx < queue->elNum)
-    {
-        // Push data to the queue
-
-        uint32_t offset = (queue->wrIdx % queue->elNum) * queue->elSize;
-        queue->wrIdx++;
-
-        uint8_t *buf = (uint8_t *)queue->data;
-        memcpy((buf + offset), data, queue->elSize);
-    }
-    else
-    {
+    /* Use modular arithmetic to avoid 32-bit overflow on wrIdx/rdIdx */
+    uint32_t used = queue->wrIdx - queue->rdIdx;
+    if (used >= queue->elNum) {
         return MSGQ_FULL;
     }
+    uint32_t offset = (queue->wrIdx % queue->elNum) * queue->elSize;
+    queue->wrIdx = (queue->wrIdx + 1) % (queue->elNum * 2); /* bounded to elNum*2 to preserve "used" math */
+
+    uint8_t *buf = (uint8_t *)queue->data;
+    memcpy((buf + offset), data, queue->elSize);
     return MSGQ_OK;
 }
 
@@ -56,23 +49,16 @@ msgQueueStatus msgQueuePush(messageQueue *queue, const void *data)
 /*----------------------------------------------------------------------------*/
 msgQueueStatus msgQueuePop(messageQueue *queue, void *data)
 {
-    // Check pointers
-    if ((queue == NULL) || (data == NULL))
-    {
+    if ((queue == NULL) || (data == NULL)) {
         return MSGQ_ARGS;
     }
-    if (queue->wrIdx > queue->rdIdx)
-    {
-        // Pop data from the queue
-        uint32_t offset = (queue->rdIdx % queue->elNum) * queue->elSize;
-        queue->rdIdx++;
-
-        const uint8_t *buf = (const uint8_t *)queue->data;
-        memcpy(data, (buf + offset), queue->elSize);
-    }
-    else
-    {
+    if (queue->wrIdx == queue->rdIdx) {
         return MSGQ_EMPTY;
     }
+    uint32_t offset = (queue->rdIdx % queue->elNum) * queue->elSize;
+    queue->rdIdx = (queue->rdIdx + 1) % (queue->elNum * 2);
+
+    const uint8_t *buf = (const uint8_t *)queue->data;
+    memcpy(data, (buf + offset), queue->elSize);
     return MSGQ_OK;
 }

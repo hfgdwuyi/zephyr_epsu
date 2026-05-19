@@ -296,8 +296,6 @@ int dm_update_req_receive(dm_request_t *out, k_timeout_t timeout)
  * Diagnostics
  * ----------------------------- */
 
- // ...existing code...
-void dm_diag_clear(uint32_t mask, bool clear_latched);
 /* -----------------------------
  * Internal diagnostics worker
  * ----------------------------- */
@@ -356,9 +354,6 @@ static int dm_diag_worker_start(void)
 }
 
 SYS_INIT(dm_diag_worker_start, APPLICATION, 55);
-
-// ...existing code...
-
 
 void dm_diag_set_fault_bits(uint32_t mask, bool active, bool latched)
 {

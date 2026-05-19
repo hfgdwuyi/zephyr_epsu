@@ -1,9 +1,13 @@
-/* Linker section snippet for Zephyr HTTP server resources.
+/*
+ * Custom linker section for Zephyr HTTP server resource registration.
  *
- * Defines the symbols expected by HTTP_SERVICE_DEFINE(test_http_service,...):
- *   _http_resource_desc_test_http_service_list_start/_end
+ * Zephyr's HTTP_RESOURCE_DEFINE() macro places resource descriptors into
+ * named input sections (._http_resource_desc_<service>.<type>.<name>_).
+ * This snippet collects those sections and defines _start/_end symbols
+ * so the HTTP server can iterate over registered resources at runtime.
  *
- * Match the actual input section names produced by HTTP_RESOURCE_DEFINE().
+ * The service name "test_http_service" must match the first argument
+ * of HTTP_SERVICE_DEFINE().
  */
 
 .http_resource_desc_test_http_service : ALIGN(4)

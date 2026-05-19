@@ -90,7 +90,7 @@ static const struct bsp_gpio_spec pinCfgDout[] = {
     BSP_GPIO_SPEC(GPIO_DEV_A, 11, BSP_DOUT_FLAGS), /* EMCY-TEST1 */
     BSP_GPIO_SPEC(GPIO_DEV_A, 12, BSP_DOUT_FLAGS), /* EMCY-TEST2 */
 
-    /* Byte 1 CANOpen subindex 2 */
+    /* Byte 1 CANOpen subindex 2 — TODO: verify GPIO assignments for UI-OUT(1)~(8) */
     BSP_GPIO_SPEC(GPIO_DEV_K, 7,  BSP_DOUT_FLAGS), /* UI-OUT(1) */
     BSP_GPIO_SPEC(GPIO_DEV_K, 7,  BSP_DOUT_FLAGS), /* UI-OUT(2) */
     BSP_GPIO_SPEC(GPIO_DEV_K, 7,  BSP_DOUT_FLAGS), /* UI-OUT(3) */

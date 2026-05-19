@@ -19,7 +19,6 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 
 #include "bsp_led.h"
 #include "bsp_board.h"
@@ -106,8 +105,6 @@ void boardInit(void)
     ledInit();
 
     bspAinInit();
-
-    bspAoutInit();
 
     bspAoutInit();
 

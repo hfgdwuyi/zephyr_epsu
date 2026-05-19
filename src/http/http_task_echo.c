@@ -3,8 +3,6 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/logging/log.h>
 
-#include <stdio.h>
-
 LOG_MODULE_DECLARE(net_http_server_sample);
 
 static int echo_handler(struct http_client_ctx *client, enum http_transaction_status status,
@@ -43,6 +41,13 @@ static int echo_handler(struct http_client_ctx *client, enum http_transaction_st
     response_ctx->body = request_ctx->data;
     response_ctx->body_len = request_ctx->data_len;
     response_ctx->final_chunk = (status == HTTP_SERVER_REQUEST_DATA_FINAL);
+    if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
+        static const struct http_header echo_headers[] = {
+            { .name = "Content-Type", .value = "application/octet-stream" },
+        };
+        response_ctx->headers = echo_headers;
+        response_ctx->header_count = ARRAY_SIZE(echo_headers);
+    }
     return 0;
 }
 

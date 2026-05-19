@@ -5,6 +5,9 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/drivers/adc.h>
+#include <zephyr/logging/log.h>
+
+LOG_MODULE_REGISTER(bsp_ain, LOG_LEVEL_INF);
 
 #if DT_NODE_HAS_STATUS(DT_PATH(zephyr_user), okay) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), io_channels)
 
@@ -121,15 +124,14 @@ void bspAinPoll(void)
         }
     }
 
-    /* 2) print all sampled values every poll */
-    printk("AIN: samples:");
+    /* 2) log all sampled values every poll (DBG level for production) */
+    LOG_DBG("AIN: samples:");
     for (size_t i = 0; i < AIN_NUMBER; i++) {
-        printk(" [%u]%s=%u",
-               (unsigned)i,
-               (i < ARRAY_SIZE(ainName) && ainName[i]) ? ainName[i] : "(unnamed)",
-               (unsigned)ainData[i]);
+        LOG_DBG(" [%u]%s=%u",
+                (unsigned)i,
+                (i < ARRAY_SIZE(ainName) && ainName[i]) ? ainName[i] : "(unnamed)",
+                (unsigned)ainData[i]);
     }
-    printk("\n");
 }
 
 uint32_t bspAinGetRawValue(uint8_t channel)

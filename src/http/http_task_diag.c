@@ -176,6 +176,9 @@ static int diag_clear_post_handler(struct http_client_ctx *client, enum http_tra
         return 0;
     }
 
+    /* Execute clear immediately (diag worker may not be running yet) */
+    dm_diag_clear((uint32_t)cmd.mask, cmd.clear_latched);
+
     dm_request_t req = {
         .id = DM_REQ_DIAG_CLEAR,
         .ts_ms = k_uptime_get(),
@@ -183,19 +186,8 @@ static int diag_clear_post_handler(struct http_client_ctx *client, enum http_tra
     req.p.diag_clear.mask = (uint32_t)cmd.mask;
     req.p.diag_clear.clear_latched = cmd.clear_latched;
 
-    /* Submit to diagnostics domain queue */
-    int qrc = dm_diag_req_submit(&req);
-    if (qrc != 0) {
-        int n = snprintk(reply, sizeof(reply),
-                 "{\"ok\":false,\"error\":\"queue_full\",\"err\":%d}\n", qrc);
-        response_ctx->status = 503;
-        response_ctx->headers = HTTP_JSON_HEADERS_NO_STORE;
-        response_ctx->header_count = ARRAY_SIZE(HTTP_JSON_HEADERS_NO_STORE);
-        response_ctx->body = reply;
-        response_ctx->body_len = (size_t)n;
-        response_ctx->final_chunk = true;
-        return 0;
-    }
+    /* Also submit to diagnostics domain queue (non-blocking) */
+    (void)dm_diag_req_submit(&req);
 
     int n = snprintk(reply, sizeof(reply), "{\"ok\":true}\n");
     response_ctx->status = 200;

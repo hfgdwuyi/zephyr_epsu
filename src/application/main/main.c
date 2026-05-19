@@ -4,7 +4,6 @@
 #include <zephyr/sys/printk.h>
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/drivers/can.h>
-#include <stdio.h>
 
 #include <zephyr/net/tls_credentials.h>
 #include <zephyr/net/http/server.h>
@@ -73,9 +72,10 @@ int main(void)
     static timingTimer readADCTimer;
     timingAddTimer(&readADCTimer, TIMING_TIMER_CYCLIC, 1000, readADCHandler);
 
-    /* Main loop: keep feeding the external watchdog */
+    /* Main loop: feed watchdog and yield CPU */
     while (1) {
         WTDG_Feed();
+        k_sleep(K_MSEC(50));
     }
 
     return 0;
