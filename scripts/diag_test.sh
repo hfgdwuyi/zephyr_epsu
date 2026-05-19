@@ -13,6 +13,18 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Extract a JSON integer value by key (works with {"key":123} format)
+json_int() {
+    local key="$1" json="$2"
+    echo "$json" | sed -n 's/.*"'"$key"'":\([0-9]*\).*/\1/p'
+}
+
+# Check if JSON contains "key":true
+json_bool_true() {
+    local key="$1" json="$2"
+    echo "$json" | grep -q '"'"$key"'":true'
+}
+
 check() {
     local desc="$1" expected="$2" actual="$3"
     if [[ "$actual" == "$expected" ]]; then
@@ -71,8 +83,7 @@ echo ""
 echo -e "${YELLOW}[3/6] Initial diagnostic snapshot${NC}"
 INITIAL=$(curl -sS --connect-timeout 5 "${BASE}/diag" || echo '{}')
 echo "  Response: $INITIAL"
-INITIAL_FAULTS=$(echo "$INITIAL" | grep -o '"faults_active":[0-9]*' | grep -o '[0-9]*' || echo "0")
-echo "  Initial faults_active: $INITIAL_FAULTS"
+echo "  Initial active_faults: $(json_int active_faults "$INITIAL")"
 ((PASS++)) || true
 echo ""
 
@@ -82,10 +93,13 @@ echo ""
 echo -e "${YELLOW}[4/6] Inject test fault (code=100, severity=2)${NC}"
 INJECT=$(curl -sS --connect-timeout 5 -X POST "${BASE}/diag/inject" \
     -H "Content-Type: application/json" \
-    -d '{"code":100,"severity":2,"aux":42}' || echo '{"ok":false}')
+    -d '{"code":100,"severity":2,"aux":42,"set_active_mask":1}' || echo '{"ok":false}')
 echo "  Response: $INJECT"
-INJECT_OK=$(echo "$INJECT" | grep -o '"ok":[a-z]*' | grep -o '[a-z]*' || echo "false")
-check "Inject returns ok=true" "true" "$INJECT_OK"
+if json_bool_true ok "$INJECT"; then
+    check "Inject returns ok=true" "true" "true"
+else
+    check "Inject returns ok=true" "true" "false"
+fi
 echo ""
 
 # -------------------------------------------------------------------
@@ -94,12 +108,16 @@ echo ""
 echo -e "${YELLOW}[5/6] Verify fault appears in snapshot${NC}"
 AFTER_INJECT=$(curl -sS --connect-timeout 5 "${BASE}/diag" || echo '{}')
 echo "  Response: $AFTER_INJECT"
-AFTER_FAULTS=$(echo "$AFTER_INJECT" | grep -o '"faults_active":[0-9]*' | grep -o '[0-9]*' || echo "0")
+AFTER_FAULTS=$(json_int active_faults "$AFTER_INJECT")
+AFTER_FAULTS="${AFTER_FAULTS:-0}"
 if [[ "$AFTER_FAULTS" -gt 0 ]]; then
-    echo -e "  ${GREEN}PASS${NC} Fault is active (faults_active=${AFTER_FAULTS})"
+    echo -e "  ${GREEN}PASS${NC} Fault is active (active_faults=${AFTER_FAULTS})"
     ((PASS++)) || true
 else
     echo -e "  ${RED}FAIL${NC} Fault not detected in snapshot"
+    echo "    Note: inject adds an event but does NOT set fault bits by default."
+    echo "    The diag snapshot shows events[] separately from active_faults."
+    echo "    Check if the event appears in the response above."
     ((FAIL++)) || true
 fi
 echo ""
@@ -112,8 +130,11 @@ CLEAR=$(curl -sS --connect-timeout 5 -X POST "${BASE}/diag/clear" \
     -H "Content-Type: application/json" \
     -d '{"mask":4294967295,"clear_latched":true}' || echo '{"ok":false}')
 echo "  Response: $CLEAR"
-CLEAR_OK=$(echo "$CLEAR" | grep -o '"ok":[a-z]*' | grep -o '[a-z]*' || echo "false")
-check "Clear returns ok=true" "true" "$CLEAR_OK"
+if json_bool_true ok "$CLEAR"; then
+    check "Clear returns ok=true" "true" "true"
+else
+    check "Clear returns ok=true" "true" "false"
+fi
 echo ""
 
 # -------------------------------------------------------------------
@@ -122,12 +143,13 @@ echo ""
 echo -e "${YELLOW}[Final] Verify faults cleared${NC}"
 FINAL=$(curl -sS --connect-timeout 5 "${BASE}/diag" || echo '{}')
 echo "  Response: $FINAL"
-FINAL_FAULTS=$(echo "$FINAL" | grep -o '"faults_active":[0-9]*' | grep -o '[0-9]*' || echo "0")
+FINAL_FAULTS=$(json_int active_faults "$FINAL")
+FINAL_FAULTS="${FINAL_FAULTS:-0}"
 if [[ "$FINAL_FAULTS" -eq 0 ]]; then
-    echo -e "  ${GREEN}PASS${NC} All faults cleared (faults_active=0)"
+    echo -e "  ${GREEN}PASS${NC} All faults cleared (active_faults=0)"
     ((PASS++)) || true
 else
-    echo -e "  ${RED}FAIL${NC} Faults still present (faults_active=${FINAL_FAULTS})"
+    echo -e "  ${RED}FAIL${NC} Faults still present (active_faults=${FINAL_FAULTS})"
     ((FAIL++)) || true
 fi
 echo ""
