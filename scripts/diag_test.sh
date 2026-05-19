@@ -93,7 +93,7 @@ echo ""
 echo -e "${YELLOW}[4/6] Inject test fault (code=100, severity=2)${NC}"
 INJECT=$(curl -sS --connect-timeout 5 -X POST "${BASE}/diag/inject" \
     -H "Content-Type: application/json" \
-    -d '{"code":100,"severity":2,"aux":42,"set_active_mask":1}' || echo '{"ok":false}')
+    -d '{"code":100,"severity":2,"aux":42,"set_active_mask":1,"set_latched_mask":0}' || echo '{"ok":false}')
 echo "  Response: $INJECT"
 if json_bool_true ok "$INJECT"; then
     check "Inject returns ok=true" "true" "true"
@@ -128,7 +128,7 @@ echo ""
 echo -e "${YELLOW}[6/6] Clear all faults${NC}"
 CLEAR=$(curl -sS --connect-timeout 5 -X POST "${BASE}/diag/clear" \
     -H "Content-Type: application/json" \
-    -d '{"mask":4294967295,"clear_latched":true}' || echo '{"ok":false}')
+    -d '{"mask":-1,"clear_latched":true}' || echo '{"ok":false}')
 echo "  Response: $CLEAR"
 if json_bool_true ok "$CLEAR"; then
     check "Clear returns ok=true" "true" "true"
