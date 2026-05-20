@@ -427,3 +427,10 @@ void dm_update_set_uri(const char *uri)
     g_dm.update.package_uri[sizeof(g_dm.update.package_uri) - 1] = '\0';
     k_mutex_unlock(&g_dm_lock);
 }
+
+/* -----------------------------
+ * Internal update worker
+ * (defined in dm_update_worker.c, started here)
+ * ----------------------------- */
+
+SYS_INIT(dm_update_worker_start, APPLICATION, 55);

@@ -25,6 +25,8 @@
 #include "crc_calc.h"
 #include "timing.h"
 
+#include <zephyr/dfu/mcuboot.h>
+
 #include "http_api.h"
 
 
@@ -71,6 +73,9 @@ int main(void)
     /* Create a cyclic timer to poll ADC/analog inputs */
     static timingTimer readADCTimer;
     timingAddTimer(&readADCTimer, TIMING_TIMER_CYCLIC, 1000, readADCHandler);
+
+    /* Mark running image as confirmed (MCUboot permanent swap) */
+    boot_write_img_confirmed();
 
     /* Main loop: feed watchdog and yield CPU */
     while (1) {

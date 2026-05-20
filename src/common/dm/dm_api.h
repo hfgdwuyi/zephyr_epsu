@@ -93,6 +93,9 @@ void dm_diag_add_event(uint32_t code, dm_diag_severity_t sev, uint32_t aux);
 void dm_update_set_state(dm_update_state_t state, int32_t last_error, uint8_t progress);
 void dm_update_set_uri(const char *uri);
 
+/* Internal: start update worker (called via SYS_INIT) */
+int dm_update_worker_start(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -101,11 +101,9 @@ static int update_start_handler(struct http_client_ctx *client, enum http_transa
     strncpy(req.p.update_start.uri, cmd.uri, sizeof(req.p.update_start.uri) - 1);
     req.p.update_start.uri[sizeof(req.p.update_start.uri) - 1] = '\0';
 
-    /* Execute immediately (update worker may not be running yet) */
+    /* Submit to update domain queue; worker thread handles the rest */
     dm_update_set_uri(cmd.uri);
     dm_update_set_state(DM_UPDATE_STATE_REQUESTED, 0, 0);
-
-    /* Also submit to update domain queue (non-blocking) */
     (void)dm_update_req_submit(&req);
 
     int n = snprintk(reply, sizeof(reply), "{\"ok\":true}\n");
