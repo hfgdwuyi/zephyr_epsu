@@ -1,0 +1,40 @@
+/ {
+    chosen {
+        zephyr,code-partition = &slot0_partition;
+    };
+};
+
+/* MCUboot flash partitions (1MB M7 flash @ 0x08000000, 8 x 128KB sectors) */
+&flash0 {
+    partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
+        ranges;
+
+        boot_partition: partition@0 {
+            compatible = "zephyr,mapped-partition";
+            label = "mcuboot";
+            reg = <0x00000000 DT_SIZE_K(128)>;
+            read-only;
+        };
+
+        slot0_partition: partition@20000 {
+            compatible = "zephyr,mapped-partition";
+            label = "image-0";
+            reg = <0x00020000 DT_SIZE_K(384)>;
+        };
+
+        slot1_partition: partition@80000 {
+            compatible = "zephyr,mapped-partition";
+            label = "image-1";
+            reg = <0x00080000 DT_SIZE_K(384)>;
+        };
+
+        storage_partition: partition@e0000 {
+            compatible = "zephyr,mapped-partition";
+            label = "storage";
+            reg = <0x000e0000 DT_SIZE_K(128)>;
+        };
+    };
+};
