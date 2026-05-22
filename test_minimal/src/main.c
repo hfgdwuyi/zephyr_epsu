@@ -5,8 +5,9 @@
 int main(void)
 {
 	printk("\n=== MINIMAL: started ===\n");
-	boot_write_img_confirmed();
-	printk("=== MINIMAL: image confirmed ===\n");
+	/* TODO: re-enable after verifying boot chain */
+	/* boot_write_img_confirmed(); */
+	printk("=== MINIMAL: skip confirm ===\n");
 
 	uint32_t count = 0;
 	while (1) {

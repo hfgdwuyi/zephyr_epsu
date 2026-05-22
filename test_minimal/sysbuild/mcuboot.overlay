@@ -1,5 +1,17 @@
-/* Flash partition layout shared with MCUboot (all aligned to 128KB sectors) */
+/*
+ * Flash partition layout shared with MCUboot (all aligned to 128KB sectors).
+ *
+ * Remove ranges from flash0 to prevent DT_FIXED_PARTITION_ADDR from
+ * double-adding the flash base address. With ranges present, DT_REG_ADDR
+ * on child partitions returns a pre-translated absolute address (e.g.
+ * 0x08020000), and DT_FIXED_PARTITION_ADDR then adds flash0's reg base
+ * again (0x08000000) → 0x10020000. Without ranges, DT_REG_ADDR returns
+ * the raw child offset (0x20000), and the formula works correctly:
+ * 0x20000 + 0x08000000 = 0x08020000.
+ */
 &flash0 {
+    /delete-property/ ranges;
+
     partitions {
         compatible = "fixed-partitions";
         #address-cells = <1>;
