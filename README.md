@@ -23,7 +23,7 @@ All partitions aligned to 128KB flash sectors.
 
 ## Build
 
-### Prerequisites
+### Prerequisites (macOS)
 
 ```bash
 export ZEPHYR_BASE=~/project/02_zephyr/zephyrproject/zephyr
@@ -36,7 +36,9 @@ Zephyr SDK 1.0.1 or later required (arm-zephyr-eabi-gcc 14.3.0).
 ### Build MCUboot + test_minimal app (sysbuild)
 
 ```bash
-west build -d build_test_minimal test_minimal \
+west build \
+  -d ~/project/02_zephyr/ciosZhong_ePSU/build_test_minimal \
+  ~/project/02_zephyr/ciosZhong_ePSU/test_minimal \
   -b nucleo_h745zi_q/stm32h745xx/m7 --sysbuild
 ```
 
@@ -45,8 +47,8 @@ This builds both MCUboot and the test_minimal app in a single sysbuild.
 ### Sign the app image
 
 ```bash
-west sign -d build_test_minimal -t imgtool -- \
-  --key test_minimal/boot_keys/imgtool_key.pem
+west sign -d ~/project/02_zephyr/ciosZhong_ePSU/build_test_minimal -t imgtool -- \
+  --key ~/project/02_zephyr/ciosZhong_ePSU/test_minimal/boot_keys/imgtool_key.pem
 ```
 
 MCUboot requires all slot images to be signed. The build system signs automatically; this step re-signs if needed.
@@ -57,10 +59,10 @@ MCUboot requires all slot images to be signed. The build system signs automatica
 
 ```bash
 # Flash MCUboot
-west flash -d build_test_minimal/mcuboot -r openocd
+west flash -d ~/project/02_zephyr/ciosZhong_ePSU/build_test_minimal/mcuboot -r openocd
 
 # Flash signed app
-west flash -d build_test_minimal/test_minimal -r openocd
+west flash -d ~/project/02_zephyr/ciosZhong_ePSU/build_test_minimal/test_minimal -r openocd
 ```
 
 `west flash -r openocd` auto-detects the scripts path.
