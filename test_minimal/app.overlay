@@ -4,7 +4,7 @@
     };
 };
 
-/* MCUboot flash partitions (1MB M7 flash @ 0x08000000, 8 x 128KB sectors) */
+/* MCUboot flash partitions — slots moved to lower 512KB for flash programming compatibility */
 &flash0 {
     partitions {
         compatible = "fixed-partitions";
@@ -22,19 +22,19 @@
         slot0_partition: partition@20000 {
             compatible = "zephyr,mapped-partition";
             label = "image-0";
-            reg = <0x00020000 DT_SIZE_K(384)>;
+            reg = <0x00020000 DT_SIZE_K(128)>;
         };
 
-        slot1_partition: partition@80000 {
+        slot1_partition: partition@40000 {
             compatible = "zephyr,mapped-partition";
             label = "image-1";
-            reg = <0x00080000 DT_SIZE_K(384)>;
+            reg = <0x00040000 DT_SIZE_K(128)>;
         };
 
-        storage_partition: partition@e0000 {
+        storage_partition: partition@60000 {
             compatible = "zephyr,mapped-partition";
             label = "storage";
-            reg = <0x000e0000 DT_SIZE_K(128)>;
+            reg = <0x00060000 DT_SIZE_K(128)>;
         };
     };
 };
