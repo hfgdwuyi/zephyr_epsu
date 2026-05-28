@@ -1,96 +1,56 @@
 #include <zephyr/kernel.h>
-#include <zephyr/device.h>
-#include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/printk.h>
-#include <zephyr/drivers/watchdog.h>
-#include <zephyr/drivers/can.h>
-
-#include <zephyr/net/tls_credentials.h>
-#include <zephyr/net/http/server.h>
-#include <zephyr/net/http/service.h>
-#include <zephyr/net/net_ip.h>
-#include <zephyr/net/socket.h>
-#include "zephyr/device.h"
-#include "zephyr/sys/util.h"
-#include <zephyr/drivers/led.h>
-#include <zephyr/data/json.h>
-#include <zephyr/sys/util_macro.h>
-#include <zephyr/net/net_config.h>
-#include <zephyr/logging/log.h>
-
-#include "bsp_led.h"
-#include "bsp_wtdg.h"
-#include "bsp_board.h"
-#include "bsp_ain.h"
-#include "crc_calc.h"
-#include "timing.h"
-
 #include <zephyr/dfu/mcuboot.h>
+#include <zephyr/net/net_config.h>
+
+#include <errno.h>
+#include <string.h>
 
 #include "dm_api.h"
+#include "bsp_board.h"
+#include "bsp_led.h"
 #include "http_api.h"
 
+/* ---------- LED blink timer ---------- */
+static struct k_timer led_timer;
 
-static void blinkHandler(void)
+static void led_timer_handler(struct k_timer *timer)
 {
-    static bool led_state = true;
-
-    ledToggle(SYSTEM_OK_LED_NUM);
-    led_state = !led_state;
-	printk("LED state: %s\n", led_state ? "ON" : "OFF");
+	ARG_UNUSED(timer);
+	ledToggle(SYSTEM_OK_LED_NUM);
 }
 
-
-static void readADCHandler(void)
-{
-    /* Poll/refresh analog input measurements periodically */
-    bspAinPoll();
-}
-
+/* ---------- Main ---------- */
 int main(void)
 {
-    // Initialize pins and interfaces
-    boardInit();
+	printk("\n===== EPSU Version 0 (OTA) =====\n");
+	boot_write_img_confirmed();
+	printk("Image confirmed, running...\n");
 
-    // Initialize external watchdog
-    WTDG_Init();
+	dm_init();
+	boardInit();
 
-    // Feed external watchdog
-    WTDG_Feed();
+	/* Start LED blink: 500ms period = system alive indicator */
+	k_timer_init(&led_timer, led_timer_handler, NULL);
+	k_timer_start(&led_timer, K_MSEC(100), K_MSEC(500));
 
-    // Enable CRC module
-    crcInit();
+	/* Init network (static IP 192.0.2.1) */
+	printk("Initializing network...\n");
+	(void)net_config_init_app(NULL, "Initializing network");
+	printk("Network ready\n");
 
-    /* Initialize DataModel (mutex + message queues + update worker) */
-    dm_init();
+	/* Give network stack time to stabilize */
+	k_sleep(K_SECONDS(2));
 
-    /* Initialize network interfaces (IP, DHCP/static config, etc.) */
-    (void)net_config_init_app(NULL, "Initializing network");
+	/* Start HTTP server (uses full REST framework from lib/http) */
+	http_api_start();
+	printk("HTTP server listening on port 80\n");
 
-    /* Start the HTTP server (REST endpoints are registered elsewhere) */
-    http_api_start();
-
-    /* Create a cyclic timer to blink the system OK LED */
-    static timingTimer blinkTimer;
-    timingAddTimer(&blinkTimer, TIMING_TIMER_CYCLIC, 500, blinkHandler);
-
-    /* Create a cyclic timer to poll ADC/analog inputs */
-    static timingTimer readADCTimer;
-    timingAddTimer(&readADCTimer, TIMING_TIMER_CYCLIC, 1000, readADCHandler);
-
-    /* Mark running image as confirmed (MCUboot permanent swap) */
-    boot_write_img_confirmed();
-
-    /* Main loop: feed watchdog and yield CPU */
-    while (1) {
-        WTDG_Feed();
-        k_sleep(K_MSEC(50));
-    }
-
-    return 0;
+	uint32_t count = 0;
+	while (1) {
+		count++;
+		printk("EPSU V0 Alive: %u\n", count);
+		k_sleep(K_SECONDS(3));
+	}
+	return 0;
 }
-
-
-
-
-

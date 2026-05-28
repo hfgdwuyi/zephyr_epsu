@@ -16,6 +16,8 @@
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/net/http/client.h>
+#include <zephyr/posix/arpa/inet.h>
+#include <zephyr/posix/unistd.h>
 #include <zephyr/sys/reboot.h>
 
 #include <errno.h>
@@ -28,7 +30,7 @@
 LOG_MODULE_REGISTER(update_worker, LOG_LEVEL_INF);
 
 #define IMAGE_MAGIC   0x96f3b83d
-#define IMAGE_OFFSET  0x20000   /* skip swap scratch in slot1 */
+#define IMAGE_OFFSET  0x20000   /* skip swap scratch (first sector of slot1) */
 #define SECTOR_SZ     0x20000   /* 128KB flash sector */
 #define FLASH_ALIGN   32        /* STM32H7 minimum write alignment */
 
@@ -144,12 +146,12 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
 
         const char *uri = req.p.update_start.uri;
         if (uri[0] == '\0') {
-            LOG_WRN("update_worker: empty URI, skipping");
+            printk("update_worker: empty URI, skipping\n");
             dm_update_set_state(DM_UPDATE_STATE_FAILED, -EINVAL, 0);
             continue;
         }
 
-        LOG_INF("update_worker: downloading from %s", uri);
+        printk("update_worker: downloading from %s\n", uri);
 
         /* -----------------------------
          * Open slot1 for writing
@@ -159,15 +161,16 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
         const struct flash_area *fa = NULL;
         rc = flash_area_open(PARTITION_ID(slot1_partition), &fa);
         if (rc != 0) {
+            printk("update_worker: flash_area_open slot1 rc=%d\n", rc);
             LOG_ERR("update_worker: flash_area_open slot1 rc=%d", rc);
             dm_update_set_state(DM_UPDATE_STATE_FAILED, rc, 0);
             continue;
         }
 
-        /* Erase only the image area (skip scratch at IMAGE_OFFSET) */
-        uint32_t image_size = fa->fa_size - SECTOR_SZ;
-        rc = flash_area_erase(fa, IMAGE_OFFSET, image_size);
+        /* Erase entire slot1 (including scratch area to clear old headers) */
+        rc = flash_area_erase(fa, 0, fa->fa_size);
         if (rc != 0) {
+            printk("update_worker: flash_area_erase rc=%d\n", rc);
             LOG_ERR("update_worker: flash_area_erase rc=%d", rc);
             flash_area_close(fa);
             dm_update_set_state(DM_UPDATE_STATE_FAILED, rc, 0);
@@ -206,9 +209,45 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
         memcpy(host, host_begin, host_len);
         host[host_len] = '\0';
 
+        /* Separate port from host (e.g. "192.0.2.2:8080" -> host, port "8080") */
+        char port_str[8] = "80";
+        char *colon = strchr(host, ':');
+        if (colon != NULL) {
+            *colon = '\0';  /* terminate host at colon */
+            strncpy(port_str, colon + 1, sizeof(port_str) - 1);
+            port_str[sizeof(port_str) - 1] = '\0';
+        }
+
         const char *path = (path_begin != NULL) ? path_begin : "/";
 
-        LOG_INF("update_worker: host=%s path=%s", host, path);
+        LOG_INF("update_worker: host=%s port=%s path=%s", host, port_str, path);
+
+        /* -----------------------------
+         * Create and connect TCP socket
+         * ----------------------------- */
+        int http_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (http_sock < 0) {
+            printk("update_worker: socket() rc=%d\n", http_sock);
+            flash_area_close(fa);
+            dm_update_set_state(DM_UPDATE_STATE_FAILED, http_sock, 0);
+            continue;
+        }
+
+        struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((uint16_t)atoi(port_str));
+        inet_pton(AF_INET, host, &addr.sin_addr);
+
+        rc = connect(http_sock, (struct sockaddr *)&addr, sizeof(addr));
+        if (rc < 0) {
+            printk("update_worker: connect() rc=%d\n", rc);
+            close(http_sock);
+            flash_area_close(fa);
+            dm_update_set_state(DM_UPDATE_STATE_FAILED, rc, 0);
+            continue;
+        }
+        LOG_INF("update_worker: connected to %s:%s", host, port_str);
 
         /* -----------------------------
          * HTTP GET request with streaming callback
@@ -216,7 +255,7 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
         struct download_ctx dl_ctx = {
             .fa = fa,
             .offset = IMAGE_OFFSET,
-            .max_offset = fa->fa_size - SECTOR_SZ,
+            .max_offset = fa->fa_size,
             .last_progress = 0,
             .buf_pos = 0,
         };
@@ -227,13 +266,16 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
         http_req.method = HTTP_GET;
         http_req.url = path;
         http_req.host = host;
+        http_req.port = port_str;
         http_req.protocol = "HTTP/1.1";
         http_req.recv_buf = recv_buf;
         http_req.recv_buf_len = sizeof(recv_buf);
         http_req.response = download_response_cb;
 
-        rc = http_client_req(-1, &http_req, 30000, &dl_ctx);
+        rc = http_client_req(http_sock, &http_req, 30000, &dl_ctx);
+        close(http_sock);
         if (rc < 0 && rc != -ECONNRESET) {
+            printk("update_worker: HTTP request failed rc=%d\n", rc);
             LOG_ERR("update_worker: http_client_req rc=%d", rc);
             flash_area_close(fa);
             dm_update_set_state(DM_UPDATE_STATE_FAILED, rc, 0);

@@ -16,7 +16,6 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/net/http/server.h>
-#include <zephyr/data/json.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/logging/log.h>
 
@@ -28,15 +27,6 @@
 #include "dm_types.h"
 
 LOG_MODULE_DECLARE(net_http_server_sample);
-
-/* POST /update/start: {"uri":"http://..."} */
-struct update_start_cmd {
-    char uri[160];
-};
-
-static const struct json_obj_descr update_start_cmd_descr[] = {
-    JSON_OBJ_DESCR_PRIM(struct update_start_cmd, uri, JSON_TOK_STRING),
-};
 
 static int update_start_handler(struct http_client_ctx *client, enum http_transaction_status status,
                 const struct http_request_ctx *request_ctx,
@@ -75,14 +65,27 @@ static int update_start_handler(struct http_client_ctx *client, enum http_transa
         return 0;
     }
 
-    struct update_start_cmd cmd = {0};
-    const int expected = BIT_MASK(ARRAY_SIZE(update_start_cmd_descr));
-    int ret = json_obj_parse(payload, cursor,
-                update_start_cmd_descr, ARRAY_SIZE(update_start_cmd_descr),
-                &cmd);
+    /* Manual JSON parsing: extract "uri" value (known working approach) */
+    char uri[160] = {0};
+    const char *key = strstr((const char *)payload, "\"uri\"");
+    if (key != NULL) {
+        const char *val_start = strchr(key + 5, '"');
+        if (val_start != NULL) {
+            val_start++;
+            const char *val_end = strchr(val_start, '"');
+            if (val_end != NULL) {
+                size_t len = (size_t)(val_end - val_start);
+                if (len >= sizeof(uri)) {
+                    len = sizeof(uri) - 1;
+                }
+                memcpy(uri, val_start, len);
+                uri[len] = '\0';
+            }
+        }
+    }
     cursor = 0;
 
-    if (ret != expected || cmd.uri[0] == '\0') {
+    if (uri[0] == '\0') {
         int n = snprintk(reply, sizeof(reply),
                  "{\"ok\":false,\"error\":\"bad_json\"}\n");
         response_ctx->status = 400;
@@ -94,15 +97,17 @@ static int update_start_handler(struct http_client_ctx *client, enum http_transa
         return 0;
     }
 
+    LOG_INF("http_update: parsed uri='%s'", uri);
+
     dm_request_t req = {
         .id = DM_REQ_UPDATE_START,
         .ts_ms = k_uptime_get(),
     };
-    strncpy(req.p.update_start.uri, cmd.uri, sizeof(req.p.update_start.uri) - 1);
+    strncpy(req.p.update_start.uri, uri, sizeof(req.p.update_start.uri) - 1);
     req.p.update_start.uri[sizeof(req.p.update_start.uri) - 1] = '\0';
 
     /* Submit to update domain queue; worker thread handles the rest */
-    dm_update_set_uri(cmd.uri);
+    dm_update_set_uri(uri);
     dm_update_set_state(DM_UPDATE_STATE_REQUESTED, 0, 0);
     (void)dm_update_req_submit(&req);
 

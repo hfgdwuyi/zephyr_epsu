@@ -39,9 +39,9 @@ static struct k_mutex g_dm_lock;
 static dm_snapshot_t g_dm;
 
 /* Domain request queues (avoid multi-consumer competition on a single queue) */
-K_MSGQ_DEFINE(g_dm_ctrl_req_q,   sizeof(dm_request_t), 16, 4);
-K_MSGQ_DEFINE(g_dm_diag_req_q,   sizeof(dm_request_t),  8, 4);
-K_MSGQ_DEFINE(g_dm_update_req_q, sizeof(dm_request_t),  4, 4);
+K_MSGQ_DEFINE(g_dm_ctrl_req_q,   sizeof(dm_request_t), 16, 8);
+K_MSGQ_DEFINE(g_dm_diag_req_q,   sizeof(dm_request_t),  8, 8);
+K_MSGQ_DEFINE(g_dm_update_req_q, sizeof(dm_request_t),  4, 8);
 
 /* -----------------------------
  * Internal control worker
@@ -281,7 +281,9 @@ int dm_update_req_submit(const dm_request_t *req)
     if (req == NULL) {
         return -EINVAL;
     }
-    return k_msgq_put(&g_dm_update_req_q, req, K_NO_WAIT);
+    int rc = k_msgq_put(&g_dm_update_req_q, req, K_NO_WAIT);
+    LOG_INF("dm_update_req_submit: id=%d rc=%d", (int)req->id, rc);
+    return rc;
 }
 
 int dm_update_req_receive(dm_request_t *out, k_timeout_t timeout)

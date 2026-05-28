@@ -37,18 +37,18 @@
 #define BSP_DAC_NODE       DT_PHANDLE(ZEPHYR_USER_NODE, dac)
 #define BSP_DAC_CHANNEL_ID DT_PROP(ZEPHYR_USER_NODE, dac_channel_id)
 #define BSP_DAC_RESOLUTION DT_PROP(ZEPHYR_USER_NODE, dac_resolution)
+#define BSP_AOUT_ENABLED 1
 #else
-#error "Unsupported board/application: add dac, dac_channel_id, dac_resolution to /zephyr,user in app.overlay"
+#define BSP_AOUT_ENABLED 0
 #endif
+
+#if BSP_AOUT_ENABLED
 
 static const struct device *const dac_dev = DEVICE_DT_GET(BSP_DAC_NODE);
 
-/* This project uses a single DAC output */
 #define BSP_AOUT_CHANNEL_COUNT 1U
-
 #define BSP_AOUT_MAX_CODE ((1U << BSP_DAC_RESOLUTION) - 1U)
 
-/* Reference voltage in millivolts used for scaling (VDDA typically 3.3V) */
 #ifndef BSP_AOUT_VREF_MV
 #define BSP_AOUT_VREF_MV 3300U
 #endif
@@ -97,7 +97,6 @@ void bspAoutWrite(uint8_t channel, int16_t val)
         return;
     }
 
-    /* Clamp requested millivolts into [0..Vref] */
     int32_t mv = (int32_t)val;
     if (mv < 0) {
         mv = 0;
@@ -106,9 +105,21 @@ void bspAoutWrite(uint8_t channel, int16_t val)
         mv = (int32_t)BSP_AOUT_VREF_MV;
     }
 
-    /* Convert mV to DAC code */
     const uint32_t code = (uint32_t)(((uint64_t)mv * (uint64_t)BSP_AOUT_MAX_CODE) / BSP_AOUT_VREF_MV);
-
-    /* Write sample */
     (void)dac_write_value(dac_dev, BSP_DAC_CHANNEL_ID, code);
 }
+
+#else
+
+void bspAoutInit(void)
+{
+    printk("bspAoutInit: DAC not configured (no dac in /zephyr,user)\n");
+}
+
+void bspAoutWrite(uint8_t channel, int16_t val)
+{
+    ARG_UNUSED(channel);
+    ARG_UNUSED(val);
+}
+
+#endif

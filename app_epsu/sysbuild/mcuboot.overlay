@@ -1,15 +1,7 @@
-/*
- * Shared flash partition layout for MCUboot (2MB M7 flash @ 0x08000000).
- *
- * Remove ranges from flash0 to prevent DT_FIXED_PARTITION_ADDR from
- * double-adding the flash base address.
- *
- * SWAP_USING_OFFSET: first 128KB of slot1 is swap scratch;
- * image payload starts at slot1 offset 0x20000.
- */
+/* Extend flash0 to 2MB, remove ranges to fix DT_REG_ADDR double-add */
 &flash0 {
-    /delete-property/ ranges;
     reg = <0x08000000 DT_SIZE_K(2048)>;
+    /delete-property/ ranges;
 
     partitions {
         compatible = "fixed-partitions";
@@ -28,14 +20,9 @@
             reg = <0x00020000 DT_SIZE_K(512)>;
         };
 
-        slot1_partition: partition@A0000 {
+        slot1_partition: partition@100000 {
             label = "image-1";
-            reg = <0x000A0000 DT_SIZE_K(512)>;
-        };
-
-        storage_partition: partition@120000 {
-            label = "storage";
-            reg = <0x00120000 DT_SIZE_K(128)>;
+            reg = <0x00100000 DT_SIZE_K(512)>;
         };
     };
 };

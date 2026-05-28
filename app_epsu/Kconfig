@@ -1,3 +1,2 @@
 # Application Kconfig - sources Zephyr base, then project Kconfig fragments
 source "Kconfig.zephyr"
-rsource "../lib/http/Kconfig"

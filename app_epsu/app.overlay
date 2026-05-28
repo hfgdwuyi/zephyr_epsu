@@ -1,74 +1,13 @@
 / {
-    aliases {
-        watchdog0 = &iwdg1;
-    };
-
     chosen {
-        zephyr,console = &lpuart1;
-        zephyr,shell-uart = &lpuart1;
-        zephyr,crc = &crc;
         zephyr,code-partition = &slot0_partition;
     };
-
-    zephyr,user {
-        io-channels =
-            <&adc1 10>,  /* 0: PUMP-ADC (ADC1_INP10) */
-            <&adc3 7>,   /* 1: FORCE-ADC(1) (ADC3_INP7) */
-            <&adc3 13>,  /* 2: FORCE-ADC(2) (ADC3_INP13) */
-            <&adc3 15>,  /* 3: FORCE-ADC(3) (ADC3_INP15) */
-            <&adc1 1>,   /* 4: TEMP-FD-ADC (ADC1_INP1) */
-            <&adc1 15>,  /* 5: TEMP-MB-ADC (ADC1_INP15) */
-            <&adc1 12>,  /* 6: ADC1_INP12 */
-            <&adc3 1>;   /* 7: ADC3_INP1 */
-
-        dac = <&dac1>;
-        dac_channel_id = <0>;     /* 0 => OUT1 in Zephyr STM32 DAC driver */
-        dac_resolution = <12>;
-
-        pwms =
-            <&pwm12 1 PWM_MSEC(20) PWM_POLARITY_NORMAL>;
-    };
-
 };
 
-&iwdg1 {
-    status = "okay";
-};
-
-&lpuart1 {
-    status = "okay";
-    current-speed = <115200>;
-};
-
-
-&adc1 {
-    status = "okay";
-    st,adc-clock-source = "SYNC";
-    st,adc-prescaler = <1>;
-};
-
-&adc3 {
-    status = "okay";
-    st,adc-clock-source = "SYNC";
-    st,adc-prescaler = <1>;
-};
-
-&dac1 {
-    status = "okay";
-};
-
-/*
- * MCUboot flash partitions (2MB M7 flash @ 0x08000000, SWAP_USING_OFFSET).
- *
- * Remove ranges from flash0 to prevent DT_FIXED_PARTITION_ADDR from
- * double-adding the flash base address (STM32H745 DTS ranges bug).
- *
- * SWAP_USING_OFFSET: first 128KB sector of slot1 is swap scratch;
- * actual image data starts at slot1 offset 0x20000.
- */
+/* Extend flash0 to 2MB (both banks) so slot1 fits in bank 1 */
 &flash0 {
-    /delete-property/ ranges;
     reg = <0x08000000 DT_SIZE_K(2048)>;
+    /delete-property/ ranges;
 
     partitions {
         compatible = "fixed-partitions";
@@ -87,14 +26,9 @@
             reg = <0x00020000 DT_SIZE_K(512)>;
         };
 
-        slot1_partition: partition@A0000 {
+        slot1_partition: partition@100000 {
             label = "image-1";
-            reg = <0x000A0000 DT_SIZE_K(512)>;
-        };
-
-        storage_partition: partition@120000 {
-            label = "storage";
-            reg = <0x00120000 DT_SIZE_K(128)>;
+            reg = <0x00100000 DT_SIZE_K(512)>;
         };
     };
 };
