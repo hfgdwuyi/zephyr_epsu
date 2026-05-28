@@ -241,7 +241,7 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
 
         rc = connect(http_sock, (struct sockaddr *)&addr, sizeof(addr));
         if (rc < 0) {
-            printk("update_worker: connect() rc=%d\n", rc);
+            printk("update_worker: connect() rc=%d errno=%d\n", rc, errno);
             close(http_sock);
             flash_area_close(fa);
             dm_update_set_state(DM_UPDATE_STATE_FAILED, rc, 0);
