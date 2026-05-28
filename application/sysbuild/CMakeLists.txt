@@ -3,7 +3,7 @@
 # MCUboot expects the signing key relative to its own source tree.
 # Create a symlink so it finds our key without hardcoding absolute paths.
 get_filename_component(OUR_KEY
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../boot/keys/imgtool_key.pem
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../bootloader/keys/imgtool_key.pem
   ABSOLUTE)
 get_filename_component(BOOT_DIR
   $ENV{ZEPHYR_BASE}/../bootloader/boot

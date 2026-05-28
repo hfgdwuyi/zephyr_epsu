@@ -5,7 +5,7 @@ Zephyr RTOS application for the CiosZhong PSU (Power Supply Unit) controller.
 ## Hardware
 
 - **Board**: NUCLEO-H745ZI-Q (STM32H745, Cortex-M7 core)
-- **Flash**: 1MB M7 flash @ 0x08000000
+- **Flash**: 2MB dual-bank @ 0x08000000
 - **RAM**: 512KB SRAM3 (M7 main RAM)
 - **Debugger**: STLINK V3 (OpenOCD)
 
@@ -13,25 +13,23 @@ Zephyr RTOS application for the CiosZhong PSU (Power Supply Unit) controller.
 
 ```
 ciosZhong_ePSU/
-├── boot/                    # MCUboot 共享配置
-│   ├── keys/                # 签名密钥（app_epsu + app_test 共用）
-│   └── ...
-├── app_epsu/                # 主应用工程 (原 src/application/)
+├── bootloader/              # MCUboot 签名密钥
+│   └── keys/
+├── application/             # 主应用工程
+│   ├── main/main.c
 │   ├── prj.conf
 │   ├── app.overlay
 │   └── sysbuild/
-├── app_test/                # OTA 测试工程 (原 test_minimal/)
-│   ├── prj.conf
-│   ├── app.overlay
-│   └── sysbuild/
-├── lib/                     # 共享库 (bsp, common, http 等)
-├── build_minimal/           # app_test 构建产物
+├── lib/                     # 共享库
+│   ├── bsp/                 # 板级支持 (LED, DIO, AIN, AOUT, PWM, WTDG)
+│   ├── common/dm/           # 数据模型管理 (DM core, update worker)
+│   └── http/                # HTTP REST 框架 (echo, heartbeat, control, update, diag)
+├── build_epsu/              # 构建产物
 └── scripts/
 ```
 
-- **boot/** — MCUboot 分区表和签名密钥，所有 app 共用
-- **app_epsu/** — 主 PSU 控制器固件
-- **app_test/** — OTA 双槽升级验证固件(Version 0 ↔ Version 1)
+- **bootloader/keys/** — MCUboot ECDSA-P256 签名密钥
+- **application/** — 主 PSU 控制器固件
 - **lib/** — 板级支持、通用模块、HTTP 服务等共享代码
 
 ## Flash Partition Layout
@@ -45,7 +43,7 @@ ciosZhong_ePSU/
 
 All partitions aligned to 128KB flash sectors. SWAP_USING_OFFSET mode.
 
-## Build
+## Build & Flash
 
 ### Prerequisites (macOS)
 
@@ -57,133 +55,105 @@ source $ZEPHYR_BASE/zephyr-env.sh
 
 Zephyr SDK 1.0.1 or later required (arm-zephyr-eabi-gcc 14.3.0).
 
-### Build app_test (sysbuild)
+### Build (sysbuild with MCUboot)
 
 ```bash
-west build \
-  -d ~/project/02_zephyr/ciosZhong_ePSU/build_minimal \
-  ~/project/02_zephyr/ciosZhong_ePSU/app_test \
-  -b nucleo_h745zi_q/stm32h745xx/m7 --sysbuild
-```
-
-### Build app_epsu (主应用)
-
-```bash
+cd ~/project/02_zephyr/zephyrproject
 west build \
   -d ~/project/02_zephyr/ciosZhong_ePSU/build_epsu \
-  ~/project/02_zephyr/ciosZhong_ePSU/app_epsu \
+  ~/project/02_zephyr/ciosZhong_ePSU/application \
   -b nucleo_h745zi_q/stm32h745xx/m7 --sysbuild
 ```
 
-### Sign the app image
-
-```bash
-west sign -d ~/project/02_zephyr/ciosZhong_ePSU/build_minimal -t imgtool -- \
-  --key ~/project/02_zephyr/ciosZhong_ePSU/boot/keys/imgtool_key.pem
-```
-
-## Flash
-
-### STLINK-V3 (macOS / Linux)
+### Flash
 
 ```bash
 # Flash MCUboot
-west flash -d ~/project/02_zephyr/ciosZhong_ePSU/build_minimal/mcuboot -r openocd
+west flash -d build_epsu/mcuboot -r openocd
 
 # Flash signed app
-west flash -d ~/project/02_zephyr/ciosZhong_ePSU/build_minimal/app_test -r openocd
+west flash -d build_epsu/application -r openocd
 ```
 
-`west flash -r openocd` auto-detects the scripts path.
+## OTA 固件更新流程 (已验证)
 
-### STLINK-V3 (Windows / WSL)
-
-```powershell
-openocd -s "C:\Program Files\OpenOCD\share\openocd\scripts" ^
-  -f board/st_nucleo_h745zi.cfg ^
-  -c "init" -c "targets" -c "halt" ^
-  -c "program build_minimal\mcuboot\zephyr\zephyr.hex verify" ^
-  -c "program build_minimal\app_test\zephyr\zephyr.signed.hex verify" ^
-  -c "reset run" -c "shutdown"
-```
-
-## OTA Test Procedure
-
-### Step 1: Flash initial version
+### 步骤 1: 构建 Version 0 并烧录基线
 
 ```bash
-# Combined flash (single OpenOCD session, no manual reset needed)
-openocd -s $OPENOCD_SCRIPTS \
-  -f board/st_nucleo_h745zi.cfg \
-  -c "init" -c "targets" -c "halt" \
-  -c "program build_minimal/mcuboot/zephyr/zephyr.hex verify" \
-  -c "program build_minimal/app_test/zephyr/zephyr.signed.hex verify" \
-  -c "reset run" -c "shutdown"
+# 确保 main.c 版本字符串为 "Version 0"
+cd ~/project/02_zephyr/zephyrproject
+
+# 构建并烧录
+west build -d ~/project/02_zephyr/ciosZhong_ePSU/build_epsu \
+  ~/project/02_zephyr/ciosZhong_ePSU/application \
+  -b nucleo_h745zi_q/stm32h745xx/m7 --sysbuild
+west flash -d build_epsu/mcuboot -r openocd
+west flash -d build_epsu/application -r openocd
+
+# 确认串口输出: "===== EPSU Version 0 (OTA) ====="
 ```
 
-### Step 2: Start HTTP file server (host machine)
+### 步骤 2: 构建 Version 1 目标镜像
 
 ```bash
-# Serve firmware update file
-cd build_minimal/app_test/zephyr
+# 修改 main.c: Version 0 → Version 1
+# 重新构建（生成 zephyr.signed.bin）
+west build -d ~/project/02_zephyr/ciosZhong_ePSU/build_epsu \
+  ~/project/02_zephyr/ciosZhong_ePSU/application \
+  -b nucleo_h745zi_q/stm32h745xx/m7 --sysbuild
+```
+
+### 步骤 3: 启动 HTTP 文件服务器
+
+```bash
+cd build_epsu/application/zephyr
 python3 -m http.server 8080
 ```
 
-### Step 3: Trigger OTA update
+### 步骤 4: 触发 OTA 更新
 
 ```bash
-# Request board to download and apply new firmware
-curl -X POST http://<board-ip>/update/start \
+curl -X POST http://192.0.2.1/update/start \
   -H "Content-Type: application/json" \
-  -d '{"uri":"http://<host-ip>:8080/zephyr.signed.bin"}'
+  -d '{"uri":"http://192.0.2.2:8080/zephyr.signed.bin"}'
+# Response: {"ok":true}
 ```
 
-### Step 4: Monitor progress
+### 步骤 5: 监控更新状态
 
 ```bash
-# Poll update status until state=5 (REBOOT_PENDING)
-curl http://<board-ip>/update/status
-# Response: {"state":5,"progress":100,"error":0}
+curl http://192.0.2.1/update/status
+# Response: {"state":<n>,"progress":<pct>,"error":0,"uri":"..."}
 ```
 
-### State machine
+### 步骤 6: 验证 Version 1 启动
+
+更新完成后 MCUboot 自动 swap 并重启。串口确认:
+```
+===== EPSU Version 1 (OTA) =====
+Image confirmed, running...
+EPSU V1 Alive: 1
+```
+
+### 后续迭代 (V1→V2→...)
+
+重复步骤 2-6。每次递增版本号，流程完全相同。已验证 V0→V1→V2 连续 OTA。
+
+## OTA 状态机
 
 | State | Value | Description |
 |-------|-------|-------------|
-| IDLE | 0 | No pending update |
-| REQUESTED | 1 | Update URI received, starting download |
-| DOWNLOADING | 2 | Downloading firmware image |
-| VERIFYING | 3 | Checking download integrity |
-| APPLYING | 4 | Writing to flash |
-| REBOOT_PENDING | 5 | Update complete, rebooting... |
-| FAILED | 6 | Update failed |
+| IDLE | 0 | 无待处理更新 |
+| REQUESTED | 1 | 已接收 URI，开始下载 |
+| DOWNLOADING | 2 | 正在下载固件镜像 |
+| VERIFYING | 3 | 校验下载完整性 |
+| APPLYING | 4 | 写入 flash |
+| REBOOT_PENDING | 5 | 更新完成，即将重启 |
+| FAILED | 6 | 更新失败 |
 
-### Expected serial output
+## 预期串口输出
 
-After OTA trigger and reboot:
-
-```
-*** Booting Zephyr OS build v4.4.0-... ***
-I: Starting bootloader
-I: Image index: 0, Swap type: test
-I: Bootloader chainload address offset: 0x20000
-I: Jumping to the first image slot
-*** Booting Zephyr OS build v4.4.0-... ***
-===== TestApp Version 1 (OTA) =====
-Image confirmed, running...
-HTTP server listening on port 80
-V1 Alive: 1
-```
-
-- `Swap type: test` → MCUboot detected new image in slot1, performing test swap
-- `TestApp Version 1` → new version running
-- `boot_write_img_confirmed()` → swap made permanent (V1 now primary)
-
-If V1 crashes before confirmation, MCUboot auto-reverts to V0 on next reboot.
-
-## Serial Console
-
-115200 baud, 8N1. Expected output:
+### MCUboot 启动
 
 ```
 *** Booting Zephyr OS build v4.4.0-... ***
@@ -191,28 +161,62 @@ I: Starting bootloader
 I: Image index: 0, Swap type: none
 I: Bootloader chainload address offset: 0x20000
 I: Jumping to the first image slot
-*** Booting Zephyr OS build v4.4.0-... ***
-===== TestApp Version 0 (OTA) =====
-Image confirmed, running...
-HTTP server listening on port 80
-V0 Alive: 1
-...
 ```
 
-- First "Booting Zephyr OS" → MCUboot
-- "Jumping to the first image slot" → MCUboot passes control to slot0
-- Second "Booting Zephyr OS" → App kernel init
-- "=== MINIMAL: started ===" → App main()
+### App 启动
 
-## Known Issue: DTS ranges on STM32H745
+```
+*** Booting Zephyr OS build v4.4.0-... ***
+dm_core: ctrl_worker started
+update_worker: started
+===== EPSU Version 0 (OTA) =====
+Image confirmed, running...
+Initializing network...
+Network ready
+HTTP server listening on port 80
+EPSU V0 Alive: 1
+```
 
-STM32H745 `flash0` node has `ranges = <0 0x8000000 0x100000>` which causes
-`DT_REG_ADDR` on child partitions to return pre-translated absolute addresses.
-`DT_FIXED_PARTITION_ADDR` then adds the flash base address again, resulting in
-double-counting. Without `/delete-property/ ranges;` in `mcuboot.overlay`,
-MCUboot's `flash_device_base()` computes 0x10000000 instead of 0x08000000
-and hangs when trying to jump to the app.
+### OTA 更新过程中
 
-Fix: `app_test/sysbuild/mcuboot.overlay` and
-`app_epsu/sysbuild/mcuboot.overlay` both contain
-`/delete-property/ ranges;` on `&flash0`.
+```
+http_update: parsed uri='http://192.0.2.2:8080/zephyr.signed.bin'
+update_worker: downloading from http://192.0.2.2:8080/zephyr.signed.bin
+update_worker: download 50%
+...
+update_worker: download 100%
+update_worker: downloaded 173088 bytes
+update_worker: image verified v0.0.0 size=171904
+update_worker: rebooting...
+```
+
+### MCUboot Swap
+
+```
+I: Image index: 0, Swap type: test
+I: Starting swap using offset algorithm.
+I: Bootloader chainload address offset: 0x20000
+```
+
+## HTTP REST API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/update/start` | 提交 OTA 更新 URI |
+| GET | `/update/status` | 查询更新状态/进度 |
+| GET | `/api/v1/status/heartbeat` | 心跳检测 |
+| GET | `/api/v1/status/uptime` | 系统运行时间 |
+| POST | `/api/v1/control` | LED/继电器/蜂鸣器控制 |
+| GET | `/api/v1/diag/status` | 诊断状态查询 |
+
+## 已知问题
+
+### DTS ranges on STM32H745
+
+STM32H745 `flash0` 节点有 `ranges = <0 0x8000000 0x100000>`，导致子分区的
+`DT_REG_ADDR` 返回预翻译的绝对地址。`DT_FIXED_PARTITION_ADDR` 会再次添加 flash
+基地址，造成双倍计数。不使用 `/delete-property/ ranges;` 时 MCUboot 的
+`flash_device_base()` 计算出 0x10000000 而非 0x08000000，导致跳转到 app 时挂起。
+
+修复: `application/app.overlay` 和 `application/sysbuild/mcuboot.overlay`
+都在 `&flash0` 上包含 `/delete-property/ ranges;`。
