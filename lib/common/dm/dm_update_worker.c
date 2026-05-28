@@ -4,11 +4,9 @@
  * Update worker thread — consumes dm_update_req_q and performs firmware
  * download, verification, and MCUboot swap requests.
  *
- * Design:
- *  - HTTP GET the firmware binary from the URI in the request.
- *  - Stream-write to slot1 via flash_area API using response callback.
- *  - Verify MCUboot image header magic.
- *  - Request MCUboot to swap on next boot, then reboot.
+ * SWAP_USING_OFFSET: first sector (128KB) of slot1 is swap scratch.
+ * Image payload is written at slot1 offset 0x20000. STM32H7 requires
+ * 32-byte flash write alignment.
  */
 
 #include <zephyr/kernel.h>
@@ -29,8 +27,10 @@
 
 LOG_MODULE_REGISTER(update_worker, LOG_LEVEL_INF);
 
-/* MCUboot image header magic (little-endian: 0x96f3b83d) */
-#define IMAGE_MAGIC 0x96f3b83d
+#define IMAGE_MAGIC   0x96f3b83d
+#define IMAGE_OFFSET  0x20000   /* skip swap scratch in slot1 */
+#define SECTOR_SZ     0x20000   /* 128KB flash sector */
+#define FLASH_ALIGN   32        /* STM32H7 minimum write alignment */
 
 /* MCUboot image header (first 32 bytes of a signed image) */
 struct mcuboot_image_header {
@@ -49,11 +49,14 @@ struct mcuboot_image_header {
     uint32_t _pad1;
 };
 
-/* Per-download state passed to response callback */
+/* Per-download state passed to HTTP response callback */
 struct download_ctx {
     const struct flash_area *fa;
-    uint32_t offset;
+    uint32_t offset;        /* absolute offset within slot1 */
+    uint32_t max_offset;    /* slot1 end minus scratch area */
     uint32_t last_progress;
+    uint8_t  buf[FLASH_ALIGN];
+    uint8_t  buf_pos;
 };
 
 static int download_response_cb(struct http_response *rsp,
@@ -66,27 +69,48 @@ static int download_response_cb(struct http_response *rsp,
         return -EINVAL;
     }
 
-    /* Write body chunk to flash */
-    if (rsp->body_frag_len > 0 && rsp->body_frag_start != NULL) {
-        int rc = flash_area_write(ctx->fa, ctx->offset,
-                                  rsp->body_frag_start,
-                                  (uint32_t)rsp->body_frag_len);
-        if (rc != 0) {
-            LOG_ERR("update_worker: flash_write at 0x%x rc=%d",
-                    (unsigned)ctx->offset, rc);
-            return rc;
+    if (rsp->body_frag_len == 0 || rsp->body_frag_start == NULL) {
+        return 0;
+    }
+
+    const uint8_t *src = rsp->body_frag_start;
+    uint32_t remaining = (uint32_t)rsp->body_frag_len;
+
+    while (remaining > 0 && ctx->offset < ctx->max_offset) {
+        uint32_t space_until_max = ctx->max_offset - ctx->offset;
+        uint8_t space = FLASH_ALIGN - ctx->buf_pos;
+        uint32_t copy = (remaining < space) ? remaining : space;
+        if (copy > space_until_max) {
+            copy = space_until_max;
         }
 
-        ctx->offset += (uint32_t)rsp->body_frag_len;
+        memcpy(ctx->buf + ctx->buf_pos, src, copy);
+        ctx->buf_pos += (uint8_t)copy;
+        src += copy;
+        remaining -= copy;
 
-        /* Progress update every 10% */
-        if (rsp->content_length > 0) {
-            uint32_t pct = (ctx->offset * 100) / (uint32_t)rsp->content_length;
-            if (pct > ctx->last_progress && pct <= 100) {
-                ctx->last_progress = pct;
-                dm_update_set_state(DM_UPDATE_STATE_DOWNLOADING, 0, (uint8_t)pct);
-                LOG_INF("update_worker: download %u%%", (unsigned)pct);
+        if (ctx->buf_pos == FLASH_ALIGN) {
+            int rc = flash_area_write(ctx->fa, ctx->offset,
+                                      ctx->buf, FLASH_ALIGN);
+            if (rc != 0) {
+                LOG_ERR("update_worker: flash_write at 0x%x rc=%d",
+                        (unsigned)ctx->offset, rc);
+                return rc;
             }
+            ctx->offset += FLASH_ALIGN;
+            ctx->buf_pos = 0;
+        }
+    }
+
+    /* Progress update every 10% */
+    if (rsp->content_length > 0 && ctx->offset > ctx->last_progress) {
+        uint32_t downloaded = ctx->offset - IMAGE_OFFSET;
+        uint32_t total = (uint32_t)rsp->content_length;
+        uint32_t pct = (downloaded * 100) / total;
+        if (pct > ctx->last_progress && pct <= 100) {
+            ctx->last_progress = pct;
+            dm_update_set_state(DM_UPDATE_STATE_DOWNLOADING, 0, (uint8_t)pct);
+            LOG_INF("update_worker: download %u%%", (unsigned)pct);
         }
     }
 
@@ -140,7 +164,9 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
             continue;
         }
 
-        rc = flash_area_erase(fa, 0, fa->fa_size);
+        /* Erase only the image area (skip scratch at IMAGE_OFFSET) */
+        uint32_t image_size = fa->fa_size - SECTOR_SZ;
+        rc = flash_area_erase(fa, IMAGE_OFFSET, image_size);
         if (rc != 0) {
             LOG_ERR("update_worker: flash_area_erase rc=%d", rc);
             flash_area_close(fa);
@@ -189,8 +215,10 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
          * ----------------------------- */
         struct download_ctx dl_ctx = {
             .fa = fa,
-            .offset = 0,
+            .offset = IMAGE_OFFSET,
+            .max_offset = fa->fa_size - SECTOR_SZ,
             .last_progress = 0,
+            .buf_pos = 0,
         };
 
         struct http_request http_req;
@@ -204,17 +232,26 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
         http_req.recv_buf_len = sizeof(recv_buf);
         http_req.response = download_response_cb;
 
-        int sock = -1;
         rc = http_client_req(-1, &http_req, 30000, &dl_ctx);
         if (rc < 0 && rc != -ECONNRESET) {
-            /* ECONNRESET is expected when server closes after sending all data */
             LOG_ERR("update_worker: http_client_req rc=%d", rc);
             flash_area_close(fa);
             dm_update_set_state(DM_UPDATE_STATE_FAILED, rc, 0);
             continue;
         }
 
-        uint32_t total_bytes = dl_ctx.offset;
+        /* Flush any remaining bytes in alignment buffer */
+        if (dl_ctx.buf_pos > 0 && dl_ctx.offset < dl_ctx.max_offset) {
+            memset(dl_ctx.buf + dl_ctx.buf_pos, 0xFF,
+                   FLASH_ALIGN - dl_ctx.buf_pos);
+            rc = flash_area_write(fa, dl_ctx.offset,
+                                  dl_ctx.buf, FLASH_ALIGN);
+            if (rc == 0) {
+                dl_ctx.offset += FLASH_ALIGN;
+            }
+        }
+
+        uint32_t total_bytes = dl_ctx.offset - IMAGE_OFFSET;
         flash_area_close(fa);
 
         if (total_bytes == 0) {
@@ -226,7 +263,7 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
         LOG_INF("update_worker: downloaded %u bytes", (unsigned)total_bytes);
 
         /* -----------------------------
-         * Verify MCUboot header
+         * Verify MCUboot header at IMAGE_OFFSET within slot1
          * ----------------------------- */
         dm_update_set_state(DM_UPDATE_STATE_VERIFYING, 0, 100);
 
@@ -237,7 +274,7 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
         }
 
         struct mcuboot_image_header hdr;
-        rc = flash_area_read(fa, 0, &hdr, sizeof(hdr));
+        rc = flash_area_read(fa, IMAGE_OFFSET, &hdr, sizeof(hdr));
         flash_area_close(fa);
 
         if (rc != 0) {
@@ -276,7 +313,6 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
 
         sys_reboot(SYS_REBOOT_COLD);
 
-        /* Should not reach here */
         dm_update_set_state(DM_UPDATE_STATE_FAILED, -ETIMEDOUT, 0);
     }
 }

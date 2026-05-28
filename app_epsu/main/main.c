@@ -27,6 +27,7 @@
 
 #include <zephyr/dfu/mcuboot.h>
 
+#include "dm_api.h"
 #include "http_api.h"
 
 
@@ -59,6 +60,9 @@ int main(void)
 
     // Enable CRC module
     crcInit();
+
+    /* Initialize DataModel (mutex + message queues + update worker) */
+    dm_init();
 
     /* Initialize network interfaces (IP, DHCP/static config, etc.) */
     (void)net_config_init_app(NULL, "Initializing network");

@@ -57,8 +57,19 @@
     status = "okay";
 };
 
-/* MCUboot flash partitions (1MB M7 flash @ 0x08000000) */
+/*
+ * MCUboot flash partitions (2MB M7 flash @ 0x08000000, SWAP_USING_OFFSET).
+ *
+ * Remove ranges from flash0 to prevent DT_FIXED_PARTITION_ADDR from
+ * double-adding the flash base address (STM32H745 DTS ranges bug).
+ *
+ * SWAP_USING_OFFSET: first 128KB sector of slot1 is swap scratch;
+ * actual image data starts at slot1 offset 0x20000.
+ */
 &flash0 {
+    /delete-property/ ranges;
+    reg = <0x08000000 DT_SIZE_K(2048)>;
+
     partitions {
         compatible = "fixed-partitions";
         #address-cells = <1>;
@@ -67,23 +78,23 @@
 
         boot_partition: partition@0 {
             label = "mcuboot";
-            reg = <0x00000000 DT_SIZE_K(64)>;
+            reg = <0x00000000 DT_SIZE_K(128)>;
             read-only;
         };
 
-        slot0_partition: partition@10000 {
+        slot0_partition: partition@20000 {
             label = "image-0";
-            reg = <0x00010000 DT_SIZE_K(448)>;
+            reg = <0x00020000 DT_SIZE_K(512)>;
         };
 
-        slot1_partition: partition@80000 {
+        slot1_partition: partition@A0000 {
             label = "image-1";
-            reg = <0x00080000 DT_SIZE_K(448)>;
+            reg = <0x000A0000 DT_SIZE_K(512)>;
         };
 
-        storage_partition: partition@f0000 {
+        storage_partition: partition@120000 {
             label = "storage";
-            reg = <0x000f0000 DT_SIZE_K(64)>;
+            reg = <0x00120000 DT_SIZE_K(128)>;
         };
     };
 };
