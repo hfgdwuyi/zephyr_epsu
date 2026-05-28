@@ -1,0 +1,92 @@
+name: HIL Test (Hardware-in-the-Loop)
+
+on:
+  push:
+    branches: [main, feature/*]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: hil-test
+  cancel-in-progress: false
+
+jobs:
+  build-flash-test:
+    name: Build → Flash → Test
+    runs-on: [self-hosted, nucleo-h745zi]
+    timeout-minutes: 30
+
+    env:
+      ZEPHYR_BASE: /Users/mac/project/02_zephyr/zephyrproject/zephyr
+      ZEPHYR_SDK_INSTALL_DIR: /Users/mac/project/02_zephyr/zephyr-sdk-1.0.1
+      DEVICE_IP: 192.0.2.1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build firmware
+        run: |
+          export ZEPHYR_BASE="${{ env.ZEPHYR_BASE }}"
+          export ZEPHYR_SDK_INSTALL_DIR="${{ env.ZEPHYR_SDK_INSTALL_DIR }}"
+          source "$ZEPHYR_BASE/zephyr-env.sh"
+          west build \
+            -d "${{ runner.temp }}/build" \
+            "${{ github.workspace }}/application" \
+            -b nucleo_h745zi_q/stm32h745xx/m7 \
+            --sysbuild
+        timeout-minutes: 15
+
+      - name: Flash MCUboot
+        run: |
+          export ZEPHYR_BASE="${{ env.ZEPHYR_BASE }}"
+          source "$ZEPHYR_BASE/zephyr-env.sh"
+          west flash -d "${{ runner.temp }}/build/mcuboot" -r openocd
+        timeout-minutes: 3
+
+      - name: Flash application
+        run: |
+          export ZEPHYR_BASE="${{ env.ZEPHYR_BASE }}"
+          source "$ZEPHYR_BASE/zephyr-env.sh"
+          west flash -d "${{ runner.temp }}/build/application" -r openocd
+        timeout-minutes: 3
+
+      - name: Wait for device
+        run: |
+          echo "Waiting for device at $DEVICE_IP..."
+          for i in $(seq 1 30); do
+            if curl -s --connect-timeout 2 "http://$DEVICE_IP/api/v1/status/heartbeat" 2>/dev/null | grep -q '{}'; then
+              echo "Device ready after ${i}s"
+              exit 0
+            fi
+            printf "."
+            sleep 1
+          done
+          echo ""
+          echo "ERROR: Device did not come online within 30s"
+          exit 1
+
+      - name: Run REST API tests
+        run: |
+          chmod +x "${{ github.workspace }}/scripts/"*.py "${{ github.workspace }}/scripts/"*.sh
+          cd "${{ github.workspace }}/scripts"
+          ./run_all.sh "$DEVICE_IP"
+
+      - name: Run OTA end-to-end test
+        run: |
+          V1_BIN="${{ runner.temp }}/build/application/zephyr/zephyr.signed.bin"
+          echo "OTA image: $V1_BIN ($(stat -f%z "$V1_BIN" 2>/dev/null || wc -c < "$V1_BIN") bytes)"
+          python3 "${{ github.workspace }}/scripts/ota_e2e_test.py" \
+            --image "$V1_BIN" \
+            --host "$DEVICE_IP" \
+            --timeout 120
+        timeout-minutes: 5
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo " HIL Test Complete"
+          echo " Build artifacts: ${{ runner.temp }}/build"
+          echo "============================================"
