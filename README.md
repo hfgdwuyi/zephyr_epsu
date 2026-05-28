@@ -9,17 +9,41 @@ Zephyr RTOS application for the CiosZhong PSU (Power Supply Unit) controller.
 - **RAM**: 512KB SRAM3 (M7 main RAM)
 - **Debugger**: STLINK V3 (OpenOCD)
 
-## Flash Partition Layout (1MB)
+## Project Structure
 
 ```
-&flash0 (1MB @ 0x08000000):
-  boot_partition:    128KB  (0x000000 - 0x020000)   MCUboot
-  slot0_partition:   384KB  (0x020000 - 0x080000)   Primary image slot
-  slot1_partition:   384KB  (0x080000 - 0x0E0000)   Update image slot
-  storage_partition: 128KB  (0x0E0000 - 0x100000)   MCUboot scratch
+ciosZhong_ePSU/
+├── boot/                    # MCUboot 共享配置
+│   ├── keys/                # 签名密钥（app_epsu + app_test 共用）
+│   └── ...
+├── app_epsu/                # 主应用工程 (原 src/application/)
+│   ├── prj.conf
+│   ├── app.overlay
+│   └── sysbuild/
+├── app_test/                # OTA 测试工程 (原 test_minimal/)
+│   ├── prj.conf
+│   ├── app.overlay
+│   └── sysbuild/
+├── lib/                     # 共享库 (bsp, common, http 等)
+├── build_minimal/           # app_test 构建产物
+└── scripts/
 ```
 
-All partitions aligned to 128KB flash sectors.
+- **boot/** — MCUboot 分区表和签名密钥，所有 app 共用
+- **app_epsu/** — 主 PSU 控制器固件
+- **app_test/** — OTA 双槽升级验证固件(Version 0 ↔ Version 1)
+- **lib/** — 板级支持、通用模块、HTTP 服务等共享代码
+
+## Flash Partition Layout
+
+```
+&flash0 (2MB @ 0x08000000, dual-bank):
+  boot_partition:   128KB  (0x000000 - 0x020000)    MCUboot
+  slot0_partition:  512KB  (0x020000 - 0x0A0000)    Primary image slot
+  slot1_partition:  512KB  (0x0A0000 - 0x120000)    Secondary image slot
+```
+
+All partitions aligned to 128KB flash sectors. SWAP_USING_OFFSET mode.
 
 ## Build
 
@@ -33,25 +57,30 @@ source $ZEPHYR_BASE/zephyr-env.sh
 
 Zephyr SDK 1.0.1 or later required (arm-zephyr-eabi-gcc 14.3.0).
 
-### Build MCUboot + test_minimal app (sysbuild)
+### Build app_test (sysbuild)
 
 ```bash
 west build \
-  -d ~/project/02_zephyr/ciosZhong_ePSU/build_test_minimal \
-  ~/project/02_zephyr/ciosZhong_ePSU/test_minimal \
+  -d ~/project/02_zephyr/ciosZhong_ePSU/build_minimal \
+  ~/project/02_zephyr/ciosZhong_ePSU/app_test \
   -b nucleo_h745zi_q/stm32h745xx/m7 --sysbuild
 ```
 
-This builds both MCUboot and the test_minimal app in a single sysbuild.
+### Build app_epsu (主应用)
+
+```bash
+west build \
+  -d ~/project/02_zephyr/ciosZhong_ePSU/build_epsu \
+  ~/project/02_zephyr/ciosZhong_ePSU/app_epsu \
+  -b nucleo_h745zi_q/stm32h745xx/m7 --sysbuild
+```
 
 ### Sign the app image
 
 ```bash
-west sign -d ~/project/02_zephyr/ciosZhong_ePSU/build_test_minimal -t imgtool -- \
-  --key ~/project/02_zephyr/ciosZhong_ePSU/test_minimal/boot_keys/imgtool_key.pem
+west sign -d ~/project/02_zephyr/ciosZhong_ePSU/build_minimal -t imgtool -- \
+  --key ~/project/02_zephyr/ciosZhong_ePSU/boot/keys/imgtool_key.pem
 ```
-
-MCUboot requires all slot images to be signed. The build system signs automatically; this step re-signs if needed.
 
 ## Flash
 
@@ -59,28 +88,24 @@ MCUboot requires all slot images to be signed. The build system signs automatica
 
 ```bash
 # Flash MCUboot
-west flash -d ~/project/02_zephyr/ciosZhong_ePSU/build_test_minimal/mcuboot -r openocd
+west flash -d ~/project/02_zephyr/ciosZhong_ePSU/build_minimal/mcuboot -r openocd
 
 # Flash signed app
-west flash -d ~/project/02_zephyr/ciosZhong_ePSU/build_test_minimal/test_minimal -r openocd
+west flash -d ~/project/02_zephyr/ciosZhong_ePSU/build_minimal/app_test -r openocd
 ```
 
 `west flash -r openocd` auto-detects the scripts path.
 
 ### STLINK-V3 (Windows / WSL)
 
-Windows 安装 [OpenOCD](https://github.com/openocd-org/openocd/releases) 后用完整路径：
-
 ```powershell
 openocd -s "C:\Program Files\OpenOCD\share\openocd\scripts" ^
   -f board/st_nucleo_h745zi.cfg ^
   -c "init" -c "targets" -c "halt" ^
-  -c "program build_test_minimal\mcuboot\zephyr\zephyr.hex verify" ^
-  -c "program build_test_minimal\test_minimal\zephyr\zephyr.signed.hex verify" ^
+  -c "program build_minimal\mcuboot\zephyr\zephyr.hex verify" ^
+  -c "program build_minimal\app_test\zephyr\zephyr.signed.hex verify" ^
   -c "reset run" -c "shutdown"
 ```
-
-WSL 需用 [usbipd](https://github.com/dorssel/usbipd-win) 将 ST-Link 绑定到 WSL，然后使用 Linux 路径。
 
 ## Serial Console
 
@@ -93,10 +118,10 @@ I: Image index: 0, Swap type: none
 I: Bootloader chainload address offset: 0x20000
 I: Jumping to the first image slot
 *** Booting Zephyr OS build v4.4.0-... ***
-=== MINIMAL: started ===
-=== MINIMAL: skip confirm ===
-Alive: 1
-Alive: 2
+===== TestApp Version 0 (OTA) =====
+Image confirmed, running...
+HTTP server listening on port 80
+V0 Alive: 1
 ...
 ```
 
@@ -114,6 +139,6 @@ double-counting. Without `/delete-property/ ranges;` in `mcuboot.overlay`,
 MCUboot's `flash_device_base()` computes 0x10000000 instead of 0x08000000
 and hangs when trying to jump to the app.
 
-Fix: `test_minimal/sysbuild/mcuboot.overlay` and
-`src/application/sysbuild/mcuboot.overlay` both contain
+Fix: `app_test/sysbuild/mcuboot.overlay` and
+`app_epsu/sysbuild/mcuboot.overlay` both contain
 `/delete-property/ ranges;` on `&flash0`.

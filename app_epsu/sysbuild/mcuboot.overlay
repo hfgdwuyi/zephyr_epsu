@@ -2,7 +2,7 @@
  * Shared flash partition layout for MCUboot (1MB M7 flash @ 0x08000000, aligned to 128KB sectors)
  *
  * Remove ranges from flash0 to prevent DT_FIXED_PARTITION_ADDR from
- * double-adding the flash base address. See test_minimal/sysbuild/mcuboot.overlay for details.
+ * double-adding the flash base address.
  */
 &flash0 {
     /delete-property/ ranges;
