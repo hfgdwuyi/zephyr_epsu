@@ -23,7 +23,8 @@ static int uptime_handler(struct http_client_ctx *client, enum http_transaction_
         return 0;
     }
 
-    int ret = snprintk(uptime_buf, sizeof(uptime_buf), "%" PRId64, k_uptime_get());
+    int ret = snprintk(uptime_buf, sizeof(uptime_buf),
+		    "{\"uptime_ms\":%" PRId64 "}\n", k_uptime_get());
     if (ret < 0) {
         return ret;
     }

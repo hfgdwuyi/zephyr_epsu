@@ -2,7 +2,7 @@
  * http_task_diag_debug.c
  *
  * DEBUG endpoint:
- *  - POST /diag/inject : inject one diagnostic event and optionally set fault bits
+ *  - POST /api/v1/diag/inject : inject one diagnostic event and optionally set fault bits
  *
  * Body example:
  *  {"code":4660,"sev":1,"aux":0,"set_active_mask":1,"set_latched_mask":2}

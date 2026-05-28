@@ -33,4 +33,5 @@ target_sources(app PRIVATE
     ../lib/http/http_task_update.c
     ../lib/http/http_task_control.c
     ../lib/http/http_task_diag.c
+    ../lib/http/http_task_diag_debug.c
 )

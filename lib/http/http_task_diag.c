@@ -2,8 +2,8 @@
  * http_task_diag.c
  *
  * REST endpoints:
- *  - GET  /diag        : read diagnostics snapshot (faults + recent events)
- *  - POST /diag/clear  : request clearing faults via DataModel diag request queue
+ *  - GET  /api/v1/diag/status : read diagnostics snapshot (faults + recent events)
+ *  - POST /api/v1/diag/clear  : request clearing faults via DataModel diag request queue
  *
  * Design intent:
  *  - HTTP layer only reads from DataModel and submits requests.
@@ -109,7 +109,7 @@ static int diag_get_handler(struct http_client_ctx *client, enum http_transactio
     return 0;
 }
 
-/* POST /diag/clear body: {"mask":123,"clear_latched":true} */
+/* POST /api/v1/diag/clear body: {"mask":123,"clear_latched":true} */
 struct diag_clear_cmd {
     int mask;
     bool clear_latched;

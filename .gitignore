@@ -36,4 +36,4 @@ compile_commands.json
 Thumbs.db
 
 # Cache
-.cache/
+.cache/__pycache__/

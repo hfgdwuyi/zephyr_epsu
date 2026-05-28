@@ -17,7 +17,6 @@
 LOG_MODULE_REGISTER(net_http_server_sample, LOG_LEVEL_DBG);
 
 /* Resource details are owned by each task module */
-extern struct http_resource_detail_dynamic echo_resource_detail;
 extern struct http_resource_detail_dynamic uptime_resource_detail;
 extern struct http_resource_detail_dynamic heartbeat_resource_detail;
 
@@ -38,11 +37,9 @@ static uint16_t test_http_service_port = 80;
 HTTP_SERVICE_DEFINE(test_http_service, NULL, &test_http_service_port,
             CONFIG_HTTP_SERVER_MAX_CLIENTS, 10, NULL, NULL, NULL);
 
-/* Demo */
-HTTP_RESOURCE_DEFINE(echo_resource, test_http_service, "/dynamic", &echo_resource_detail);
-HTTP_RESOURCE_DEFINE(uptime_resource, test_http_service, "/uptime", &uptime_resource_detail);
-
 /* Status */
+HTTP_RESOURCE_DEFINE(uptime_resource, test_http_service,
+             "/api/v1/status/uptime", &uptime_resource_detail);
 HTTP_RESOURCE_DEFINE(heartbeat_resource, test_http_service,
              "/api/v1/status/heartbeat", &heartbeat_resource_detail);
 
@@ -51,10 +48,10 @@ HTTP_RESOURCE_DEFINE(control_resource, test_http_service,
              "/api/v1/control", &control_resource_detail);
 
 /* Diagnostics */
-HTTP_RESOURCE_DEFINE(diag_resource, test_http_service, "/diag", &diag_resource_detail);
-HTTP_RESOURCE_DEFINE(diag_clear_resource, test_http_service, "/diag/clear", &diag_clear_resource_detail);
+HTTP_RESOURCE_DEFINE(diag_resource, test_http_service, "/api/v1/diag/status", &diag_resource_detail);
+HTTP_RESOURCE_DEFINE(diag_clear_resource, test_http_service, "/api/v1/diag/clear", &diag_clear_resource_detail);
 #ifdef CONFIG_HTTP_DIAG_DEBUG
-HTTP_RESOURCE_DEFINE(diag_inject_resource, test_http_service, "/diag/inject",
+HTTP_RESOURCE_DEFINE(diag_inject_resource, test_http_service, "/api/v1/diag/inject",
              &diag_inject_resource_detail);
 #endif
 

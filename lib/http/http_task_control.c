@@ -228,7 +228,6 @@ static int control_post_handler(struct http_client_ctx *client, enum http_transa
         uint8_t idx = req.p.ctrl_action.index;
         bool on = req.p.ctrl_action.on;
 
-        /* DEBUG: execute immediately (same behavior as /led endpoint) */
         if (on) {
             ledSwitchOn(idx);
         } else {
