@@ -107,6 +107,80 @@ openocd -s "C:\Program Files\OpenOCD\share\openocd\scripts" ^
   -c "reset run" -c "shutdown"
 ```
 
+## OTA Test Procedure
+
+### Step 1: Flash initial version
+
+```bash
+# Combined flash (single OpenOCD session, no manual reset needed)
+openocd -s $OPENOCD_SCRIPTS \
+  -f board/st_nucleo_h745zi.cfg \
+  -c "init" -c "targets" -c "halt" \
+  -c "program build_minimal/mcuboot/zephyr/zephyr.hex verify" \
+  -c "program build_minimal/app_test/zephyr/zephyr.signed.hex verify" \
+  -c "reset run" -c "shutdown"
+```
+
+### Step 2: Start HTTP file server (host machine)
+
+```bash
+# Serve firmware update file
+cd build_minimal/app_test/zephyr
+python3 -m http.server 8080
+```
+
+### Step 3: Trigger OTA update
+
+```bash
+# Request board to download and apply new firmware
+curl -X POST http://<board-ip>/update/start \
+  -H "Content-Type: application/json" \
+  -d '{"uri":"http://<host-ip>:8080/zephyr.signed.bin"}'
+```
+
+### Step 4: Monitor progress
+
+```bash
+# Poll update status until state=5 (REBOOT_PENDING)
+curl http://<board-ip>/update/status
+# Response: {"state":5,"progress":100,"error":0}
+```
+
+### State machine
+
+| State | Value | Description |
+|-------|-------|-------------|
+| IDLE | 0 | No pending update |
+| REQUESTED | 1 | Update URI received, starting download |
+| DOWNLOADING | 2 | Downloading firmware image |
+| VERIFYING | 3 | Checking download integrity |
+| APPLYING | 4 | Writing to flash |
+| REBOOT_PENDING | 5 | Update complete, rebooting... |
+| FAILED | 6 | Update failed |
+
+### Expected serial output
+
+After OTA trigger and reboot:
+
+```
+*** Booting Zephyr OS build v4.4.0-... ***
+I: Starting bootloader
+I: Image index: 0, Swap type: test
+I: Bootloader chainload address offset: 0x20000
+I: Jumping to the first image slot
+*** Booting Zephyr OS build v4.4.0-... ***
+===== TestApp Version 1 (OTA) =====
+Image confirmed, running...
+HTTP server listening on port 80
+V1 Alive: 1
+```
+
+- `Swap type: test` → MCUboot detected new image in slot1, performing test swap
+- `TestApp Version 1` → new version running
+- `boot_write_img_confirmed()` → swap made permanent (V1 now primary)
+
+If V1 crashes before confirmation, MCUboot auto-reverts to V0 on next reboot.
+
 ## Serial Console
 
 115200 baud, 8N1. Expected output:
