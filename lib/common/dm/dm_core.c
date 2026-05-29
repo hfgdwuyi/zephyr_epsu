@@ -64,7 +64,7 @@ static void dm_ctrl_worker(void *p1, void *p2, void *p3)
             continue;
         }
 
-        LOG_INF("ctrl_worker: dequeued id=%d action=%d idx=%u on=%u val=%d",
+        LOG_DBG("ctrl_worker: dequeued id=%d action=%d idx=%u on=%u val=%d",
             (int)req.id,
             (int)req.p.ctrl_action.action,
             (unsigned int)req.p.ctrl_action.index,
@@ -242,7 +242,7 @@ int dm_ctrl_req_submit(const dm_request_t *req)
         return -EINVAL;
     }
 
-    LOG_INF("dm_ctrl_req_submit: put id=%d action=%d idx=%u on=%u val=%d",
+    LOG_DBG("dm_ctrl_req_submit: put id=%d action=%d idx=%u on=%u val=%d",
         (int)req->id,
         (int)req->p.ctrl_action.action,
         (unsigned int)req->p.ctrl_action.index,
@@ -282,7 +282,7 @@ int dm_update_req_submit(const dm_request_t *req)
         return -EINVAL;
     }
     int rc = k_msgq_put(&g_dm_update_req_q, req, K_NO_WAIT);
-    LOG_INF("dm_update_req_submit: id=%d rc=%d", (int)req->id, rc);
+    LOG_DBG("dm_update_req_submit: id=%d rc=%d", (int)req->id, rc);
     return rc;
 }
 
@@ -322,7 +322,7 @@ static void dm_diag_worker(void *p1, void *p2, void *p3)
             continue;
         }
 
-        LOG_INF("diag_worker: dequeued id=%d", (int)req.id);
+        LOG_DBG("diag_worker: dequeued id=%d", (int)req.id);
 
         if (req.id != DM_REQ_DIAG_CLEAR) {
             LOG_WRN("diag_worker: unexpected req.id=%d", (int)req.id);
@@ -333,7 +333,7 @@ static void dm_diag_worker(void *p1, void *p2, void *p3)
         uint32_t mask = (uint32_t)req.p.diag_clear.mask;
         bool clear_latched = req.p.diag_clear.clear_latched ? true : false;
 
-        LOG_INF("diag_worker: executing DIAG_CLEAR mask=0x%08x clear_latched=%u",
+        LOG_DBG("diag_worker: executing DIAG_CLEAR mask=0x%08x clear_latched=%u",
             (unsigned int)mask, (unsigned int)clear_latched);
 
         dm_diag_clear(mask, clear_latched);

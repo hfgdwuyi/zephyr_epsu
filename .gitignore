@@ -5,7 +5,7 @@
 .zephyr/
 modules/
 tools/
-bootloader/
+
 **/.west/
 
 # Build outputs

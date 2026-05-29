@@ -23,7 +23,7 @@ target_include_directories(app PRIVATE
 )
 
 target_sources(app PRIVATE
-    main/main.c
+    src/main.c
     ../lib/common/dm/dm_core.c
     ../lib/common/dm/dm_update_worker.c
     ../lib/common/message_queue.c
