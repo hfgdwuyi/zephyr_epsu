@@ -26,6 +26,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate version
+        run: |
+          VERSION=$(cat "${{ github.workspace }}/VERSION")
+          echo "Firmware version: ${VERSION}"
+          if ! echo "${VERSION}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "ERROR: VERSION file must contain MAJOR.MINOR.PATCH (e.g. 0.1.0)"
+            exit 1
+          fi
+          echo "Version format: OK"
+
       - name: Build firmware
         run: |
           export ZEPHYR_BASE="${{ env.ZEPHYR_BASE }}"
@@ -56,6 +66,10 @@ jobs:
       - name: Record pre-OTA version
         run: |
           echo "=== Pre-OTA Device State ==="
+          echo -n "Device version: "
+          curl -s "http://${{ env.DEVICE_IP }}/api/v1/status/version"
+          echo ""
+          echo -n "Device uptime:  "
           curl -s "http://${{ env.DEVICE_IP }}/api/v1/status/uptime" | python3 -m json.tool
           echo ""
           V1_BIN="${{ runner.temp }}/build/application/zephyr/zephyr.signed.bin"
@@ -89,13 +103,16 @@ jobs:
 
       - name: Verify new firmware
         run: |
+          EXPECTED_VERSION=$(cat "${{ github.workspace }}/VERSION")
+          DEVICE_VERSION=$(curl -s "http://${{ env.DEVICE_IP }}/api/v1/status/version" | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])" 2>/dev/null)
           echo "=== Post-OTA Device State ==="
-          UPTIME=$(curl -s "http://${{ env.DEVICE_IP }}/api/v1/status/uptime" | python3 -c "import sys,json; print(json.load(sys.stdin)['uptime_ms'])" 2>/dev/null)
-          echo "Uptime: ${UPTIME} ms (${UPTIME}ms < 60000ms → fresh boot)"
-          if [ -n "$UPTIME" ] && [ "$UPTIME" -lt 60000 ]; then
-            echo "PASS: Firmware is running a fresh boot (version confirmed via OTA swap)"
+          echo "Device version:  ${DEVICE_VERSION}"
+          echo "Expected version: ${EXPECTED_VERSION}"
+          echo ""
+          if [ "${DEVICE_VERSION}" = "${EXPECTED_VERSION}" ]; then
+            echo "PASS: Version match — device is running ${DEVICE_VERSION}"
           else
-            echo "FAIL: Uptime is $UPTIME ms, expected < 60000 ms after OTA reboot"
+            echo "FAIL: Version mismatch — device=${DEVICE_VERSION}, expected=${EXPECTED_VERSION}"
             exit 1
           fi
 

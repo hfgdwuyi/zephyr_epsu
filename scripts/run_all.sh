@@ -37,6 +37,7 @@ echo " $(date)"
 echo "============================================"
 
 run_test "Heartbeat"       "test_heartbeat.py"
+run_test "Version"         "test_version.py"
 run_test "Uptime"          "test_uptime.py"
 run_test "Control"         "test_control.py"
 run_test "Diag Status"     "test_diag_status.py"

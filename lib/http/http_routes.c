@@ -19,6 +19,7 @@ LOG_MODULE_REGISTER(net_http_server_sample, LOG_LEVEL_DBG);
 /* Resource details are owned by each task module */
 extern struct http_resource_detail_dynamic uptime_resource_detail;
 extern struct http_resource_detail_dynamic heartbeat_resource_detail;
+extern struct http_resource_detail_dynamic version_resource_detail;
 
 extern struct http_resource_detail_dynamic control_resource_detail;
 
@@ -42,6 +43,8 @@ HTTP_RESOURCE_DEFINE(uptime_resource, test_http_service,
              "/api/v1/status/uptime", &uptime_resource_detail);
 HTTP_RESOURCE_DEFINE(heartbeat_resource, test_http_service,
              "/api/v1/status/heartbeat", &heartbeat_resource_detail);
+HTTP_RESOURCE_DEFINE(version_resource, test_http_service,
+             "/api/v1/status/version", &version_resource_detail);
 
 /* Unified control */
 HTTP_RESOURCE_DEFINE(control_resource, test_http_service,
