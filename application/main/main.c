@@ -23,7 +23,7 @@ static void led_timer_handler(struct k_timer *timer)
 /* ---------- Main ---------- */
 int main(void)
 {
-	printk("\n===== EPSU v%s =====\n", BUILD_VERSION);
+	printk("\n===== Application v%s =====\n", BUILD_VERSION);
 	boot_write_img_confirmed();
 	printk("Image confirmed, running...\n");
 
@@ -49,7 +49,7 @@ int main(void)
 	uint32_t count = 0;
 	while (1) {
 		count++;
-		printk("EPSU v%s Alive: %u\n", BUILD_VERSION, count);
+		printk("Application v%s Alive: %u\n", BUILD_VERSION, count);
 		k_sleep(K_SECONDS(3));
 	}
 	return 0;

@@ -167,7 +167,7 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
             continue;
         }
 
-        /* Erase entire slot1 (including scratch area to clear old headers) */
+        /* Erase entire slot1 for clean state */
         rc = flash_area_erase(fa, 0, fa->fa_size);
         if (rc != 0) {
             printk("update_worker: flash_area_erase rc=%d\n", rc);
@@ -342,7 +342,7 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
          * ----------------------------- */
         dm_update_set_state(DM_UPDATE_STATE_APPLYING, 0, 100);
 
-        rc = boot_request_upgrade(false);
+        rc = boot_request_upgrade(true);
         if (rc != 0) {
             LOG_ERR("update_worker: boot_request_upgrade rc=%d", rc);
             dm_update_set_state(DM_UPDATE_STATE_FAILED, rc, 0);
