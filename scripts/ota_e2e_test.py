@@ -103,11 +103,16 @@ def wait_for_device(host, port, timeout=30):
 
 
 def wait_for_offline(host, port, timeout=60):
-    """Wait for device to go offline (rebooting)."""
+    """Wait for device to go offline (rebooting). Requires 3 consecutive failures."""
+    fails = 0
     for i in range(timeout):
         status, _ = http_get_json(host, port, "/api/v1/status/heartbeat", timeout=1)
         if status is None:
-            return True, i + 1
+            fails += 1
+            if fails >= 3:
+                return True, i + 1
+        else:
+            fails = 0
         time.sleep(1)
     return False, timeout
 
@@ -168,6 +173,33 @@ def run_ota(host, port, fw_url, timeout=120, label="OTA"):
     return False
 
 
+def wait_for_ota(host, port, timeout=120, label="OTA"):
+    """Poll /update/status until OTA completes (REBOOT_PENDING) or fails."""
+    start = time.time()
+    last_state = None
+    while time.time() - start < timeout:
+        status, resp = http_get_json(host, port, "/update/status", timeout=3)
+        if status is None:
+            time.sleep(2)
+            continue
+        state = resp.get("state", -1) if isinstance(resp, dict) else -1
+        progress = resp.get("progress", 0) if isinstance(resp, dict) else 0
+        err = resp.get("last_error", 0) if isinstance(resp, dict) else 0
+        state_name = STATE_NAMES.get(state, f"UNKNOWN({state})")
+        if state != last_state:
+            print(f"  [{label}] state={state_name} progress={progress}% error={err}")
+            last_state = state
+        if state == 5:  # REBOOT_PENDING
+            print(f"  [{label}] OTA complete, device rebooting...")
+            return True
+        if state == 6:  # FAILED
+            print(f"  [{label}] OTA FAILED: error={err}")
+            return False
+        time.sleep(0.5)
+    print(f"  [{label}] TIMEOUT")
+    return False
+
+
 def run_swap_roundtrip(host, port, main_url, bootloader_url, timeout=120):
     """Run round-trip swap test: Main→Bootloader→Main."""
     print("\n" + "=" * 50)
@@ -181,11 +213,13 @@ def run_swap_roundtrip(host, port, main_url, bootloader_url, timeout=120):
     if status != 200 or not resp.get("ok"):
         print(f"  ERROR: status={status}, resp={resp}")
         return False
-    print(f"  Swap triggered, waiting for OTA + reboot...")
 
-    ok, t = wait_for_offline(host, port, timeout=90)
+    if not wait_for_ota(host, port, timeout=timeout, label="Swap A"):
+        return False
+
+    ok, t = wait_for_offline(host, port, timeout=30)
     if not ok:
-        print(f"  ERROR: device did not go offline within 90s")
+        print(f"  ERROR: device did not go offline within 30s after REBOOT_PENDING")
         return False
     print(f"  Device went offline after {t}s")
 
@@ -208,11 +242,13 @@ def run_swap_roundtrip(host, port, main_url, bootloader_url, timeout=120):
     if status != 200 or not resp.get("ok"):
         print(f"  ERROR: status={status}, resp={resp}")
         return False
-    print(f"  Swap triggered, waiting for OTA + reboot...")
 
-    ok, t = wait_for_offline(host, port, timeout=90)
+    if not wait_for_ota(host, port, timeout=timeout, label="Swap B"):
+        return False
+
+    ok, t = wait_for_offline(host, port, timeout=30)
     if not ok:
-        print(f"  ERROR: device did not go offline within 90s")
+        print(f"  ERROR: device did not go offline within 30s after REBOOT_PENDING")
         return False
     print(f"  Device went offline after {t}s")
 
