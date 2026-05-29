@@ -15,7 +15,7 @@ jobs:
   build-ota-verify:
     name: Build → OTA → Verify
     runs-on: [self-hosted, nucleo-h745zi]
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     env:
       ZEPHYR_BASE: /Users/mac/project/02_zephyr/zephyrproject/zephyr
@@ -36,17 +36,39 @@ jobs:
           fi
           echo "Version format: OK"
 
-      - name: Build firmware
+      - name: Build Application firmware
         run: |
           export ZEPHYR_BASE="${{ env.ZEPHYR_BASE }}"
           export ZEPHYR_SDK_INSTALL_DIR="${{ env.ZEPHYR_SDK_INSTALL_DIR }}"
           source "$ZEPHYR_BASE/zephyr-env.sh"
           west build \
-            -d "${{ runner.temp }}/build" \
+            -d "${{ runner.temp }}/build_app" \
             "${{ github.workspace }}/application" \
             -b nucleo_h745zi_q/stm32h745xx/m7 \
             --sysbuild
         timeout-minutes: 15
+
+      - name: Build Bootloader firmware
+        run: |
+          export ZEPHYR_BASE="${{ env.ZEPHYR_BASE }}"
+          export ZEPHYR_SDK_INSTALL_DIR="${{ env.ZEPHYR_SDK_INSTALL_DIR }}"
+          source "$ZEPHYR_BASE/zephyr-env.sh"
+          west build \
+            -d "${{ runner.temp }}/build_bl" \
+            "${{ github.workspace }}/bootloader" \
+            -b nucleo_h745zi_q/stm32h745xx/m7 \
+            --sysbuild
+        timeout-minutes: 15
+
+      - name: Stage firmware images
+        run: |
+          mkdir -p "${{ runner.temp }}/fw"
+          cp "${{ runner.temp }}/build_app/application/zephyr/zephyr.signed.bin" \
+             "${{ runner.temp }}/fw/main.signed.bin"
+          cp "${{ runner.temp }}/build_bl/bootloader/zephyr/zephyr.signed.bin" \
+             "${{ runner.temp }}/fw/bootloader.signed.bin"
+          echo "Main App:  $(wc -c < "${{ runner.temp }}/fw/main.signed.bin") bytes"
+          echo "Bootloader: $(wc -c < "${{ runner.temp }}/fw/bootloader.signed.bin") bytes"
 
       - name: Wait for device
         run: |
@@ -72,19 +94,18 @@ jobs:
           echo -n "Device uptime:  "
           curl -s "http://${{ env.DEVICE_IP }}/api/v1/status/uptime" | python3 -m json.tool
           echo ""
-          V1_BIN="${{ runner.temp }}/build/application/zephyr/zephyr.signed.bin"
-          echo "OTA image: $V1_BIN"
-          echo "OTA image size: $(stat -f%z "$V1_BIN" 2>/dev/null || wc -c < "$V1_BIN") bytes"
+          echo "Main App:  ${{ runner.temp }}/fw/main.signed.bin ($(wc -c < "${{ runner.temp }}/fw/main.signed.bin") bytes)"
+          echo "Bootloader: ${{ runner.temp }}/fw/bootloader.signed.bin ($(wc -c < "${{ runner.temp }}/fw/bootloader.signed.bin") bytes)"
 
-      - name: OTA update
+      - name: OTA update + Bootloader swap test
         run: |
-          V1_BIN="${{ runner.temp }}/build/application/zephyr/zephyr.signed.bin"
-          echo "Starting OTA update..."
+          echo "Starting OTA update with bootloader swap round-trip..."
           python3 "${{ github.workspace }}/scripts/ota_e2e_test.py" \
-            --image "$V1_BIN" \
+            --image "${{ runner.temp }}/fw/main.signed.bin" \
+            --swap-image "${{ runner.temp }}/fw/bootloader.signed.bin" \
             --host "${{ env.DEVICE_IP }}" \
             --timeout 120
-        timeout-minutes: 5
+        timeout-minutes: 8
 
       - name: Wait for device after OTA reboot
         run: |
@@ -121,5 +142,6 @@ jobs:
         run: |
           echo "============================================"
           echo " HIL Test Complete"
-          echo " Build artifacts: ${{ runner.temp }}/build"
+          echo " Build artifacts: ${{ runner.temp }}/build_app"
+          echo " Bootloader artifacts: ${{ runner.temp }}/build_bl"
           echo "============================================"
