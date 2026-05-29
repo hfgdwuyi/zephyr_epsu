@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-flash-test:
-    name: Build → Flash → Test
+  build-ota-test:
+    name: Build → OTA Update → Test
     runs-on: [self-hosted, nucleo-h745zi]
     timeout-minutes: 30
 
@@ -38,36 +38,11 @@ jobs:
             --sysbuild
         timeout-minutes: 15
 
-      - name: Flash MCUboot
-        run: |
-          export ZEPHYR_BASE="${{ env.ZEPHYR_BASE }}"
-          source "$ZEPHYR_BASE/zephyr-env.sh"
-          west flash -d "${{ runner.temp }}/build/mcuboot" -r openocd
-        timeout-minutes: 3
-
-      - name: Flash application
-        run: |
-          export ZEPHYR_BASE="${{ env.ZEPHYR_BASE }}"
-          source "$ZEPHYR_BASE/zephyr-env.sh"
-          west flash -d "${{ runner.temp }}/build/application" -r openocd
-        timeout-minutes: 3
-
-      - name: Reset MCU (required after flash)
-        run: |
-          echo "Resetting MCU via OpenOCD..."
-          openocd \
-            -s "${{ env.ZEPHYR_SDK_INSTALL_DIR }}/opt/openocd/share/openocd/scripts" \
-            -s "${{ env.ZEPHYR_BASE }}/boards/st/nucleo_h745zi_q/support" \
-            -f openocd.cfg \
-            -c "init; reset run; exit"
-          echo "MCU reset complete"
-        timeout-minutes: 2
-
       - name: Wait for device
         run: |
-          echo "Waiting for device at $DEVICE_IP..."
+          echo "Waiting for device at ${{ env.DEVICE_IP }}..."
           for i in $(seq 1 30); do
-            if curl -s --connect-timeout 2 "http://$DEVICE_IP/api/v1/status/heartbeat" 2>/dev/null | grep -q '{}'; then
+            if curl -s --connect-timeout 2 "http://${{ env.DEVICE_IP }}/api/v1/status/heartbeat" 2>/dev/null | grep -q '{}'; then
               echo "Device ready after ${i}s"
               exit 0
             fi
@@ -82,17 +57,37 @@ jobs:
         run: |
           chmod +x "${{ github.workspace }}/scripts/"*.py "${{ github.workspace }}/scripts/"*.sh
           cd "${{ github.workspace }}/scripts"
-          ./run_all.sh "$DEVICE_IP"
+          ./run_all.sh "${{ env.DEVICE_IP }}"
 
-      - name: Run OTA end-to-end test
+      - name: OTA update to new firmware
         run: |
           V1_BIN="${{ runner.temp }}/build/application/zephyr/zephyr.signed.bin"
           echo "OTA image: $V1_BIN ($(stat -f%z "$V1_BIN" 2>/dev/null || wc -c < "$V1_BIN") bytes)"
           python3 "${{ github.workspace }}/scripts/ota_e2e_test.py" \
             --image "$V1_BIN" \
-            --host "$DEVICE_IP" \
+            --host "${{ env.DEVICE_IP }}" \
             --timeout 120
         timeout-minutes: 5
+
+      - name: Wait for device after OTA reboot
+        run: |
+          echo "Waiting for device to reboot after OTA..."
+          for i in $(seq 1 30); do
+            if curl -s --connect-timeout 2 "http://${{ env.DEVICE_IP }}/api/v1/status/heartbeat" 2>/dev/null | grep -q '{}'; then
+              echo "Device back online after ${i}s"
+              exit 0
+            fi
+            printf "."
+            sleep 1
+          done
+          echo ""
+          echo "ERROR: Device did not come back after OTA reboot"
+          exit 1
+
+      - name: Verify new firmware
+        run: |
+          echo "Running post-OTA smoke test..."
+          curl -s "http://${{ env.DEVICE_IP }}/api/v1/status/uptime" | python3 -m json.tool
 
       - name: Summary
         if: always()
