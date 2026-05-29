@@ -32,6 +32,9 @@ extern struct http_resource_detail_dynamic diag_inject_resource_detail;
 extern struct http_resource_detail_dynamic update_start_resource_detail;
 extern struct http_resource_detail_dynamic update_status_resource_detail;
 
+extern struct http_resource_detail_dynamic bootloader_resource_detail;
+extern struct http_resource_detail_dynamic bootloader_exit_resource_detail;
+
 /* Service must match the name used in sections-rom.ld */
 static uint16_t test_http_service_port = 80;
 
@@ -61,3 +64,7 @@ HTTP_RESOURCE_DEFINE(diag_inject_resource, test_http_service, "/api/v1/diag/inje
 /* Update */
 HTTP_RESOURCE_DEFINE(update_start_resource, test_http_service, "/update/start", &update_start_resource_detail);
 HTTP_RESOURCE_DEFINE(update_status_resource, test_http_service, "/update/status", &update_status_resource_detail);
+
+/* Bootloader swap */
+HTTP_RESOURCE_DEFINE(bootloader_resource, test_http_service, "/api/v1/bootloader", &bootloader_resource_detail);
+HTTP_RESOURCE_DEFINE(bootloader_exit_resource, test_http_service, "/api/v1/bootloader/exit", &bootloader_exit_resource_detail);
