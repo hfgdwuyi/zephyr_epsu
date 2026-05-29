@@ -335,8 +335,11 @@ def main():
     if not run_ota(args.host, args.port, main_url, args.timeout, label="Same-image OTA"):
         passed = False
     else:
-        # Wait for device to come back after OTA reboot
-        print(f"\n[Step 4] Waiting for device to come back after OTA reboot...")
+        # Wait for device to actually reboot (offline first, then online)
+        print(f"\n[Step 4] Waiting for OTA reboot...")
+        ok, t = wait_for_offline(args.host, args.port, timeout=30)
+        if ok:
+            print(f"  Device went offline after {t}s")
         ok, t = wait_for_device(args.host, args.port, timeout=30)
         if not ok:
             print(f"  ERROR: device did not come back within 30s")
