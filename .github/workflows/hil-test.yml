@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-ota-test:
-    name: Build → OTA Update → Test
+  build-ota-verify:
+    name: Build → OTA → Verify
     runs-on: [self-hosted, nucleo-h745zi]
     timeout-minutes: 30
 
@@ -53,16 +53,19 @@ jobs:
           echo "ERROR: Device did not come online within 30s"
           exit 1
 
-      - name: Run REST API tests
+      - name: Record pre-OTA version
         run: |
-          chmod +x "${{ github.workspace }}/scripts/"*.py "${{ github.workspace }}/scripts/"*.sh
-          cd "${{ github.workspace }}/scripts"
-          ./run_all.sh "${{ env.DEVICE_IP }}"
+          echo "=== Pre-OTA Device State ==="
+          curl -s "http://${{ env.DEVICE_IP }}/api/v1/status/uptime" | python3 -m json.tool
+          echo ""
+          V1_BIN="${{ runner.temp }}/build/application/zephyr/zephyr.signed.bin"
+          echo "OTA image: $V1_BIN"
+          echo "OTA image size: $(stat -f%z "$V1_BIN" 2>/dev/null || wc -c < "$V1_BIN") bytes"
 
-      - name: OTA update to new firmware
+      - name: OTA update
         run: |
           V1_BIN="${{ runner.temp }}/build/application/zephyr/zephyr.signed.bin"
-          echo "OTA image: $V1_BIN ($(stat -f%z "$V1_BIN" 2>/dev/null || wc -c < "$V1_BIN") bytes)"
+          echo "Starting OTA update..."
           python3 "${{ github.workspace }}/scripts/ota_e2e_test.py" \
             --image "$V1_BIN" \
             --host "${{ env.DEVICE_IP }}" \
@@ -86,8 +89,15 @@ jobs:
 
       - name: Verify new firmware
         run: |
-          echo "Running post-OTA smoke test..."
-          curl -s "http://${{ env.DEVICE_IP }}/api/v1/status/uptime" | python3 -m json.tool
+          echo "=== Post-OTA Device State ==="
+          UPTIME=$(curl -s "http://${{ env.DEVICE_IP }}/api/v1/status/uptime" | python3 -c "import sys,json; print(json.load(sys.stdin)['uptime_ms'])" 2>/dev/null)
+          echo "Uptime: ${UPTIME} ms (${UPTIME}ms < 60000ms → fresh boot)"
+          if [ -n "$UPTIME" ] && [ "$UPTIME" -lt 60000 ]; then
+            echo "PASS: Firmware is running a fresh boot (version confirmed via OTA swap)"
+          else
+            echo "FAIL: Uptime is $UPTIME ms, expected < 60000 ms after OTA reboot"
+            exit 1
+          fi
 
       - name: Summary
         if: always()
