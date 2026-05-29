@@ -135,7 +135,7 @@ def run_ota(host, port, fw_url, timeout=120, label="OTA"):
     saw_reboot = False
 
     while time.time() - start < timeout:
-        status, resp = http_get_json(host, port, "/api/v1/update/status", timeout=3)
+        status, resp = http_get_json(host, port, "/update/status", timeout=3)
         if status is None:
             if not saw_reboot:
                 print(f"  [{time.time() - start:.1f}s] device unreachable (rebooting...)")
@@ -181,11 +181,11 @@ def run_swap_roundtrip(host, port, main_url, bootloader_url, timeout=120):
     if status != 200 or not resp.get("ok"):
         print(f"  ERROR: status={status}, resp={resp}")
         return False
-    print(f"  Swap triggered, waiting for reboot...")
+    print(f"  Swap triggered, waiting for OTA + reboot...")
 
-    ok, t = wait_for_offline(host, port, timeout=30)
+    ok, t = wait_for_offline(host, port, timeout=90)
     if not ok:
-        print(f"  ERROR: device did not go offline within 30s")
+        print(f"  ERROR: device did not go offline within 90s")
         return False
     print(f"  Device went offline after {t}s")
 
@@ -195,7 +195,6 @@ def run_swap_roundtrip(host, port, main_url, bootloader_url, timeout=120):
         return False
     print(f"  Bootloader online after {t}s")
 
-    # Verify Bootloader is running (check heartbeat)
     status, _ = http_get_json(host, port, "/api/v1/status/heartbeat")
     if status != 200:
         print(f"  ERROR: Bootloader heartbeat failed (status={status})")
@@ -209,11 +208,11 @@ def run_swap_roundtrip(host, port, main_url, bootloader_url, timeout=120):
     if status != 200 or not resp.get("ok"):
         print(f"  ERROR: status={status}, resp={resp}")
         return False
-    print(f"  Swap triggered, waiting for reboot...")
+    print(f"  Swap triggered, waiting for OTA + reboot...")
 
-    ok, t = wait_for_offline(host, port, timeout=30)
+    ok, t = wait_for_offline(host, port, timeout=90)
     if not ok:
-        print(f"  ERROR: device did not go offline within 30s")
+        print(f"  ERROR: device did not go offline within 90s")
         return False
     print(f"  Device went offline after {t}s")
 
