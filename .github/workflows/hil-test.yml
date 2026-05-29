@@ -52,6 +52,17 @@ jobs:
           west flash -d "${{ runner.temp }}/build/application" -r openocd
         timeout-minutes: 3
 
+      - name: Reset MCU (required after flash)
+        run: |
+          echo "Resetting MCU via OpenOCD..."
+          openocd \
+            -s "${{ env.ZEPHYR_SDK_INSTALL_DIR }}/opt/openocd/share/openocd/scripts" \
+            -s "${{ env.ZEPHYR_BASE }}/boards/st/nucleo_h745zi_q/support" \
+            -f openocd.cfg \
+            -c "init; reset run; exit"
+          echo "MCU reset complete"
+        timeout-minutes: 2
+
       - name: Wait for device
         run: |
           echo "Waiting for device at $DEVICE_IP..."
