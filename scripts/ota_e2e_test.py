@@ -83,7 +83,11 @@ def http_post_json(host, port, path, body_dict, timeout=5):
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status, json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read().decode("utf-8"))
+        try:
+            body = e.read().decode("utf-8").strip()
+            return e.code, json.loads(body) if body else {}
+        except (json.JSONDecodeError, ValueError):
+            return e.code, {}
     except Exception as e:
         return None, str(e)
 
@@ -119,7 +123,7 @@ def run_ota(host, port, fw_url, timeout=120, label="OTA"):
     print(f"\n[{label}] Triggering OTA...")
     print(f"  URI: {fw_url}")
 
-    status, resp = http_post_json(host, port, "/api/v1/update/start", {"uri": fw_url})
+    status, resp = http_post_json(host, port, "/update/start", {"uri": fw_url})
     if status != 200 or not resp.get("ok"):
         print(f"  ERROR triggering OTA: status={status}, resp={resp}")
         return False
