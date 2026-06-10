@@ -23,7 +23,8 @@ static void led_timer_handler(struct k_timer *timer)
 /* ---------- Main ---------- */
 int main(void)
 {
-	printk("\n===== Bootloader v%s =====\n", BUILD_VERSION);
+	printk("\n===== Bootloader v%s =====\n", BOOT_VERSION);
+	printk("[BOOT] Bootloader version: %s\n", BOOT_VERSION);
 	boot_write_img_confirmed();
 	printk("Bootloader mode, running...\n");
 
@@ -48,7 +49,7 @@ int main(void)
 	uint32_t count = 0;
 	while (1) {
 		count++;
-		printk("Bootloader v%s Alive: %u\n", BUILD_VERSION, count);
+		printk("Bootloader v%s Alive: %u\n", BOOT_VERSION, count);
 		k_sleep(K_SECONDS(3));
 	}
 	return 0;

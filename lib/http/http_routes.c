@@ -21,7 +21,9 @@ extern struct http_resource_detail_dynamic uptime_resource_detail;
 extern struct http_resource_detail_dynamic heartbeat_resource_detail;
 extern struct http_resource_detail_dynamic version_resource_detail;
 
+#ifndef BOOTLOADER
 extern struct http_resource_detail_dynamic control_resource_detail;
+#endif
 
 extern struct http_resource_detail_dynamic diag_resource_detail;
 extern struct http_resource_detail_dynamic diag_clear_resource_detail;
@@ -50,8 +52,10 @@ HTTP_RESOURCE_DEFINE(version_resource, test_http_service,
              "/api/v1/status/version", &version_resource_detail);
 
 /* Unified control */
+#ifndef BOOTLOADER
 HTTP_RESOURCE_DEFINE(control_resource, test_http_service,
              "/api/v1/control", &control_resource_detail);
+#endif
 
 /* Diagnostics */
 HTTP_RESOURCE_DEFINE(diag_resource, test_http_service, "/api/v1/diag/status", &diag_resource_detail);
@@ -64,6 +68,10 @@ HTTP_RESOURCE_DEFINE(diag_inject_resource, test_http_service, "/api/v1/diag/inje
 /* Update */
 HTTP_RESOURCE_DEFINE(update_start_resource, test_http_service, "/update/start", &update_start_resource_detail);
 HTTP_RESOURCE_DEFINE(update_status_resource, test_http_service, "/update/status", &update_status_resource_detail);
+HTTP_RESOURCE_DEFINE(update_start_resource_v1, test_http_service,
+             "/api/v1/update/start", &update_start_resource_detail);
+HTTP_RESOURCE_DEFINE(update_status_resource_v1, test_http_service,
+             "/api/v1/update/status", &update_status_resource_detail);
 
 /* Bootloader swap */
 HTTP_RESOURCE_DEFINE(bootloader_resource, test_http_service, "/api/v1/bootloader", &bootloader_resource_detail);

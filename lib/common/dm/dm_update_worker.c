@@ -10,6 +10,7 @@
  */
 
 #include <zephyr/kernel.h>
+#include <zephyr/init.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/dfu/mcuboot.h>
@@ -18,11 +19,13 @@
 #include <zephyr/net/http/client.h>
 #include <zephyr/posix/arpa/inet.h>
 #include <zephyr/posix/unistd.h>
+#include <zephyr/posix/netdb.h>
 #include <zephyr/sys/reboot.h>
 
 #include <errno.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "dm_api.h"
 #include "dm_types.h"
@@ -60,6 +63,27 @@ struct download_ctx {
     uint8_t  buf[FLASH_ALIGN];
     uint8_t  buf_pos;
 };
+
+static int resolve_host_ipv4(const char *host, struct sockaddr_in *addr)
+{
+    struct addrinfo hints;
+    struct addrinfo *res = NULL;
+    int rc;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+
+    rc = getaddrinfo(host, NULL, &hints, &res);
+    if (rc != 0 || res == NULL) {
+        LOG_ERR("update_worker: DNS resolve failed host=%s rc=%d", host, rc);
+        return -EHOSTUNREACH;
+    }
+
+    *addr = *(struct sockaddr_in *)res->ai_addr;
+    freeaddrinfo(res);
+    return 0;
+}
 
 static int download_response_cb(struct http_response *rsp,
                                 enum http_final_call final_data,
@@ -227,24 +251,31 @@ static void update_worker_thread(void *p1, void *p2, void *p3)
          * ----------------------------- */
         int http_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (http_sock < 0) {
-            printk("update_worker: socket() rc=%d\n", http_sock);
+            int err = -errno;
+            printk("update_worker: socket() rc=%d errno=%d\n", http_sock, errno);
             flash_area_close(fa);
-            dm_update_set_state(DM_UPDATE_STATE_FAILED, http_sock, 0);
+            dm_update_set_state(DM_UPDATE_STATE_FAILED, err, 0);
             continue;
         }
 
         struct sockaddr_in addr;
         memset(&addr, 0, sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons((uint16_t)atoi(port_str));
-        inet_pton(AF_INET, host, &addr.sin_addr);
-
-        rc = connect(http_sock, (struct sockaddr *)&addr, sizeof(addr));
-        if (rc < 0) {
-            printk("update_worker: connect() rc=%d errno=%d\n", rc, errno);
+        rc = resolve_host_ipv4(host, &addr);
+        if (rc != 0) {
             close(http_sock);
             flash_area_close(fa);
             dm_update_set_state(DM_UPDATE_STATE_FAILED, rc, 0);
+            continue;
+        }
+        addr.sin_port = htons((uint16_t)atoi(port_str));
+
+        rc = connect(http_sock, (struct sockaddr *)&addr, sizeof(addr));
+        if (rc < 0) {
+            int err = -errno;
+            printk("update_worker: connect() rc=%d errno=%d\n", rc, errno);
+            close(http_sock);
+            flash_area_close(fa);
+            dm_update_set_state(DM_UPDATE_STATE_FAILED, err, 0);
             continue;
         }
         LOG_INF("update_worker: connected to %s:%s", host, port_str);
@@ -376,3 +407,5 @@ int dm_update_worker_start(void)
     k_thread_name_set(tid, "dm_update_worker");
     return 0;
 }
+
+SYS_INIT(dm_update_worker_start, APPLICATION, 55);

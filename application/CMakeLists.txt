@@ -3,12 +3,25 @@ cmake_minimum_required(VERSION 3.20.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(CiosZhong_psu)
 
-# Read firmware version from VERSION file
-file(READ "${CMAKE_CURRENT_LIST_DIR}/../VERSION" FW_VERSION)
+# Read application version from local FW_VERSION file.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_LIST_DIR}/FW_VERSION")
+file(READ "${CMAKE_CURRENT_LIST_DIR}/FW_VERSION" FW_VERSION)
 string(STRIP "${FW_VERSION}" FW_VERSION)
 if(NOT FW_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
     message(FATAL_ERROR "Invalid VERSION format: '${FW_VERSION}'. Expected MAJOR.MINOR.PATCH (e.g. 0.1.0)")
 endif()
+
+# Guard against shipping application and bootloader with identical versions.
+set(BOOT_VERSION_FILE "${CMAKE_CURRENT_LIST_DIR}/../bootloader/FW_VERSION")
+if(EXISTS "${BOOT_VERSION_FILE}")
+    file(READ "${BOOT_VERSION_FILE}" BOOT_VERSION)
+    string(STRIP "${BOOT_VERSION}" BOOT_VERSION)
+    if(FW_VERSION STREQUAL BOOT_VERSION)
+        message(WARNING "Application VERSION (${FW_VERSION}) equals bootloader VERSION (${BOOT_VERSION}); consider setting distinct versions.")
+    endif()
+endif()
+
 message(STATUS "Firmware version: ${FW_VERSION}")
 target_compile_definitions(app PRIVATE BUILD_VERSION="${FW_VERSION}")
 
@@ -25,6 +38,8 @@ target_include_directories(app PRIVATE
 target_sources(app PRIVATE
     main/main.c
     ../lib/common/dm/dm_core.c
+    ../lib/common/dm/dm_ctrl_worker.c
+    ../lib/common/dm/dm_diag_worker.c
     ../lib/common/dm/dm_update_worker.c
     ../lib/common/message_queue.c
     ../lib/bsp/bsp_led.c

@@ -109,7 +109,20 @@ static int update_start_handler(struct http_client_ctx *client, enum http_transa
     /* Submit to update domain queue; worker thread handles the rest */
     dm_update_set_uri(uri);
     dm_update_set_state(DM_UPDATE_STATE_REQUESTED, 0, 0);
-    (void)dm_update_req_submit(&req);
+    int submit_rc = dm_update_req_submit(&req);
+    if (submit_rc != 0) {
+        dm_update_set_state(DM_UPDATE_STATE_FAILED, submit_rc, 0);
+        int n = snprintk(reply, sizeof(reply),
+                 "{\"ok\":false,\"error\":\"queue_busy\",\"rc\":%d}\n",
+                 submit_rc);
+        response_ctx->status = 503;
+        response_ctx->headers = HTTP_JSON_HEADERS_NO_STORE;
+        response_ctx->header_count = ARRAY_SIZE(HTTP_JSON_HEADERS_NO_STORE);
+        response_ctx->body = reply;
+        response_ctx->body_len = (size_t)n;
+        response_ctx->final_chunk = true;
+        return 0;
+    }
 
     int n = snprintk(reply, sizeof(reply), "{\"ok\":true}\n");
     response_ctx->status = 200;

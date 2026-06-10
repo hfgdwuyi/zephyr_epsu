@@ -1,5 +1,7 @@
 target_sources(app PRIVATE
     dm_core.c
+    dm_ctrl_worker.c
+    dm_diag_worker.c
     dm_update_worker.c
 )
 
