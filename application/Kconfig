@@ -1,4 +1,2 @@
-# Application Kconfig - sources Zephyr base, then project Kconfig fragments
+# CiosZhong Application Kconfig — sources Zephyr base
 source "Kconfig.zephyr"
-
-orsource "../lib/http/Kconfig"

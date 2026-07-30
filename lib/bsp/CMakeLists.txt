@@ -1,4 +1,3 @@
-
 target_sources(app PRIVATE
     bsp_ain.c
     bsp_aout.c
@@ -12,4 +11,3 @@ target_sources(app PRIVATE
 target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
 )
-

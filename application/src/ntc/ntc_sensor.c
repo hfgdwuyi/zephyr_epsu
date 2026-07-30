@@ -1,0 +1,158 @@
+/*
+ * ntc_sensor.c
+ *
+ * NTC thermistor R→T conversion via lookup table + linear interpolation.
+ * Vishay NTCALUG02A472FA: R25=4700Ω ±1%, B(25/85)=3984K.
+ *
+ * Voltage divider:  Vcc ─── Rf(4700Ω) ─── ADC ─── NTC ─── GND
+ *   Vadc = Vref × Rntc / (Rf + Rntc)
+ *   Rntc = Rf × Vadc / (Vref - Vadc)
+ *   where Vref=3.3V, Rf=4700Ω, Vadc = raw × 3.3 / 4095
+ */
+
+#include "ntc_sensor.h"
+#include "bsp_ain.h"
+
+#include <stdint.h>
+#include <stddef.h>
+#include <limits.h>
+
+/* ─── voltage divider params ─── */
+#define NTC_VREF_MV         3300U
+#define NTC_RFIXED_OHM      4700U
+#define NTC_ADC_BITS        12
+#define NTC_ADC_MAX         ((1U << NTC_ADC_BITS) - 1)  /* 4095 */
+
+/* ─── lookup table entry ─── */
+typedef struct {
+	int16_t  temp;      /* temperature × 10 (°C)     */
+	uint32_t r_ohm;     /* NTC resistance at this T  */
+} ntc_point_t;
+
+/*
+ * Sorted by temperature ascending (i.e. resistance descending).
+ * Table condensed to every 5°C below 0°C, every 1°C above.
+ * Interpolation provides sub-1°C resolution.
+ */
+static const ntc_point_t ntc_table[] = {
+	/*   T(°C)   Rnom(Ω)     */
+	{   -550,   448274 },    /* -55.0°C   */
+	{   -500,   312160 },    /* -50.0°C   */
+	{   -450,   220131 },    /* -45.0°C   */
+	{   -400,   157109 },    /* -40.0°C   */
+	{   -350,   113422 },    /* -35.0°C   */
+	{   -300,    82782 },    /* -30.0°C   */
+	{   -250,    61053 },    /* -25.0°C   */
+	{   -200,    45478 },    /* -20.0°C   */
+	{   -150,    34199 },    /* -15.0°C   */
+	{   -100,    25953 },    /* -10.0°C   */
+	{    -50,    19866 },    /*  -5.0°C   */
+	{      0,    15333 },    /*   0.0°C   */
+	{     10,    11929 },    /*   5.0°C   */
+	{     20,     9352 },    /*  10.0°C   */
+	{     30,     7384 },    /*  15.0°C   */
+	{     40,     5872 },    /*  20.0°C   */
+	{     50,     4700 },    /*  25.0°C   */
+	{     60,     3786 },    /*  30.0°C   */
+	{     70,     3069 },    /*  35.0°C   */
+	{     80,     2502 },    /*  40.0°C   */
+	{     90,     2052 },    /*  45.0°C   */
+	{    100,     1691 },    /*  50.0°C   */
+	{    110,     1402 },    /*  55.0°C   */
+	{    120,     1167 },    /*  60.0°C   */
+	{    130,      977 },    /*  65.0°C   */
+	{    140,      821 },    /*  70.0°C   */
+	{    150,      694 },    /*  75.0°C   */
+	{    160,      588 },    /*  80.0°C   */
+	{    170,      501 },    /*  85.0°C   */
+	{    180,      428 },    /*  90.0°C   */
+	{    190,      368 },    /*  95.0°C   */
+	{    200,      317 },    /* 100.0°C   */
+	{    210,      274 },    /* 105.0°C   */
+	{    220,      238 },    /* 110.0°C   */
+	{    230,      207 },    /* 115.0°C   */
+	{    240,      181 },    /* 120.0°C   */
+	{    250,      158 },    /* 125.0°C   */
+};
+
+#define NTC_TABLE_LEN (sizeof(ntc_table) / sizeof(ntc_table[0]))
+
+/* ─── linear interpolation ─── */
+
+/*
+ * Interpolate temperature (×10) for a given resistance between two
+ * adjacent table points. Assumes r is between r_lo (colder, higher R)
+ * and r_hi (warmer, lower R).
+ */
+static int16_t ntc_interpolate(uint32_t r_ohm)
+{
+	if (r_ohm >= ntc_table[0].r_ohm) {
+		return ntc_table[0].temp;   /* at or below min temp */
+	}
+	if (r_ohm <= ntc_table[NTC_TABLE_LEN - 1].r_ohm) {
+		return ntc_table[NTC_TABLE_LEN - 1].temp;  /* at or above max temp */
+	}
+
+	/* binary search: find the two entries that bracket r_ohm */
+	/* table is sorted by temp ascending → R descending           */
+	/* r_lo (higher R, lower T) has smaller index                */
+	size_t lo = 0;
+	size_t hi = NTC_TABLE_LEN - 1;
+
+	while (hi - lo > 1) {
+		size_t mid = (lo + hi) / 2;
+		if (ntc_table[mid].r_ohm >= r_ohm) {
+			lo = mid;
+		} else {
+			hi = mid;
+		}
+	}
+
+	const ntc_point_t *pl = &ntc_table[lo];
+	const ntc_point_t *ph = &ntc_table[hi];
+
+	/* linear interpolation: T = Tlo + (Tdiff) × (Rlo - R) / (Rlo - Rhi) */
+	uint32_t r_diff  = pl->r_ohm - ph->r_ohm;       /* Rlo > Rhi, positive */
+	uint32_t r_delta = pl->r_ohm - r_ohm;           /* how far from Rlo  */
+	int16_t  t_diff  = ph->temp - pl->temp;          /* Thi - Tlo, positive */
+
+	/* T × 10 = Tlo×10 + t_diff×10 × r_delta / r_diff */
+	int32_t num = (int32_t)t_diff * (int32_t)r_delta;
+	int32_t interp = (int32_t)pl->temp + num / (int32_t)r_diff;
+
+	return (int16_t)interp;
+}
+
+/* ─── public API ─── */
+
+int16_t ntc_read_temp(uint8_t ain_channel)
+{
+	uint32_t raw = bspAinGetRawValue(ain_channel);
+
+	if (raw == 0) {
+		return INT16_MIN;   /* ADC not ready or read failed */
+	}
+	if (raw >= NTC_ADC_MAX) {
+		return INT16_MIN;   /* open / short to Vcc  */
+	}
+
+	/* Vadc(mV) = raw × Vref / ADCmax */
+	uint32_t v_mv = (raw * NTC_VREF_MV) / NTC_ADC_MAX;
+
+	/*
+	 * Vadc = Vref × Rntc / (Rf + Rntc)
+	 *   ⇒  Rntc = Rf × Vadc / (Vref - Vadc)
+	 *
+	 * All in mV, R in Ω.
+	 */
+	if (v_mv >= NTC_VREF_MV) {
+		return INT16_MIN;   /* NTC disconnected or short to Vref */
+	}
+
+	uint32_t v_drop_mv = NTC_VREF_MV - v_mv;
+	uint32_t r_ntc = (v_drop_mv == 0)
+		? 0U
+		: (uint32_t)((uint64_t)NTC_RFIXED_OHM * v_mv / v_drop_mv);
+
+	return ntc_interpolate(r_ntc);
+}

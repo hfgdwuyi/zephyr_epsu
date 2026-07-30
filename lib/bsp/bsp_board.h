@@ -35,17 +35,6 @@ typedef struct
 
 void    boardInit(void);
 
-/* Serial is routed to DT_CHOSEN(zephyr_console) (or alias serial0 fallback) */
-int32_t boardSerialSend(char c);
-
-#ifdef BOOTLOADER
-/* Bootloader variant: receive into buf[0] if a byte is available; returns number of bytes (0/1) */
-int32_t boardSerialReceive(char *buf);
-#else
-/* Application variant: non-blocking, returns received byte [0..255] or EOF */
-int32_t boardSerialReceive(void);
-#endif
-
 /* I2C transfer: write (optional) then read (optional). devAddr can be 7-bit or 8-bit (HAL style). */
 bool boardI2CTransfer(uint8_t i2cNum, uint16_t devAddr,
                       uint8_t *wrBuf, uint16_t wrSize,

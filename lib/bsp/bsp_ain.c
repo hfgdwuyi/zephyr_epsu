@@ -22,17 +22,22 @@ static const struct adc_dt_spec ain_specs[AIN_NUMBER] = {
 
 static uint32_t ainData[AIN_NUMBER];
 
-/* Names follow HAL mapping by index (matches io-channels order in app.overlay) */
+/* Names follow pin_config.xlsx order (matches io-channels order in app.overlay) */
 static const char *const ainName[AIN_NUMBER] = {
-    /* idx: 0..7 */
-    "PUMP-ADC",       /* 0 */
-    "FORCE-ADC(1)",   /* 1 */
-    "FORCE-ADC(2)",   /* 2 */
-    "FORCE-ADC(3)",   /* 3 */
-    "TEMP-FD-ADC",    /* 4 */
-    "TEMP-MB-ADC",    /* 5 */
-    "ADC1_INP12",     /* 6 */
-    "ADC3_INP1"       /* 7 */
+    "adc_3v3",         /* 0  - PF6 */
+    "adc_pdc1",        /* 1  - PF7 */
+    "adc_pdc7",        /* 2  - PF8 */
+    "adc_pdc6",        /* 3  - PF9 */
+    "adc_pdc5",        /* 4  - PF10 */
+    "adc_temp1",       /* 5  - PA3 */
+    "adc_temp2",       /* 6  - PA4 */
+    "adc_pdc0",        /* 7  - PA6 */
+    "adc_pdc4",        /* 8  - PC0 */
+    "adc_pdc2",        /* 9  - PB0 */
+    "adc_pdc3",        /* 10 - PB1 */
+    "adc_vin",         /* 11 - PC2 */
+    "adc_pdc0_alt",    /* 12 - PC3 (second PDC0 channel) */
+    "adc_5v",          /* 13 - PH4 */
 };
 
 void bspAinInit(void)

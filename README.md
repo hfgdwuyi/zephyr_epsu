@@ -55,7 +55,7 @@ ciosZhong_ePSU/
 │   ├── bsp/                 # 板级支持 (LED, DIO, AIN, AOUT, PWM, WTDG)
 │   ├── common/dm/           # 数据模型管理 (DM core, update worker)
 │   └── http/                # HTTP REST 框架 (echo, heartbeat, control, update, bootloader, diag)
-├── build_epsu/              # Main App 构建产物
+├── build/              # Main App 构建产物
 ├── build_bootloader/        # Bootloader App 构建产物
 └── scripts/
 ```
@@ -81,7 +81,7 @@ Zephyr SDK 1.0.1 or later required (arm-zephyr-eabi-gcc 14.3.0).
 ```bash
 cd ~/project/02_zephyr/zephyrproject
 west build \
-  -d ~/project/02_zephyr/ciosZhong_ePSU/build_epsu \
+  -d ~/project/02_zephyr/ciosZhong_ePSU/build \
   ~/project/02_zephyr/ciosZhong_ePSU/application \
   -b nucleo_h745zi_q/stm32h745xx/m7 --sysbuild
 ```
@@ -99,10 +99,10 @@ west build \
 
 ```bash
 # Flash MCUboot
-west flash -d build_epsu/mcuboot -r openocd
+west flash -d build/mcuboot -r openocd
 
 # Flash Main App (signed)
-west flash -d build_epsu/application -r openocd
+west flash -d build/application -r openocd
 ```
 
 ## OTA 固件更新流程 (已验证)
@@ -111,7 +111,7 @@ west flash -d build_epsu/application -r openocd
 
 ```bash
 # 1. 启动 HTTP 文件服务器
-cd build_epsu/application/zephyr
+cd build/application/zephyr
 python3 -m http.server 8080 --bind 192.0.2.2
 
 # 2. 触发 OTA 更新
