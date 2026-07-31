@@ -59,8 +59,9 @@ enum {
 	DOUT_MAINS_CONNECTED_APPHOST= 30, /* PJ13 */
 	DOUT_MAINS_CONNECTED_IS_PC  = 31, /* PJ14 */
 
-	/* UART */
-	DOUT_UART1_TX              = 32,  /* PB15 */
+	/* External watchdog (MAX6703A WDI) */
+	DOUT_WDI                    = 32, /* PH9 */
+
 };
 
 /* ==================== DIN index — pin_config.xlsx ==================== */
@@ -70,20 +71,19 @@ enum {
 	DIN_ME_BOX_ERROR            = 1,  /* PH6  */
 	DIN_TROLLEY_CONNECTED       = 2,  /* PA0  */
 	DIN_TEMP_ALERT              = 3,  /* PB12 */
-	DIN_UART1_RX                = 4,  /* PB14 */
-	DIN_LED_PWR_24_ON           = 5,  /* PC6  */
-	DIN_LED_CP_24V_ON           = 6,  /* PC7  */
-	DIN_SYSTEM_ON_OFF           = 7,  /* PJ0  */
-	DIN_SYSTEM_RESET            = 8,  /* PJ1  */
-	DIN_S1_SYSTEM_CONFIG        = 9,  /* PJ2  */
-	DIN_S2_SYSTEM_CONFIG        = 10, /* PJ3  */
-	DIN_SOLO_SYSTEM_CONFIG      = 11, /* PJ4  */
-	DIN_TROLLEY_CONNECTED_J     = 12, /* PJ5  */
-	DIN_IS_PC_ON                = 13, /* PJ6  */
-	DIN_APP_HOST_ON             = 14, /* PJ7  */
-	DIN_SMART_WHS_INDICATE      = 15, /* PJ8  */
-	DIN_DRAWER_INDICATE         = 16, /* PJ9  */
-	DIN_SMART_CTRL_WHS_SEARCH   = 17, /* PJ10 */
+	DIN_LED_PWR_24_ON           = 4,  /* PC6  */
+	DIN_LED_CP_24V_ON           = 5,  /* PC7  */
+	DIN_SYSTEM_ON_OFF           = 6,  /* PJ0  */
+	DIN_SYSTEM_RESET            = 7,  /* PJ1  */
+	DIN_S1_SYSTEM_CONFIG        = 8,  /* PJ2  */
+	DIN_S2_SYSTEM_CONFIG        = 9,  /* PJ3  */
+	DIN_SOLO_SYSTEM_CONFIG      = 10, /* PJ4  */
+	DIN_TROLLEY_CONNECTED_J     = 11, /* PJ5  */
+	DIN_IS_PC_ON                = 12, /* PJ6  */
+	DIN_APP_HOST_ON             = 13, /* PJ7  */
+	DIN_SMART_WHS_INDICATE      = 14, /* PJ8  */
+	DIN_DRAWER_INDICATE         = 15, /* PJ9  */
+	DIN_SMART_CTRL_WHS_SEARCH   = 16, /* PJ10 */
 };
 
 /* ==================== Fan PWM index (via bsp_pwm) ==================== */
@@ -125,6 +125,9 @@ bool bspDoutRead(uint8_t pinNumber);
 
 /* Periodic DOUT refresh — mirrors input states to status output drivers only */
 void bspDoutUpdate(void);
+
+/* MAX6703A WDI toggle — must be called within 1.6s timeout */
+void bspWdiFeed(void);
 
 #ifdef __cplusplus
 }

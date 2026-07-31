@@ -58,6 +58,14 @@
     };
 };
 
+/* USART1 — second serial port on PB14/PB15 (AF4) */
+&usart1 {
+	status = "okay";
+	pinctrl-0 = <&usart1_tx_pb14 &usart1_rx_pb15>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+};
+
 /* FAN_PWM1: TIM2 CH4 on PJ15 */
 &timers2 {
     status = "okay";

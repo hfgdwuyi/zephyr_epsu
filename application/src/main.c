@@ -12,29 +12,94 @@
 #include "psu_sm.h"
 
 /*
- * cios-zhong periodic task schedule:
+ * cios-zhong periodic task schedule (Zephyr-native):
  *
- *  1 ms : psu_sm_tick()     — state machine + relay sequencing
- *  1 ms : WTDG_Feed()       — watchdog kick
- *  1 ms : bspDinUpdate()    — DIN polling (background k_timer, started in boardInit)
- * 10 ms : bspDoutUpdate()   — status output mirroring (input → output drivers)
- * 50 ms : bspAinPoll()      — 14 ADC channels
- * 50 ms : panel LED refresh — via psu_sm_tick → state runner → panel_leds_update
- * 500ms : LED toggle        — NUCLEO yellow LED heartbeat (background k_timer)
- * 500ms : fan PWM update    — via psu_sm_tick → state runner → fan_set
- * 3000ms: status printk     — current state
+ *  Thread  (1 ms):  psu_sm_tick() + WTDG_Feed()
+ *  Work   (10 ms):  bspDoutUpdate()    — status output mirroring
+ *  Work   (50 ms):  bspAinPoll()       — 14 ADC channels
+ *  Timer  (500 ms): NUCLEO LED toggle  — heartbeat
+ *  Work   (500 ms): bspWdiFeed()       — MAX6703A external watchdog
+ *  Work   (3000 ms):status printk      — state + error + alive counter
+ *
+ *  DIN polling (1 ms) runs via k_timer in bspDioInit (unchanged).
  */
 
-/* ---------- LED blink timer ---------- */
-static struct k_timer led_timer;
+/* ========== 1 ms core thread: state machine + internal WDT ========== */
 
-static void led_timer_handler(struct k_timer *timer)
+#define SM_THREAD_STACK_SZ  2048
+#define SM_THREAD_PRIO      2    /* high priority for precise 1ms timing */
+
+static struct k_thread sm_thread;
+K_THREAD_STACK_DEFINE(sm_stack, SM_THREAD_STACK_SZ);
+
+static void sm_thread_fn(void *p1, void *p2, void *p3)
 {
-	ARG_UNUSED(timer);
+	while (1) {
+		psu_sm_tick();
+		WTDG_Feed();
+		k_sleep(K_MSEC(1));
+	}
+}
+
+/* ========== Periodic work items (self-rescheduling) ========== */
+
+static void dout_work_fn(struct k_work *w)
+{
+	bspDoutUpdate();
+	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(10));
+}
+
+static void ain_work_fn(struct k_work *w)
+{
+	bspAinPoll();
+	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(50));
+}
+
+static void wdi_work_fn(struct k_work *w)
+{
+	bspWdiFeed();
+	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(500));
+}
+
+static void status_work_fn(struct k_work *w)
+{
+	static const char *const state_names[] = {
+		[PSU_STATE_INIT]          = "INIT",
+		[PSU_STATE_SYS_ON]        = "SYS_ON",
+		[PSU_STATE_PILOT_CONTACT] = "PILOT",
+		[PSU_STATE_SWITCH_ON]     = "SW_ON",
+		[PSU_STATE_NORMAL_OP]     = "NORMAL",
+		[PSU_STATE_S2_MODE]       = "S2",
+		[PSU_STATE_CHARGING]      = "CHARGE",
+		[PSU_STATE_SHUTDOWN]      = "SHTDWN",
+		[PSU_STATE_FAULT]         = "FAULT",
+		[PSU_STATE_RESET]         = "RESET",
+		[PSU_STATE_OFF]           = "OFF",
+	};
+	psu_state_t s = psu_sm_get_state();
+	printk("PSU [%s] err=%s\n",
+	       (s < ARRAY_SIZE(state_names)) ? state_names[s] : "?",
+	       psu_sm_get_error_str(psu_sm_get_error()));
+
+	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(3000));
+}
+
+static K_WORK_DELAYABLE_DEFINE(dout_work,   dout_work_fn);
+static K_WORK_DELAYABLE_DEFINE(ain_work,    ain_work_fn);
+static K_WORK_DELAYABLE_DEFINE(wdi_work,    wdi_work_fn);
+static K_WORK_DELAYABLE_DEFINE(status_work, status_work_fn);
+
+/* ========== NUCLEO LED heartbeat (k_timer) ========== */
+
+static void led_timer_fn(struct k_timer *timer)
+{
 	ledToggle(SYSTEM_OK_LED_NUM);
 }
 
-/* ---------- Main ---------- */
+K_TIMER_DEFINE(led_timer, led_timer_fn, NULL);
+
+/* ========== Main: init only, no while(1) ========== */
+
 int main(void)
 {
 	printk("\n===== CiosZhong Application v%s =====\n", BUILD_VERSION);
@@ -43,49 +108,20 @@ int main(void)
 	psu_sm_init();
 	WTDG_Init();
 
-	k_timer_init(&led_timer, led_timer_handler, NULL);
+	/* 1 ms core loop thread */
+	k_thread_create(&sm_thread, sm_stack,
+			K_THREAD_STACK_SIZEOF(sm_stack),
+			sm_thread_fn, NULL, NULL, NULL,
+			SM_THREAD_PRIO, 0, K_NO_WAIT);
+
+	/* Heartbeat LED */
 	k_timer_start(&led_timer, K_MSEC(100), K_MSEC(500));
 
-	uint32_t count = 0;
-	while (1) {
-		/* ---- 1 ms tasks ---- */
-		psu_sm_tick();
-		WTDG_Feed();
+	/* Periodic work items — each self-reschedules on completion */
+	k_work_schedule(&dout_work,   K_MSEC(10));
+	k_work_schedule(&ain_work,    K_MSEC(50));
+	k_work_schedule(&wdi_work,    K_MSEC(500));
+	k_work_schedule(&status_work, K_MSEC(3000));
 
-		/* ---- 10 ms tasks ---- */
-		if ((count % 10) == 0) {
-			bspDoutUpdate();
-		}
-
-		/* ---- 50 ms tasks ---- */
-		if ((count % 50) == 0) {
-			bspAinPoll();
-		}
-
-		/* ---- 3000 ms tasks ---- */
-		if ((count % 3000) == 0) {
-			static const char *const state_names[] = {
-				[PSU_STATE_INIT]          = "INIT",
-				[PSU_STATE_SYS_ON]        = "SYS_ON",
-				[PSU_STATE_PILOT_CONTACT] = "PILOT",
-				[PSU_STATE_SWITCH_ON]     = "SW_ON",
-				[PSU_STATE_NORMAL_OP]     = "NORMAL",
-				[PSU_STATE_S2_MODE]       = "S2",
-				[PSU_STATE_CHARGING]      = "CHARGE",
-				[PSU_STATE_SHUTDOWN]      = "SHTDWN",
-				[PSU_STATE_FAULT]         = "FAULT",
-				[PSU_STATE_RESET]         = "RESET",
-				[PSU_STATE_OFF]           = "OFF",
-			};
-			psu_state_t s = psu_sm_get_state();
-			printk("PSU [%s] err=%s count=%u\n",
-			       (s < ARRAY_SIZE(state_names)) ? state_names[s] : "?",
-			       psu_sm_get_error_str(psu_sm_get_error()),
-			       count);
-		}
-
-		count++;
-		k_sleep(K_MSEC(1));
-	}
 	return 0;
 }

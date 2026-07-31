@@ -115,8 +115,9 @@ static const struct bsp_gpio_spec pinCfgDout[] = {
     BSP_GPIO_SPEC(GPIO_DEV_J, 13, BSP_DOUT_FLAGS), /* PJ13 - mains_connected_apphost */
     BSP_GPIO_SPEC(GPIO_DEV_J, 14, BSP_DOUT_FLAGS), /* PJ14 - mains_connected_is_pc */
 
-    /* UART TX */
-    BSP_GPIO_SPEC(GPIO_DEV_B, 15, BSP_DOUT_FLAGS), /* PB15 - uart1_tx */
+	    /* External watchdog — MAX6703A WDI */
+	    BSP_GPIO_SPEC(GPIO_DEV_H, 9,  BSP_DOUT_FLAGS), /* PH9  - MAX6703A WDI */
+
 };
 
 /* Digital Input pin table */
@@ -127,8 +128,6 @@ static const struct bsp_gpio_spec pinCfgDin[] = {
     BSP_GPIO_SPEC(GPIO_DEV_A, 0,  BSP_DIN_FLAGS), /* PA0  - trolley_connected */
     BSP_GPIO_SPEC(GPIO_DEV_B, 12, BSP_DIN_FLAGS), /* PB12 - temp_alert */
 
-    /* UART RX */
-    BSP_GPIO_SPEC(GPIO_DEV_B, 14, BSP_DIN_FLAGS), /* PB14 - uart1_rx */
 
     /* PWR/CP status LEDs (input to MCU for monitoring) */
     BSP_GPIO_SPEC(GPIO_DEV_C, 6,  BSP_DIN_FLAGS), /* PC6  - led_pwr_24_on */
@@ -345,4 +344,19 @@ void bspDoutUpdate(void)
 	bspDoutSet(DOUT_DRV_APP_HOST_SITE_ON,    app_host_on);
 	bspDoutSet(DOUT_MAINS_CONNECTED_APPHOST, app_host_on);
 	bspDoutSet(DOUT_MAINS_CONNECTED_IS_PC,   is_pc_on);
+}
+
+/* ==================== MAX6703A WDI ====================
+ *
+ * External watchdog IC (MAX6703A) on PH9.
+ * Timeout: 1.6s typ. WDI is edge-sensitive; toggling within the timeout
+ * window prevents RESET assertion. Called every 500ms from main loop.
+ */
+
+void bspWdiFeed(void)
+{
+	static bool wdi_state;
+
+	wdi_state = !wdi_state;
+	bspDoutSet(DOUT_WDI, wdi_state);
 }
