@@ -1,24 +1,24 @@
 #include <zephyr/kernel.h>
-#include <zephyr/sys/printk.h>
+#include "../hal/hal_debug.h"
 
 #include <errno.h>
 #include <string.h>
 
-#include "bsp_board.h"
-#include "bsp_ain.h"
-#include "bsp_dio.h"
-#include "bsp_led.h"
-#include "bsp_wtdg.h"
+#include "../hal/hal_board.h"
+#include "../hal/hal_adc.h"
+#include "../hal/hal_gpio.h"
+#include "../hal/hal_gpio.h"
+#include "../hal/hal_wdt.h"
 #include "psu_sm.h"
 
 /*
  * cios-zhong periodic task schedule (Zephyr-native):
  *
- *  Thread  (1 ms):  psu_sm_tick() + WTDG_Feed()
- *  Work   (10 ms):  bspDoutUpdate()    — status output mirroring
- *  Work   (50 ms):  bspAinPoll()       — 14 ADC channels
+ *  Thread  (1 ms):  psu_sm_tick() + hal_wdt_feed()
+ *  Work   (10 ms):  hal_gpio_out_mirror_inputs()    — status output mirroring
+ *  Work   (50 ms):  hal_adc_poll()       — 14 ADC channels
  *  Timer  (500 ms): NUCLEO LED toggle  — heartbeat
- *  Work   (500 ms): bspWdiFeed()       — MAX6703A external watchdog
+ *  Work   (500 ms): hal_wdi_feed()       — MAX6703A external watchdog
  *  Work   (3000 ms):status printk      — state + error + alive counter
  *
  *  DIN polling (1 ms) runs via k_timer in bspDioInit (unchanged).
@@ -36,7 +36,7 @@ static void sm_thread_fn(void *p1, void *p2, void *p3)
 {
 	while (1) {
 		psu_sm_tick();
-		WTDG_Feed();
+		hal_wdt_feed();
 		k_sleep(K_MSEC(1));
 	}
 }
@@ -45,19 +45,19 @@ static void sm_thread_fn(void *p1, void *p2, void *p3)
 
 static void dout_work_fn(struct k_work *w)
 {
-	bspDoutUpdate();
+	hal_gpio_out_mirror_inputs();
 	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(10));
 }
 
 static void ain_work_fn(struct k_work *w)
 {
-	bspAinPoll();
+	hal_adc_poll();
 	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(50));
 }
 
 static void wdi_work_fn(struct k_work *w)
 {
-	bspWdiFeed();
+	hal_wdi_feed();
 	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(500));
 }
 
@@ -77,7 +77,7 @@ static void status_work_fn(struct k_work *w)
 		[PSU_STATE_OFF]           = "OFF",
 	};
 	psu_state_t s = psu_sm_get_state();
-	printk("PSU [%s] err=%s\n",
+	hal_log("PSU [%s] err=%s\n",
 	       (s < ARRAY_SIZE(state_names)) ? state_names[s] : "?",
 	       psu_sm_get_error_str(psu_sm_get_error()));
 
@@ -93,7 +93,7 @@ static K_WORK_DELAYABLE_DEFINE(status_work, status_work_fn);
 
 static void led_timer_fn(struct k_timer *timer)
 {
-	ledToggle(SYSTEM_OK_LED_NUM);
+	hal_led_toggle(HAL_LED_YELLOW);
 }
 
 K_TIMER_DEFINE(led_timer, led_timer_fn, NULL);
@@ -102,11 +102,11 @@ K_TIMER_DEFINE(led_timer, led_timer_fn, NULL);
 
 int main(void)
 {
-	printk("\n===== CiosZhong Application v%s =====\n", BUILD_VERSION);
+	hal_log("\n===== CiosZhong Application v%s =====\n", BUILD_VERSION);
 
-	boardInit();
+	hal_board_init();
 	psu_sm_init();
-	WTDG_Init();
+	hal_wdt_init();
 
 	/* 1 ms core loop thread */
 	k_thread_create(&sm_thread, sm_stack,

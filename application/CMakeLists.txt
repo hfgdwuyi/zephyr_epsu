@@ -12,12 +12,22 @@ endif()
 message(STATUS "Firmware version: ${FW_VERSION}")
 target_compile_definitions(app PRIVATE BUILD_VERSION="${FW_VERSION}")
 
+# HAL headers visible to all application code
+target_include_directories(app PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/hal
+    ${CMAKE_CURRENT_LIST_DIR}/src/state_machine
+    ${CMAKE_CURRENT_LIST_DIR}/src/ntc
+)
+
 # Application entry point
 target_sources(app PRIVATE src/main.c)
 
-# Application modules
+# Application modules (RTOS-independent)
 add_subdirectory(src/state_machine)
 add_subdirectory(src/ntc)
 
-# Library — board support package
+# Platform HAL implementations (Zephyr-specific)
+add_subdirectory(../zephyrproject/hal ${CMAKE_CURRENT_BINARY_DIR}/hal)
+
+# Board support package (Zephyr hardware drivers)
 add_subdirectory(../lib/bsp ${CMAKE_CURRENT_BINARY_DIR}/bsp)

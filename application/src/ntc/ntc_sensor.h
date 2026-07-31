@@ -6,7 +6,7 @@
  *
  * Voltage divider: Vref=3.3V, Rfixed=4700Ω (Vcc—Rf—ADC—NTC—GND).
  *
- * Depends on: bsp_ain.h (ADC raw values), NOT a BSP module itself.
+ * Depends on: hal_adc.h (ADC abstraction), NOT on any BSP or RTOS.
  */
 
 #ifndef NTC_SENSOR_H
@@ -18,9 +18,9 @@
 extern "C" {
 #endif
 
-/* AIN channel indices for NTC sensors (matches app.overlay io-channels) */
-#define AIN_TEMP1       5   /* PA3 - ADC1_INP15, adc_temp1 */
-#define AIN_TEMP2       6   /* PA4 - ADC1_INP18, adc_temp2 */
+/* AIN logical channels for NTC sensors */
+#define AIN_TEMP1       5   /* HAL_AIN_ADC_TEMP1 */
+#define AIN_TEMP2       6   /* HAL_AIN_ADC_TEMP2 */
 
 /* Temperature thresholds (×10, i.e. 25.0°C = 250) */
 #define NTC_TEMP_WARN    750    /* 75°C — warning             */

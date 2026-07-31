@@ -115,8 +115,8 @@ static const struct bsp_gpio_spec pinCfgDout[] = {
     BSP_GPIO_SPEC(GPIO_DEV_J, 13, BSP_DOUT_FLAGS), /* PJ13 - mains_connected_apphost */
     BSP_GPIO_SPEC(GPIO_DEV_J, 14, BSP_DOUT_FLAGS), /* PJ14 - mains_connected_is_pc */
 
-	    /* External watchdog — MAX6703A WDI */
-	    BSP_GPIO_SPEC(GPIO_DEV_H, 9,  BSP_DOUT_FLAGS), /* PH9  - MAX6703A WDI */
+    /* External watchdog — MAX6703A WDI */
+    BSP_GPIO_SPEC(GPIO_DEV_H, 9,  BSP_DOUT_FLAGS), /* PH9  - MAX6703A WDI */
 
 };
 

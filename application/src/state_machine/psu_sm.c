@@ -9,20 +9,18 @@
  * Layer split:
  *   psu_sm   — relay driver control (K3-K12, pwr_on_off, trolley_enable)
  *   psu_sm   — panel LED indicators (reflect system state)
- *   bsp_pwm  — fan PWM control (FAN_PWM1/2)
- *   bspDoutUpdate() — status output mirroring (input→output drivers)
+ *   hal_pwm  — fan PWM control
+ *   hal_gpio_out_mirror_inputs() — status output mirroring
  */
 
 #include "psu_sm.h"
 
-#include <zephyr/kernel.h>
-#include <zephyr/sys/printk.h>
-#include <string.h>
 
-#include "bsp_dio.h"
-#include "bsp_led.h"
-#include "ntc_sensor.h"
-#include "bsp_pwm.h"
+#include "../../hal/hal_gpio.h"
+#include "../../hal/hal_gpio.h"
+#include "../../hal/hal_debug.h"
+#include "../ntc/ntc_sensor.h"
+#include "../../hal/hal_pwm.h"
 
 /* ==================== Timing constants (ms) ==================== */
 
@@ -84,7 +82,7 @@ void psu_sm_init(void)
 	g_state_entered  = false;
 	g_config         = read_config_switches();
 
-	printk("PSU_SM: init cfg=%d\n", (int)g_config);
+	hal_log("PSU_SM: init cfg=%d\n", (int)g_config);
 }
 
 void psu_sm_tick(void)
@@ -137,7 +135,7 @@ void psu_sm_request_shutdown(void)
 	if (g_state == PSU_STATE_NORMAL_OP ||
 	    g_state == PSU_STATE_S2_MODE ||
 	    g_state == PSU_STATE_CHARGING) {
-		printk("PSU_SM: shutdown requested\n");
+		hal_log("PSU_SM: shutdown requested\n");
 		g_state = PSU_STATE_SHUTDOWN;
 		g_state_entered = false;
 		g_state_ticks = 0;
@@ -146,7 +144,7 @@ void psu_sm_request_shutdown(void)
 
 void psu_sm_request_reset(void)
 {
-	printk("PSU_SM: reset requested\n");
+	hal_log("PSU_SM: reset requested\n");
 	g_state = PSU_STATE_RESET;
 	g_state_entered = false;
 	g_state_ticks = 0;
@@ -155,7 +153,7 @@ void psu_sm_request_reset(void)
 void psu_sm_request_charging(void)
 {
 	if (g_state == PSU_STATE_NORMAL_OP) {
-		printk("PSU_SM: charging requested\n");
+		hal_log("PSU_SM: charging requested\n");
 		g_state = PSU_STATE_CHARGING;
 		g_state_entered = false;
 		g_state_ticks = 0;
@@ -184,19 +182,19 @@ static void transition_to(psu_state_t s)
 
 static void panel_leds_off(void)
 {
-	bspDoutSet(DOUT_LED_S1_SYS_ON,         false);
-	bspDoutSet(DOUT_LED_S2_SYS_ON,         false);
-	bspDoutSet(DOUT_DBG_LED0,              false);
-	bspDoutSet(DOUT_DBG_LED1,              false);
-	bspDoutSet(DOUT_DBG_LED2,              false);
-	bspDoutSet(DOUT_LED_PAC230V_ON,        false);
-	bspDoutSet(DOUT_LED_GRID_PWR_IN,       false);
-	bspDoutSet(DOUT_LED_UPS_IN,            false);
-	bspDoutSet(DOUT_LED_SYSTEM_ON,         false);
-	bspDoutSet(DOUT_LED_S2_SOLO_SYS,       false);
-	bspDoutSet(DOUT_LED_TROLLEY_CONNECTED, false);
-	bspDoutSet(DOUT_LED_IS_PC_ON,          false);
-	bspDoutSet(DOUT_LED_APPHOST_ON,        false);
+	hal_gpio_out_set(HAL_CH_LED_S1_SYS_ON,         false);
+	hal_gpio_out_set(HAL_CH_LED_S2_SYS_ON,         false);
+	hal_gpio_out_set(HAL_CH_DBG_LED0,              false);
+	hal_gpio_out_set(HAL_CH_DBG_LED1,              false);
+	hal_gpio_out_set(HAL_CH_DBG_LED2,              false);
+	hal_gpio_out_set(HAL_CH_LED_PAC230V_ON,        false);
+	hal_gpio_out_set(HAL_CH_LED_GRID_PWR_IN,       false);
+	hal_gpio_out_set(HAL_CH_LED_UPS_IN,            false);
+	hal_gpio_out_set(HAL_CH_LED_SYSTEM_ON,         false);
+	hal_gpio_out_set(HAL_CH_LED_S2_SOLO_SYS,       false);
+	hal_gpio_out_set(HAL_CH_LED_TROLLEY_CONNECTED, false);
+	hal_gpio_out_set(HAL_CH_LED_IS_PC_ON,          false);
+	hal_gpio_out_set(HAL_CH_LED_APPHOST_ON,        false);
 }
 
 static void panel_leds_update(psu_state_t s)
@@ -208,24 +206,24 @@ static void panel_leds_update(psu_state_t s)
 		return;
 	}
 
-	bool grid_ok  = bspDinGet(DIN_GRID_MAIN_RELAY_STATUS);
-	bool me_err   = bspDinGet(DIN_ME_BOX_ERROR);
-	bool trolley  = bspDinGet(DIN_TROLLEY_CONNECTED);
-	bool is_pc    = bspDinGet(DIN_IS_PC_ON);
-	bool app_host = bspDinGet(DIN_APP_HOST_ON);
-	bool s1       = bspDinGet(DIN_S1_SYSTEM_CONFIG);
-	bool s2       = bspDinGet(DIN_S2_SYSTEM_CONFIG);
-	bool solo     = bspDinGet(DIN_SOLO_SYSTEM_CONFIG);
+	bool grid_ok  = hal_gpio_in_get(HAL_CH_GRID_RELAY_STATUS);
+	bool me_err   = hal_gpio_in_get(HAL_CH_ME_BOX_ERROR);
+	bool trolley  = hal_gpio_in_get(HAL_CH_TROLLEY_CONNECTED);
+	bool is_pc    = hal_gpio_in_get(HAL_CH_IS_PC_ON);
+	bool app_host = hal_gpio_in_get(HAL_CH_APP_HOST_ON);
+	bool s1       = hal_gpio_in_get(HAL_CH_S1_SYSTEM_CONFIG);
+	bool s2       = hal_gpio_in_get(HAL_CH_S2_SYSTEM_CONFIG);
+	bool solo     = hal_gpio_in_get(HAL_CH_SOLO_SYSTEM_CONFIG);
 
-	bspDoutSet(DOUT_LED_S1_SYS_ON,         s1);
-	bspDoutSet(DOUT_LED_S2_SYS_ON,         s2);
-	bspDoutSet(DOUT_LED_S2_SOLO_SYS,       s2 || solo);
-	bspDoutSet(DOUT_LED_PAC230V_ON,        grid_ok && !me_err);
-	bspDoutSet(DOUT_LED_GRID_PWR_IN,       grid_ok);
-	bspDoutSet(DOUT_LED_UPS_IN,            !grid_ok);
-	bspDoutSet(DOUT_LED_TROLLEY_CONNECTED, trolley);
-	bspDoutSet(DOUT_LED_IS_PC_ON,          is_pc);
-	bspDoutSet(DOUT_LED_APPHOST_ON,        app_host);
+	hal_gpio_out_set(HAL_CH_LED_S1_SYS_ON,         s1);
+	hal_gpio_out_set(HAL_CH_LED_S2_SYS_ON,         s2);
+	hal_gpio_out_set(HAL_CH_LED_S2_SOLO_SYS,       s2 || solo);
+	hal_gpio_out_set(HAL_CH_LED_PAC230V_ON,        grid_ok && !me_err);
+	hal_gpio_out_set(HAL_CH_LED_GRID_PWR_IN,       grid_ok);
+	hal_gpio_out_set(HAL_CH_LED_UPS_IN,            !grid_ok);
+	hal_gpio_out_set(HAL_CH_LED_TROLLEY_CONNECTED, trolley);
+	hal_gpio_out_set(HAL_CH_LED_IS_PC_ON,          is_pc);
+	hal_gpio_out_set(HAL_CH_LED_APPHOST_ON,        app_host);
 
 	/* led_system_on blinks in normal/charging, solid in others */
 	bool sys_led;
@@ -234,7 +232,7 @@ static void panel_leds_update(psu_state_t s)
 	} else {
 		sys_led = true;
 	}
-	bspDoutSet(DOUT_LED_SYSTEM_ON, sys_led && !me_err);
+	hal_gpio_out_set(HAL_CH_LED_SYSTEM_ON, sys_led && !me_err);
 }
 
 /* ==================== Fan control (PWM) ==================== */
@@ -242,13 +240,13 @@ static void panel_leds_update(psu_state_t s)
 static void fan_set(bool on, uint32_t duty_percent)
 {
 	if (on) {
-		bspPwmSetDutyCycle(FAN_PWM2, duty_percent);
-		bspPwmSetDutyCycle(FAN_PWM1, duty_percent);
-		bspPwmStart(FAN_PWM2);
-		bspPwmStart(FAN_PWM1);
+		hal_pwm_set_duty(HAL_PWM_FAN2, duty_percent);
+		hal_pwm_set_duty(HAL_PWM_FAN1, duty_percent);
+		hal_pwm_start(HAL_PWM_FAN2);
+		hal_pwm_start(HAL_PWM_FAN1);
 	} else {
-		bspPwmStop(FAN_PWM2);
-		bspPwmStop(FAN_PWM1);
+		hal_pwm_stop(HAL_PWM_FAN2);
+		hal_pwm_stop(HAL_PWM_FAN1);
 	}
 }
 
@@ -280,68 +278,68 @@ static bool temp_overtemp(void)
 
 static void state_enter(psu_state_t s)
 {
-	printk("PSU_SM: -> state %d (t=%ums)\n", (int)s, (unsigned)g_state_ticks);
+	hal_log("PSU_SM: -> state %d (t=%ums)\n", (int)s, (unsigned)g_state_ticks);
 
 	switch (s) {
 
 	case PSU_STATE_INIT:
-		bspDoutSet(DOUT_TROLLEY_ENABLE_DRV, false);
-		bspDoutSet(DOUT_PWR_ON_OFF,         false);
-		bspDoutSet(DOUT_K3_1_DRV,           false);
-		bspDoutSet(DOUT_K3_2_DRV,           false);
-		bspDoutSet(DOUT_K4_DRV,             false);
-		bspDoutSet(DOUT_K5_DRV,             false);
-		bspDoutSet(DOUT_K6_DRV,             false);
-		bspDoutSet(DOUT_K8_1_DRV,           false);
-		bspDoutSet(DOUT_K8_2_DRV,           false);
-		bspDoutSet(DOUT_K9_DRV,             false);
-		bspDoutSet(DOUT_K10_DRV,            false);
-		bspDoutSet(DOUT_K11_DRV,            false);
-		bspDoutSet(DOUT_K12_DRV,            false);
+		hal_gpio_out_set(HAL_CH_TROLLEY_ENABLE_DRV, false);
+		hal_gpio_out_set(HAL_CH_PWR_ON_OFF,         false);
+		hal_gpio_out_set(HAL_CH_K3_1_DRV,           false);
+		hal_gpio_out_set(HAL_CH_K3_2_DRV,           false);
+		hal_gpio_out_set(HAL_CH_K4_DRV,             false);
+		hal_gpio_out_set(HAL_CH_K5_DRV,             false);
+		hal_gpio_out_set(HAL_CH_K6_DRV,             false);
+		hal_gpio_out_set(HAL_CH_K8_1_DRV,           false);
+		hal_gpio_out_set(HAL_CH_K8_2_DRV,           false);
+		hal_gpio_out_set(HAL_CH_K9_DRV,             false);
+		hal_gpio_out_set(HAL_CH_K10_DRV,            false);
+		hal_gpio_out_set(HAL_CH_K11_DRV,            false);
+		hal_gpio_out_set(HAL_CH_K12_DRV,            false);
 		panel_leds_off();
 		fan_set(false, 0);
-		ledSwitchOff(0);
-		ledSwitchOff(1);
+		hal_led_set(HAL_LED_GREEN, false);
+		hal_led_set(HAL_LED_YELLOW, false);
 		break;
 
 	case PSU_STATE_SYS_ON:
-		bspDoutSet(DOUT_TROLLEY_ENABLE_DRV, true);
+		hal_gpio_out_set(HAL_CH_TROLLEY_ENABLE_DRV, true);
 		panel_leds_update(s);
-		ledSwitchOn(0);
+		hal_led_set(HAL_LED_GREEN, true);
 		break;
 
 	case PSU_STATE_PILOT_CONTACT:
-		bspDoutSet(DOUT_PWR_ON_OFF, true);
+		hal_gpio_out_set(HAL_CH_PWR_ON_OFF, true);
 		break;
 
 	case PSU_STATE_SWITCH_ON:
-		bspDoutSet(DOUT_K3_1_DRV, true);
-		bspDoutSet(DOUT_K3_2_DRV, true);
+		hal_gpio_out_set(HAL_CH_K3_1_DRV, true);
+		hal_gpio_out_set(HAL_CH_K3_2_DRV, true);
 		break;
 
 	case PSU_STATE_NORMAL_OP:
-		bspDoutSet(DOUT_K4_DRV,   true);
-		bspDoutSet(DOUT_K5_DRV,   true);
-		bspDoutSet(DOUT_K6_DRV,   true);
-		bspDoutSet(DOUT_K8_1_DRV, true);
-		bspDoutSet(DOUT_K8_2_DRV, true);
-		bspDoutSet(DOUT_K9_DRV,   true);
-		bspDoutSet(DOUT_K10_DRV,  true);
-		bspDoutSet(DOUT_K11_DRV,  true);
-		bspDoutSet(DOUT_K12_DRV,  true);
+		hal_gpio_out_set(HAL_CH_K4_DRV,   true);
+		hal_gpio_out_set(HAL_CH_K5_DRV,   true);
+		hal_gpio_out_set(HAL_CH_K6_DRV,   true);
+		hal_gpio_out_set(HAL_CH_K8_1_DRV, true);
+		hal_gpio_out_set(HAL_CH_K8_2_DRV, true);
+		hal_gpio_out_set(HAL_CH_K9_DRV,   true);
+		hal_gpio_out_set(HAL_CH_K10_DRV,  true);
+		hal_gpio_out_set(HAL_CH_K11_DRV,  true);
+		hal_gpio_out_set(HAL_CH_K12_DRV,  true);
 		panel_leds_update(s);
 		fan_set(true, 50);   /* 50% initial, ramp up over time */
 		break;
 
 	case PSU_STATE_S2_MODE:
-		bspDoutSet(DOUT_K5_DRV,   false);
-		bspDoutSet(DOUT_K6_DRV,   false);
-		bspDoutSet(DOUT_K8_1_DRV, false);
-		bspDoutSet(DOUT_K8_2_DRV, false);
-		bspDoutSet(DOUT_K9_DRV,   false);
-		bspDoutSet(DOUT_K10_DRV,  false);
-		bspDoutSet(DOUT_K11_DRV,  false);
-		bspDoutSet(DOUT_K12_DRV,  false);
+		hal_gpio_out_set(HAL_CH_K5_DRV,   false);
+		hal_gpio_out_set(HAL_CH_K6_DRV,   false);
+		hal_gpio_out_set(HAL_CH_K8_1_DRV, false);
+		hal_gpio_out_set(HAL_CH_K8_2_DRV, false);
+		hal_gpio_out_set(HAL_CH_K9_DRV,   false);
+		hal_gpio_out_set(HAL_CH_K10_DRV,  false);
+		hal_gpio_out_set(HAL_CH_K11_DRV,  false);
+		hal_gpio_out_set(HAL_CH_K12_DRV,  false);
 		panel_leds_update(s);
 		fan_set(true, 30);   /* low power, minimal cooling */
 		break;
@@ -352,43 +350,43 @@ static void state_enter(psu_state_t s)
 		break;
 
 	case PSU_STATE_SHUTDOWN:
-		bspDoutSet(DOUT_K4_DRV,   false);
-		bspDoutSet(DOUT_K5_DRV,   false);
-		bspDoutSet(DOUT_K6_DRV,   false);
-		bspDoutSet(DOUT_K8_1_DRV, false);
-		bspDoutSet(DOUT_K8_2_DRV, false);
-		bspDoutSet(DOUT_K9_DRV,   false);
-		bspDoutSet(DOUT_K10_DRV,  false);
-		bspDoutSet(DOUT_K11_DRV,  false);
-		bspDoutSet(DOUT_K12_DRV,  false);
+		hal_gpio_out_set(HAL_CH_K4_DRV,   false);
+		hal_gpio_out_set(HAL_CH_K5_DRV,   false);
+		hal_gpio_out_set(HAL_CH_K6_DRV,   false);
+		hal_gpio_out_set(HAL_CH_K8_1_DRV, false);
+		hal_gpio_out_set(HAL_CH_K8_2_DRV, false);
+		hal_gpio_out_set(HAL_CH_K9_DRV,   false);
+		hal_gpio_out_set(HAL_CH_K10_DRV,  false);
+		hal_gpio_out_set(HAL_CH_K11_DRV,  false);
+		hal_gpio_out_set(HAL_CH_K12_DRV,  false);
 		/* Fans stay on briefly for cool-down */
 		break;
 
 	case PSU_STATE_FAULT:
-		bspDoutSet(DOUT_PWR_ON_OFF,         false);
-		bspDoutSet(DOUT_K3_1_DRV,           false);
-		bspDoutSet(DOUT_K3_2_DRV,           false);
-		bspDoutSet(DOUT_K4_DRV,             false);
-		bspDoutSet(DOUT_K5_DRV,  false); bspDoutSet(DOUT_K6_DRV,  false);
-		bspDoutSet(DOUT_K8_1_DRV, false); bspDoutSet(DOUT_K8_2_DRV, false);
-		bspDoutSet(DOUT_K9_DRV,  false); bspDoutSet(DOUT_K10_DRV, false);
-		bspDoutSet(DOUT_K11_DRV, false); bspDoutSet(DOUT_K12_DRV, false);
+		hal_gpio_out_set(HAL_CH_PWR_ON_OFF,         false);
+		hal_gpio_out_set(HAL_CH_K3_1_DRV,           false);
+		hal_gpio_out_set(HAL_CH_K3_2_DRV,           false);
+		hal_gpio_out_set(HAL_CH_K4_DRV,             false);
+		hal_gpio_out_set(HAL_CH_K5_DRV,  false); hal_gpio_out_set(HAL_CH_K6_DRV,  false);
+		hal_gpio_out_set(HAL_CH_K8_1_DRV, false); hal_gpio_out_set(HAL_CH_K8_2_DRV, false);
+		hal_gpio_out_set(HAL_CH_K9_DRV,  false); hal_gpio_out_set(HAL_CH_K10_DRV, false);
+		hal_gpio_out_set(HAL_CH_K11_DRV, false); hal_gpio_out_set(HAL_CH_K12_DRV, false);
 		panel_leds_off();
 		fan_set(false, 0);
-		ledSwitchOff(0);
-		ledSwitchOn(1);
+		hal_led_set(HAL_LED_GREEN, false);
+		hal_led_set(HAL_LED_YELLOW, true);
 		break;
 
 	case PSU_STATE_OFF:
-		bspDoutSet(DOUT_TROLLEY_ENABLE_DRV, false);
-		bspDoutSet(DOUT_PWR_ON_OFF,         false);
-		bspDoutSet(DOUT_K3_1_DRV,           false);
-		bspDoutSet(DOUT_K3_2_DRV,           false);
-		bspDoutSet(DOUT_K4_DRV,             false);
+		hal_gpio_out_set(HAL_CH_TROLLEY_ENABLE_DRV, false);
+		hal_gpio_out_set(HAL_CH_PWR_ON_OFF,         false);
+		hal_gpio_out_set(HAL_CH_K3_1_DRV,           false);
+		hal_gpio_out_set(HAL_CH_K3_2_DRV,           false);
+		hal_gpio_out_set(HAL_CH_K4_DRV,             false);
 		panel_leds_off();
 		fan_set(false, 0);
-		ledSwitchOff(0);
-		ledSwitchOff(1);
+		hal_led_set(HAL_LED_GREEN, false);
+		hal_led_set(HAL_LED_YELLOW, false);
 		break;
 
 	default:
@@ -436,7 +434,7 @@ static void state_run_pilot_contact(void)
 	}
 
 	/* Verify pwr_on_off feedback: DIN_LED_PWR_24_ON (PC6) */
-	if (!bspDinGet(DIN_LED_PWR_24_ON)) {
+	if (!hal_gpio_in_get(HAL_CH_LED_PWR_24_ON)) {
 		if (g_state_ticks > 1000) {
 			set_error(PSU_ERR_K3_TIMEOUT);
 		}
@@ -452,7 +450,7 @@ static void state_run_switch_on(void)
 		return;
 	}
 
-	if (!bspDinGet(DIN_GRID_MAIN_RELAY_STATUS)) {
+	if (!hal_gpio_in_get(HAL_CH_GRID_RELAY_STATUS)) {
 		if (g_state_ticks > 2000) {
 			set_error(PSU_ERR_SWITCHON_FAIL);
 		}
@@ -480,7 +478,7 @@ static void state_run_normal_op(void)
 			set_error(PSU_ERR_MAINS_LOSS);
 			return;
 		}
-		if (!bspDinGet(DIN_SYSTEM_ON_OFF)) {
+		if (!hal_gpio_in_get(HAL_CH_SYSTEM_ON_OFF)) {
 			transition_to(PSU_STATE_SHUTDOWN);
 			return;
 		}
@@ -502,7 +500,7 @@ static void state_run_normal_op(void)
 		}
 
 		if (g_temp_ticks >= T_TEMP_FAULT_DELAY) {
-			printk("PSU_SM: over-temp fault! T1=%d.%d T2=%d.%d\n",
+			hal_log("PSU_SM: over-temp fault! T1=%d.%d T2=%d.%d\n",
 			       g_temp1 / 10, g_temp1 % 10,
 			       g_temp2 / 10, g_temp2 % 10);
 			set_error(PSU_ERR_INIT_FAIL);
@@ -539,7 +537,7 @@ static void state_run_s2_mode(void)
 			set_error(PSU_ERR_MAINS_LOSS);
 			return;
 		}
-		if (!bspDinGet(DIN_SYSTEM_ON_OFF)) {
+		if (!hal_gpio_in_get(HAL_CH_SYSTEM_ON_OFF)) {
 			transition_to(PSU_STATE_SHUTDOWN);
 			return;
 		}
@@ -564,7 +562,7 @@ static void state_run_charging(void)
 			set_error(PSU_ERR_CHARGING_FAIL);
 			return;
 		}
-		if (!bspDinGet(DIN_SYSTEM_ON_OFF)) {
+		if (!hal_gpio_in_get(HAL_CH_SYSTEM_ON_OFF)) {
 			transition_to(PSU_STATE_SHUTDOWN);
 			return;
 		}
@@ -589,18 +587,18 @@ static void state_run_charging(void)
 static void state_run_shutdown(void)
 {
 	if (g_state_ticks < T_RELAY_STEP) {
-		bspDoutSet(DOUT_K4_DRV, false);
+		hal_gpio_out_set(HAL_CH_K4_DRV, false);
 	} else if (g_state_ticks < T_RELAY_STEP * 2) {
-		bspDoutSet(DOUT_K3_1_DRV, false);
-		bspDoutSet(DOUT_K3_2_DRV, false);
+		hal_gpio_out_set(HAL_CH_K3_1_DRV, false);
+		hal_gpio_out_set(HAL_CH_K3_2_DRV, false);
 	} else if (g_state_ticks < T_RELAY_STEP * 3) {
-		bspDoutSet(DOUT_PWR_ON_OFF,         false);
-		bspDoutSet(DOUT_TROLLEY_ENABLE_DRV, false);
+		hal_gpio_out_set(HAL_CH_PWR_ON_OFF,         false);
+		hal_gpio_out_set(HAL_CH_TROLLEY_ENABLE_DRV, false);
 		fan_set(false, 0);
 	} else if (g_state_ticks < T_RELAY_STEP * 4) {
 		panel_leds_off();
-		ledSwitchOff(0);
-		ledSwitchOff(1);
+		hal_led_set(HAL_LED_GREEN, false);
+		hal_led_set(HAL_LED_YELLOW, false);
 	} else {
 		transition_to(PSU_STATE_OFF);
 	}
@@ -610,13 +608,13 @@ static void state_run_fault(void)
 {
 	/* Error LED blink */
 	if ((g_state_ticks % T_LED_BLINK_FAULT) < (T_LED_BLINK_FAULT / 2)) {
-		ledSwitchOn(1);
+		hal_led_set(HAL_LED_YELLOW, true);
 	} else {
-		ledSwitchOff(1);
+		hal_led_set(HAL_LED_YELLOW, false);
 	}
 
 	/* Manual reset: DIN_SYSTEM_RESET (PJ1) */
-	if (bspDinGet(DIN_SYSTEM_RESET)) {
+	if (hal_gpio_in_get(HAL_CH_SYSTEM_RESET)) {
 		g_error = PSU_ERR_NONE;
 		transition_to(PSU_STATE_RESET);
 		return;
@@ -651,7 +649,7 @@ static void state_run_reset(void)
 
 static void state_run_off(void)
 {
-	if (bspDinGet(DIN_SYSTEM_ON_OFF) && check_mains_present()) {
+	if (hal_gpio_in_get(HAL_CH_SYSTEM_ON_OFF) && check_mains_present()) {
 		transition_to(PSU_STATE_INIT);
 	}
 }
@@ -660,11 +658,11 @@ static void state_run_off(void)
 
 static psu_config_t read_config_switches(void)
 {
-	if (bspDinGet(DIN_S1_SYSTEM_CONFIG)) {
+	if (hal_gpio_in_get(HAL_CH_S1_SYSTEM_CONFIG)) {
 		return PSU_CFG_S1;
-	} else if (bspDinGet(DIN_S2_SYSTEM_CONFIG)) {
+	} else if (hal_gpio_in_get(HAL_CH_S2_SYSTEM_CONFIG)) {
 		return PSU_CFG_S2;
-	} else if (bspDinGet(DIN_SOLO_SYSTEM_CONFIG)) {
+	} else if (hal_gpio_in_get(HAL_CH_SOLO_SYSTEM_CONFIG)) {
 		return PSU_CFG_SOLO;
 	}
 	return PSU_CFG_S1;
@@ -672,9 +670,9 @@ static psu_config_t read_config_switches(void)
 
 static bool check_mains_present(void)
 {
-	bool trolley = bspDinGet(DIN_TROLLEY_CONNECTED)
-	            || bspDinGet(DIN_TROLLEY_CONNECTED_J);
-	bool me_error = bspDinGet(DIN_ME_BOX_ERROR);
+	bool trolley = hal_gpio_in_get(HAL_CH_TROLLEY_CONNECTED)
+	            || hal_gpio_in_get(HAL_CH_TROLLEY_CONNECTED_J);
+	bool me_error = hal_gpio_in_get(HAL_CH_ME_BOX_ERROR);
 
 	return trolley && !me_error;
 }
