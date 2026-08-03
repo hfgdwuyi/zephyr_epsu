@@ -1,0 +1,10 @@
+# cios-zhong digital output binding
+description: cios-zhong DOUT configuration node
+compatible: "cios-zhong,dout"
+
+child-binding:
+    description: Single DOUT pin
+    properties:
+        gpios:
+            type: phandle-array
+            required: true

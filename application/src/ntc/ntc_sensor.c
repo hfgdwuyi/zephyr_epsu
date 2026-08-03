@@ -11,7 +11,7 @@
  */
 
 #include "ntc_sensor.h"
-#include "../../hal/hal_adc.h"
+#include "bsp_ain.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -127,7 +127,7 @@ static int16_t ntc_interpolate(uint32_t r_ohm)
 
 int16_t ntc_read_temp(uint8_t ain_channel)
 {
-	uint32_t raw = hal_adc_read_raw(ain_channel);
+	uint32_t raw = bspAinGetRawValue(ain_channel);
 
 	if (raw == 0) {
 		return INT16_MIN;   /* ADC not ready or read failed */

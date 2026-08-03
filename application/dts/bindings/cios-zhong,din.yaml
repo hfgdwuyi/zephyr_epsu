@@ -1,0 +1,10 @@
+# cios-zhong digital input binding
+description: cios-zhong DIN configuration node
+compatible: "cios-zhong,din"
+
+child-binding:
+    description: Single DIN pin
+    properties:
+        gpios:
+            type: phandle-array
+            required: true

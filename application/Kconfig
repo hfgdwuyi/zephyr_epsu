@@ -1,2 +1,3 @@
-# CiosZhong Application Kconfig — sources Zephyr base
+# CiosZhong Application Kconfig — Zephyr base + project options
 source "Kconfig.zephyr"
+rsource "Kconfig.project"

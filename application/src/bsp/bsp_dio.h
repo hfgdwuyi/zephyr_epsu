@@ -123,9 +123,6 @@ static inline bool bspDinGet(uint8_t pin)
 void bspDoutSet(uint8_t pinNumber, bool state);
 bool bspDoutRead(uint8_t pinNumber);
 
-/* Periodic DOUT refresh — mirrors input states to status output drivers only */
-void bspDoutUpdate(void);
-
 /* MAX6703A WDI toggle — must be called within 1.6s timeout */
 void bspWdiFeed(void);
 

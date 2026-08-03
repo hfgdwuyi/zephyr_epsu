@@ -1,1 +1,8 @@
-rsource "../http/Kconfig"
+# cios-zhong — project-specific configuration options
+
+config CIOS_ZHONG_FW_VERSION
+	string "Firmware version"
+	default "0.1.0"
+	help
+	  Firmware version string in MAJOR.MINOR.PATCH format.
+	  Displayed on boot and available via status queries.

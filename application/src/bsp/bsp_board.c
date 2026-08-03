@@ -22,6 +22,7 @@
 #include "bsp_board.h"
 #include "bsp_ain.h"
 #include "bsp_aout.h"
+#include "bsp_dio.h"
 #include "bsp_pwm.h"
 
 #if DT_NODE_HAS_STATUS(DT_ALIAS(i2c0), okay)
@@ -39,16 +40,49 @@ static const struct device *const spi0_dev = NULL;
 /*----------------------------------------------------------------------------*/
 /*! @brief Pins / peripherals initialization (Zephyr) */
 /*----------------------------------------------------------------------------*/
+static void bsp_din_apply_debounce(void);
+
 void boardInit(void)
 {
-    /* LED module init */
-    ledInit();
+	bspDioInit();       /* DOUT config + DIN init + 1ms polling start */
+	bsp_din_apply_debounce();  /* set debounce for mechanical switches */
 
-    bspAinInit();
+	ledInit();          /* NUCLEO on-board LEDs */
+	bspAinInit();
+	bspAoutInit();
+	bspPwmInit();
+}
 
-    bspAoutInit();
+/*
+ * Apply debounce to all mechanical input channels.
+ * Switches and relay feedback contacts need ~10ms debounce;
+ * digital status inputs (already clean) use 0.
+ */
+static void bsp_din_apply_debounce(void)
+{
+	static const bspDinSettings deb_10ms = { .deb_en = true, .deb_time = 10 };
+	static const bspDinSettings deb_off  = { .deb_en = false, .deb_time = 0 };
 
-    bspPwmInit();
+	/* Mechanical switches — 10ms debounce */
+	bspDinSetDebouncing(DIN_SYSTEM_ON_OFF,          deb_10ms);
+	bspDinSetDebouncing(DIN_SYSTEM_RESET,           deb_10ms);
+	bspDinSetDebouncing(DIN_S1_SYSTEM_CONFIG,       deb_10ms);
+	bspDinSetDebouncing(DIN_S2_SYSTEM_CONFIG,       deb_10ms);
+	bspDinSetDebouncing(DIN_SOLO_SYSTEM_CONFIG,     deb_10ms);
+	bspDinSetDebouncing(DIN_TROLLEY_CONNECTED,      deb_10ms);
+	bspDinSetDebouncing(DIN_TROLLEY_CONNECTED_J,    deb_10ms);
+	bspDinSetDebouncing(DIN_SMART_WHS_INDICATE,     deb_10ms);
+	bspDinSetDebouncing(DIN_DRAWER_INDICATE,        deb_10ms);
+	bspDinSetDebouncing(DIN_SMART_CTRL_WHS_SEARCH,  deb_10ms);
+
+	/* Status / LED monitor inputs — no debounce needed */
+	bspDinSetDebouncing(DIN_GRID_MAIN_RELAY_STATUS, deb_off);
+	bspDinSetDebouncing(DIN_ME_BOX_ERROR,           deb_off);
+	bspDinSetDebouncing(DIN_TEMP_ALERT,             deb_off);
+	bspDinSetDebouncing(DIN_LED_PWR_24_ON,          deb_off);
+	bspDinSetDebouncing(DIN_LED_CP_24V_ON,          deb_off);
+	bspDinSetDebouncing(DIN_IS_PC_ON,               deb_off);
+	bspDinSetDebouncing(DIN_APP_HOST_ON,            deb_off);
 }
 
 /*----------------------------------------------------------------------------*/
