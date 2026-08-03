@@ -26,6 +26,9 @@
 /* active configuration : 0 */
 #define CO_CONFIG_USE_TARGET_0 1
 
+/* Disable bare-metal UART printf (Zephyr handles output via printk) */
+#define CONFIG_NO_PRINTF               	1
+
 
 /*
  * General Settings
@@ -47,9 +50,9 @@
  * Code Maturity Level Options
  */
 #ifdef CO_CONFIG_USE_TARGET_0
-#define CONFIG_DRIVER_TEST                  	1
+#define CONFIG_DRIVER_TEST                  	0
 #define CONFIG_EXPERIMENTAL                 	1
-#define CONFIG_TIME_TEST                    	1
+#define CONFIG_TIME_TEST                    	0
 #endif /* CO_CONFIG_USE_TARGET_0*/
 
 

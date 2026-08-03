@@ -116,28 +116,43 @@ static void coledThreadFn(void *p1, void *p2, void *p3)
 
 static void canopenInit(void)
 {
-	printk("CANopen: initializing...\n");
+	unsigned int key;
 
-	/* Init CAN controller on fdcan1 at 500 kbit/s */
+	printk("CANopen: initializing (no CAN transceiver on NUCLEO)\n");
+
+	key = irq_lock();
+
+	/* Step 1: Init CAN controller (fdcan1, 500 kbit/s).
+	 * Without a transceiver this succeeds at register level
+	 * but bus communication will fail — that's expected. */
 	uint8_t canRet = Init_CAN(DEVICE_DT_NAME(DT_NODELABEL(fdcan1)),
 				  CAN_BAUDRATE);
 	if (canRet != 0) {
-		printk("CANopen: Init_CAN failed (%u) — check wiring\n",
-		       (unsigned)canRet);
+		printk("CANopen: Init_CAN failed (%u)\n", (unsigned)canRet);
+		irq_unlock(key);
+		return;
 	}
 
-	/* Init CANopen library (objects, SDO, PDO, NMT, etc.) */
+	/* Step 2: Init CANopen protocol stack (pure software).
+	 * createNodeReq() registers the NMT object but does NOT
+	 * send any CAN frames yet — safe without a transceiver. */
 	RET_T libRet = init_Library(CO_LINE_PARA);
 	if (libRet != CO_OK) {
 		printk("CANopen: init_Library failed (0x%02X)\n",
 		       (unsigned)libRet);
+		irq_unlock(key);
+		return;
 	}
 
-	/* Start CAN controller (activate interrupts / polling) */
+	/* Step 3: Start 1ms timer tick for CANopen stack */
+	initTimer();
+
+	/* Step 4: Start CAN controller LAST — bus communication
+	 * begins here. Without a transceiver, the first TX attempt
+	 * will trigger a bus-off; the driver logs it and keeps going. */
 	Start_CAN();
 
-	/* Start periodic timer (1 ms tick for CANopen stack) */
-	initTimer();
+	irq_unlock(key);
 
 	printk("CANopen: nodeId=%d operational\n", getNodeId());
 }
@@ -181,17 +196,26 @@ int main(void)
 	printk("Build: %s %s, board: %s\n",
 	       __DATE__, __TIME__, CONFIG_BOARD);
 
+	/* Allow unaligned memory access — required by CANopen library
+	 * which was designed for MCUs without alignment restrictions.
+	 * Cortex-M7 faults on unaligned access by default. */
+	SCB->CCR &= ~SCB_CCR_UNALIGN_TRP_Msk;
+
 	/* ---- Framework init (PSU + BSP + WDT) ---- */
 	boardInit();
 	stateMachineInit();
 	wtdgInit();
 
-	/* ---- CANopen stack init ---- */
-	canopenInit();
-
-	/* ---- Threads ---- */
-	flushmbxStart();
-	coledStart();
+	/* ---- CANopen stack init ----
+	 * Disabled: NUCLEO-H745ZI-Q has no external CAN transceiver.
+	 * PD0/PD1 are TTL-level only — without a SN65HVD230 or similar,
+	 * the bus is open-circuit and any CAN TX causes bus-off → fault.
+	 * Enable when an external transceiver board is connected.
+	 *
+	 *   canopenInit();
+	 *   flushmbxStart();
+	 *   coledStart();
+	 */
 
 	/* ---- PSU periodic scheduler ---- */
 	schedulerStart();
