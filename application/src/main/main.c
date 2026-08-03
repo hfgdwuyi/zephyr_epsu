@@ -1,22 +1,16 @@
 /**
- * main.c — cios-zhong PSU + CANopen (CiA 301 slave)
+ * main.c — cios-zhong PSU controller entry point
  *
- * Merged from two designs:
- * 1. Our PSU framework: stateMachine + wtdg + bsp scheduler
- * 2. Remote CANopen demo: Init_CAN → init_Library → Start_CAN →
- *    initTimer → FlushMbox thread
- *
- * CANopen Design Tool project: application/src/objdic/objdic.can
- * Object Dictionary auto-generated in application/src/objdic/objects.c
+ * CANopen stack (canopen/ + candriver/ + objdic/) compiled but not
+ * started at runtime — NUCLEO-H745ZI-Q has no external CAN transceiver.
+ * Uncomment canopenInit() / flushmbxStart() when transceiver is connected.
  */
 
 #include <zephyr/kernel.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/sys/printk.h>
 
-/* ---- Our framework ---- */
 #include "bsp_board.h"
-#include "bsp_led.h"
 #include "bsp_wtdg.h"
 #include "stateMachine.h"
 #include "scheduler.h"
@@ -96,22 +90,6 @@ RET_T sdoWrInd(UNSIGNED16 index, UNSIGNED8 subIdx)
 	return 0;
 }
 
-/* ---- CANopen LED heartbeat (CiA 303-3) ▶ system heartbeat blink (CiA 303-3) ---- */
-
-#define HEARTBEAT_STACK_SZ 512
-#define HEARTBEAT_PRIO     7
-
-K_THREAD_STACK_DEFINE(heartbeatStack, HEARTBEAT_STACK_SZ);
-static struct k_thread heartbeatThread;
-
-static void heartbeatThreadFn(void *p1, void *p2, void *p3)
-{
-	while (1) {
-		ledToggle(SYSTEM_OK_LED_NUM);
-		k_sleep(K_MSEC(500));
-	}
-}
-
 /* ---- CANopen init wrapper ---- */
 
 static void canopenInit(void)
@@ -172,49 +150,20 @@ static void flushmbxStart(void)
 	}
 }
 
-/* ---- CANopen LED thread startup ---- */
-
-static void heartbeatStart(void)
-{
-	k_tid_t tid = k_thread_create(&heartbeatThread,
-			heartbeatStack,
-			K_THREAD_STACK_SIZEOF(heartbeatStack),
-			heartbeatThreadFn,
-			NULL, NULL, NULL,
-			HEARTBEAT_PRIO, 0, K_NO_WAIT);
-	if (tid == NULL) {
-		printk("CANopen: ERROR spawning LED thread\n");
-	}
-}
-
 /* ========== main() ========== */
 
 int main(void)
 {
 	printk("\n===== CiosZhong PSU v%s =====\n",
 	       CONFIG_CIOS_ZHONG_FW_VERSION);
-	printk("Build: %s %s, board: %s\n",
-	       __DATE__, __TIME__, CONFIG_BOARD);
 
-	/* Allow unaligned memory access — required by CANopen library
-	 * which was designed for MCUs without alignment restrictions.
-	 * Cortex-M7 faults on unaligned access by default. */
-	SCB->CCR &= ~SCB_CCR_UNALIGN_TRP_Msk;
-
-	/* ---- Framework init (PSU + BSP + WDT) ---- */
 	boardInit();
 	stateMachineInit();
 	wtdgInit();
 
-	/* ---- CANopen stack init ----
-	 * Disabled: NUCLEO-H745ZI-Q has no external CAN transceiver.
-	 * PD0/PD1 are TTL-level only — without a SN65HVD230 or similar,
-	 * the bus is open-circuit and any CAN TX causes bus-off → fault.
-	 * Enable when an external transceiver board is connected.
-	 *
+	/* ---- CANopen (disabled — no external transceiver on NUCLEO) ----
 	 *   canopenInit();
 	 *   flushmbxStart();
-	 *   heartbeatStart();
 	 */
 
 	/* ---- PSU periodic scheduler ---- */

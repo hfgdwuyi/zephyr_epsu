@@ -5,7 +5,7 @@
  *  10 ms : k_timer    → DOUT status mirror (bsp_dio internal, auto-started)
  *  50 ms : k_work_d   → bspAinPoll()
  *  500ms : k_work_d   → bspWdiFeed()
- *  500ms : K_TIMER    → ledToggle(SYSTEM_OK_LED_NUM)
+ *  500ms : k_work_d   → ledToggle(SYSTEM_OK_LED_NUM)
  *  3000ms: k_work_d   → hal_log status
  */
 
