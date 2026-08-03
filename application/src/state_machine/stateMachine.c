@@ -236,7 +236,17 @@ static void panelLedsUpdate(stateMachineState_t s)
 	bspDoutSet(DOUT_LED_SYSTEM_ON, sys_led && !me_err);
 }
 
-/* ==================== Fan control (PWM) ==================== */
+/* ==================== Fan duty settings (PWM percent) ==================== */
+
+#define FAN_DUTY_OFF        0
+#define FAN_DUTY_MIN       20
+#define FAN_DUTY_S2_MODE   30
+#define FAN_DUTY_MID       40
+#define FAN_DUTY_NORMAL    50
+#define FAN_DUTY_HIGH      60
+#define FAN_DUTY_CHARGING  70
+#define FAN_DUTY_WARN      80
+#define FAN_DUTY_MAX      100
 
 static void fanSet(bool on, uint32_t duty_percent)
 {
@@ -254,11 +264,11 @@ static void fanSet(bool on, uint32_t duty_percent)
 /* Fan duty cycle derived from the hotter of the two NTC sensors */
 static uint32_t fanDutyFromTemp(int16_t temp_max)
 {
-	if (temp_max >= NTC_TEMP_FAULT)  return 100;
-	if (temp_max >= NTC_TEMP_WARN)   return  80;
-	if (temp_max >= NTC_TEMP_FAN_MAX) return 60;
-	if (temp_max >= NTC_TEMP_FAN_MID) return 40;
-	return 20;
+	if (temp_max >= NTC_TEMP_FAULT)  return FAN_DUTY_MAX;
+	if (temp_max >= NTC_TEMP_WARN)   return FAN_DUTY_WARN;
+	if (temp_max >= NTC_TEMP_FAN_MAX) return FAN_DUTY_HIGH;
+	if (temp_max >= NTC_TEMP_FAN_MID) return FAN_DUTY_MID;
+	return FAN_DUTY_MIN;
 }
 
 /* ==================== Temperature monitoring ==================== */
@@ -298,7 +308,7 @@ static void stateEnter(stateMachineState_t s)
 		bspDoutSet(DOUT_K11_DRV,            false);
 		bspDoutSet(DOUT_K12_DRV,            false);
 		panelLedsOff();
-		fanSet(false, 0);
+		fanSet(false, FAN_DUTY_OFF);
 		ledSwitchOff(0);
 		ledSwitchOff(1);
 		break;
@@ -329,7 +339,7 @@ static void stateEnter(stateMachineState_t s)
 		bspDoutSet(DOUT_K11_DRV,  true);
 		bspDoutSet(DOUT_K12_DRV,  true);
 		panelLedsUpdate(s);
-		fanSet(true, 50);   /* 50% initial, ramp up over time */
+		fanSet(true, FAN_DUTY_NORMAL);   /* 50% initial, ramp up over time */
 		break;
 
 	case STATEMACHINE_STATE_S2_MODE:
@@ -342,12 +352,12 @@ static void stateEnter(stateMachineState_t s)
 		bspDoutSet(DOUT_K11_DRV,  false);
 		bspDoutSet(DOUT_K12_DRV,  false);
 		panelLedsUpdate(s);
-		fanSet(true, 30);   /* low power, minimal cooling */
+		fanSet(true, FAN_DUTY_S2_MODE);   /* low power, minimal cooling */
 		break;
 
 	case STATEMACHINE_STATE_CHARGING:
 		panelLedsUpdate(s);
-		fanSet(true, 70);   /* charging needs extra cooling */
+		fanSet(true, FAN_DUTY_CHARGING);   /* charging needs extra cooling */
 		break;
 
 	case STATEMACHINE_STATE_SHUTDOWN:
@@ -373,7 +383,7 @@ static void stateEnter(stateMachineState_t s)
 		bspDoutSet(DOUT_K9_DRV,  false); bspDoutSet(DOUT_K10_DRV, false);
 		bspDoutSet(DOUT_K11_DRV, false); bspDoutSet(DOUT_K12_DRV, false);
 		panelLedsOff();
-		fanSet(false, 0);
+		fanSet(false, FAN_DUTY_OFF);
 		ledSwitchOff(0);
 		ledSwitchOn(1);
 		break;
@@ -385,7 +395,7 @@ static void stateEnter(stateMachineState_t s)
 		bspDoutSet(DOUT_K3_2_DRV,           false);
 		bspDoutSet(DOUT_K4_DRV,             false);
 		panelLedsOff();
-		fanSet(false, 0);
+		fanSet(false, FAN_DUTY_OFF);
 		ledSwitchOff(0);
 		ledSwitchOff(1);
 		break;
@@ -517,7 +527,7 @@ static void stateRunNormalOp(void)
 
 	/* Ramp fan to full speed after spin-up (only if no temp data yet) */
 	if (g_state_ticks == T_FAN_SPIN_UP && g_temp1 <= 0 && g_temp2 <= 0) {
-		fanSet(true, 80);
+		fanSet(true, FAN_DUTY_WARN);
 	}
 }
 
@@ -595,7 +605,7 @@ static void stateRunShutdown(void)
 	} else if (g_state_ticks < T_RELAY_STEP * 3) {
 		bspDoutSet(DOUT_PWR_ON_OFF,         false);
 		bspDoutSet(DOUT_TROLLEY_ENABLE_DRV, false);
-		fanSet(false, 0);
+		fanSet(false, FAN_DUTY_OFF);
 	} else if (g_state_ticks < T_RELAY_STEP * 4) {
 		panelLedsOff();
 		ledSwitchOff(0);
