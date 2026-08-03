@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ISO15745ProfileContainer  xmlns="http://www.canopen.org/xml/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.canopen.org/xml/1.0 CANopen.xsd">
+  <ISO15745Profile>
+    <ProfileHeader>
+      <ProfileIdentification>CAN device profile</ProfileIdentification>
+      <ProfileRevision>1</ProfileRevision>
+      <ProfileName> </ProfileName>
+      <ProfileSource/>
+      <ProfileClassID>Device</ProfileClassID>
+      <ISO15745Reference>
+        <ISO15745Part>1</ISO15745Part>
+        <ISO15745Edition>1</ISO15745Edition>
+        <ProfileTechnology>CANopen</ProfileTechnology>
+      </ISO15745Reference>
+    </ProfileHeader>
+    <ProfileBody xsi:type="ProfileBody_Device_CANopen" fileName="newProject_line0.xdd" fileCreator="z003c6xf" fileCreationDate="2020-04-09" fileModifiedBy="z003c6xf" fileModificationDate="2020-04-09" fileVersion="1.1">
+      <DeviceIdentity>
+        <vendorName>Siemens Healthcare</vendorName>
+        <vendorID>0x53</vendorID>
+        <deviceFamily>
+          <label lang="en"></label>
+          <description lang="en"></description>
+        </deviceFamily>
+        <productFamily></productFamily>
+        <productName>CANopen device</productName>
+        <orderNumber></orderNumber>
+      </DeviceIdentity>
+      <DeviceManager>
+      </DeviceManager>
+      <DeviceFunction>
+        <capabilities>
+         <!-- The characteristicsList is a list of key-value pairs.  -->
+         <characteristicsList>
+            <characteristic>
+	      <characteristicName>
+		<label lang="en"/>
+	      </characteristicName>
+	      <characteristicContent>
+		<label lang="en"/>
+	      </characteristicContent>
+	    </characteristic>
+    	</characteristicsList>
+        </capabilities>
+      </DeviceFunction>
+    </ProfileBody>
+  </ISO15745Profile>
+  <ISO15745Profile>
+    <ProfileHeader>
+      <ProfileIdentification>CAN comm net profile</ProfileIdentification>
+      <ProfileRevision>1</ProfileRevision>
+      <ProfileName/>
+      <ProfileSource/>
+      <ProfileClassID>CommunicationNetwork</ProfileClassID>
+      <ISO15745Reference>
+        <ISO15745Part>1</ISO15745Part>
+        <ISO15745Edition>1</ISO15745Edition>
+        <ProfileTechnology>CANopen</ProfileTechnology>
+      </ISO15745Reference>
+    </ProfileHeader>
+    <ProfileBody xsi:type="ProfileBody_CommunicationNetwork_CANopen" fileName="newProject_line0.xdd" fileCreator="z003c6xf" fileCreationDate="2020-04-09" fileModifiedBy="z003c6xf" fileModificationDate="2020-04-09" fileVersion="1.1">
+      <ApplicationLayers>
+        <identity>
+          <vendorID>0x53</vendorID>
+        </identity>
+        <CANopenObjectList>
+          <CANopenObject index="1000" name="Device Type" objectType="7" PDOmapping="no" accessType="const" dataType="0007" defaultValue="0x00000000" />
+          <CANopenObject index="1001" name="Error Register" objectType="7" PDOmapping="no" accessType="ro" dataType="0005" />
+          <CANopenObject index="1008" name="Manufacturer Device Name" objectType="7" PDOmapping="no" accessType="const" dataType="0009" />
+          <CANopenObject index="1009" name="Manufacturer Hardware Version" objectType="7" PDOmapping="no" accessType="const" dataType="0009" />
+          <CANopenObject index="100A" name="Manufacturer Software Version" objectType="7" PDOmapping="no" accessType="const" dataType="0009" />
+          <CANopenObject index="1017" name="Producer Heartbeat Time" objectType="7" PDOmapping="no" accessType="rw" dataType="0006" defaultValue="0x00000BB8" />
+          <CANopenObject index="1018" name="Identity Object" objectType="9" dataType="0023" subNumber="5">
+            <CANopenSubObject subIndex="00" name="number of entries" objectType="7" accessType="ro" dataType="0005" defaultValue="0x4" PDOmapping="no" />
+            <CANopenSubObject subIndex="01" name="Vendor Id" objectType="7" accessType="ro" dataType="0007" defaultValue="0x53" PDOmapping="no" />
+            <CANopenSubObject subIndex="02" name="Product Code" objectType="7" accessType="ro" dataType="0007" defaultValue="0x0" PDOmapping="no" />
+            <CANopenSubObject subIndex="03" name="Revision number" objectType="7" accessType="ro" dataType="0007" PDOmapping="no" />
+            <CANopenSubObject subIndex="04" name="Serial number" objectType="7" accessType="ro" dataType="0007" PDOmapping="no" />
+          </CANopenObject>
+        </CANopenObjectList>
+        <dummyUsage>
+          <dummy entry="Dummy0001=0"/>
+          <dummy entry="Dummy0002=0"/>
+          <dummy entry="Dummy0003=0"/>
+          <dummy entry="Dummy0004=0"/>
+          <dummy entry="Dummy0005=1"/>
+          <dummy entry="Dummy0006=1"/>
+          <dummy entry="Dummy0007=1"/>
+        </dummyUsage>
+      </ApplicationLayers>
+    <TransportLayers>
+      <PhysicalLayer>
+        <baudRate>
+        </baudRate>
+      </PhysicalLayer>
+    </TransportLayers>
+      <NetworkManagement>
+      <CANopenGeneralFeatures groupMessaging="false" dynamicChannels="0" selfStartingDevice="false" SDORequestingDevice="false" granularity="0" nrOfRxPDO="0" nrOfTxPDO="0" bootUpSlave="true" layerSettingServiceSlave="false" />
+      </NetworkManagement>
+    </ProfileBody>
+  </ISO15745Profile>
+</ISO15745ProfileContainer>
