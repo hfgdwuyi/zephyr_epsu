@@ -86,14 +86,15 @@ static void statusWorkFn(struct k_work *w)
 
 static K_WORK_DELAYABLE_DEFINE(status_work, statusWorkFn);
 
-/* ========== 500 ms: NUCLEO LED heartbeat ========== */
+/* ========== 500 ms: NUCLEO LED heartbeat (thread context) ========== */
 
-static void ledTimerFn(struct k_timer *timer)
+static void ledWorkFn(struct k_work *w)
 {
 	ledToggle(SYSTEM_OK_LED_NUM);
+	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(500));
 }
 
-K_TIMER_DEFINE(led_timer, ledTimerFn, NULL);
+static K_WORK_DELAYABLE_DEFINE(ledWork, ledWorkFn);
 
 /* ========== Start all periodic tasks ========== */
 
@@ -106,7 +107,7 @@ void schedulerStart(void)
 			SM_PRIO, 0, K_NO_WAIT);
 
 	/* 500 ms LED heartbeat */
-	k_timer_start(&led_timer, K_MSEC(100), K_MSEC(500));
+	k_work_schedule(&ledWork, K_MSEC(500));
 
 	/* Periodic work items — each self-reschedules */
 	k_work_schedule(&ain_work,    K_MSEC(50));
