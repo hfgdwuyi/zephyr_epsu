@@ -7,7 +7,7 @@
 #include "bsp_wtdg.h"
 
 
-#include "psu_sm.h"
+#include "stateMachine.h"
 #include "scheduler.h"
 
 int main(void)
@@ -16,7 +16,7 @@ int main(void)
 		CONFIG_CIOS_ZHONG_FW_VERSION);
 
 	boardInit();
-	psuSmInit();
+	stateMachineInit();
 	wtdgInit();
 	schedulerStart();
 

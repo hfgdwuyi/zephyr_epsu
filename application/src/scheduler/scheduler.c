@@ -1,7 +1,7 @@
 /*
  * scheduler.c — periodic task scheduler (Zephyr implementation)
  *
- *  1 ms  : k_thread  → psuSmTick() + wtdgFeed()
+ *  1 ms  : k_thread  → stateMachineTick() + wtdgFeed()
  *  10 ms : k_timer    → DOUT status mirror (bsp_dio internal, auto-started)
  *  50 ms : k_work_d   → bspAinPoll()
  *  500ms : k_work_d   → bspWdiFeed()
@@ -20,7 +20,7 @@
 #include "bsp_led.h"
 #include "bsp_wtdg.h"
 
-#include "psu_sm.h"
+#include "stateMachine.h"
 
 /* ========== 1 ms core thread ========== */
 
@@ -33,7 +33,7 @@ K_THREAD_STACK_DEFINE(sm_stack, SM_STACK_SZ);
 static void smThreadFn(void *p1, void *p2, void *p3)
 {
 	while (1) {
-		psuSmTick();
+		stateMachineTick();
 		wtdgFeed();
 		k_sleep(K_MSEC(1));
 	}
@@ -64,22 +64,22 @@ static K_WORK_DELAYABLE_DEFINE(wdi_work, wdiWorkFn);
 static void statusWorkFn(struct k_work *w)
 {
 	static const char *const names[] = {
-		[PSU_STATE_INIT]          = "INIT",
-		[PSU_STATE_SYS_ON]        = "SYS_ON",
-		[PSU_STATE_PILOT_CONTACT] = "PILOT",
-		[PSU_STATE_SWITCH_ON]     = "SW_ON",
-		[PSU_STATE_NORMAL_OP]     = "NORMAL",
-		[PSU_STATE_S2_MODE]       = "S2",
-		[PSU_STATE_CHARGING]      = "CHARGE",
-		[PSU_STATE_SHUTDOWN]      = "SHTDWN",
-		[PSU_STATE_FAULT]         = "FAULT",
-		[PSU_STATE_RESET]         = "RESET",
-		[PSU_STATE_OFF]           = "OFF",
+		[STATEMACHINE_STATE_INIT]          = "INIT",
+		[STATEMACHINE_STATE_SYS_ON]        = "SYS_ON",
+		[STATEMACHINE_STATE_PILOT_CONTACT] = "PILOT",
+		[STATEMACHINE_STATE_SWITCH_ON]     = "SW_ON",
+		[STATEMACHINE_STATE_NORMAL_OP]     = "NORMAL",
+		[STATEMACHINE_STATE_S2_MODE]       = "S2",
+		[STATEMACHINE_STATE_CHARGING]      = "CHARGE",
+		[STATEMACHINE_STATE_SHUTDOWN]      = "SHTDWN",
+		[STATEMACHINE_STATE_FAULT]         = "FAULT",
+		[STATEMACHINE_STATE_RESET]         = "RESET",
+		[STATEMACHINE_STATE_OFF]           = "OFF",
 	};
-	psu_state_t s = psuSmGetState();
+	stateMachineState_t s = stateMachineGetState();
 	printk("PSU [%s] err=%s\n",
 		(s < ARRAY_SIZE(names)) ? names[s] : "?",
-		psuSmGetErrorStr(psuSmGetError()));
+		stateMachineGetErrorStr(stateMachineGetError()));
 
 	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(3000));
 }
