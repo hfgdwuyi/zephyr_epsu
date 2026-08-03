@@ -11,6 +11,7 @@
 #include <zephyr/sys/printk.h>
 
 #include "bsp_board.h"
+#include "bsp_led.h"
 #include "bsp_wtdg.h"
 #include "stateMachine.h"
 #include "scheduler.h"
@@ -135,6 +136,35 @@ static void canopenInit(void)
 	printk("CANopen: nodeId=%d operational\n", getNodeId());
 }
 
+/* ---- Heartbeat LED thread ---- */
+
+static void heartbeatThreadFn(void *p1, void *p2, void *p3)
+{
+	while (1) {
+		ledToggle(SYSTEM_OK_LED_NUM);
+		k_sleep(K_MSEC(500));
+	}
+}
+
+#define HEARTBEAT_STACK_SZ 512
+#define HEARTBEAT_PRIO     7
+
+K_THREAD_STACK_DEFINE(heartbeatStack, HEARTBEAT_STACK_SZ);
+static struct k_thread heartbeatThread;
+
+static void heartbeatStart(void)
+{
+	k_tid_t tid = k_thread_create(&heartbeatThread,
+			heartbeatStack,
+			K_THREAD_STACK_SIZEOF(heartbeatStack),
+			heartbeatThreadFn,
+			NULL, NULL, NULL,
+			HEARTBEAT_PRIO, 0, K_NO_WAIT);
+	if (tid == NULL) {
+		printk("ERROR spawning heartbeat LED thread\n");
+	}
+}
+
 /* ---- FlushMbox thread startup ---- */
 
 static void flushmbxStart(void)
@@ -160,6 +190,9 @@ int main(void)
 	boardInit();
 	stateMachineInit();
 	wtdgInit();
+
+	/* LED heartbeat */
+	heartbeatStart();
 
 	/* ---- CANopen (disabled — no external transceiver on NUCLEO) ----
 	 *   canopenInit();

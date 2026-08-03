@@ -5,8 +5,8 @@
  *  10 ms : k_timer    → DOUT status mirror (bsp_dio internal, auto-started)
  *  50 ms : k_work_d   → bspAinPoll()
  *  500ms : k_work_d   → bspWdiFeed()
- *  500ms : k_work_d   → ledToggle(SYSTEM_OK_LED_NUM)
- *  3000ms: k_work_d   → hal_log status
+ *  500ms : k_thread    → main.c: heartbeat LED toggle
+ *  3000ms: k_work_d   → printk status
  */
 
 #include "scheduler.h"
@@ -17,7 +17,6 @@
 
 #include "bsp_dio.h"
 #include "bsp_ain.h"
-#include "bsp_led.h"
 #include "bsp_wtdg.h"
 
 #include "stateMachine.h"
@@ -86,15 +85,8 @@ static void statusWorkFn(struct k_work *w)
 
 static K_WORK_DELAYABLE_DEFINE(status_work, statusWorkFn);
 
-/* ========== 500 ms: NUCLEO LED heartbeat (thread context) ========== */
-
-static void ledWorkFn(struct k_work *w)
-{
-	ledToggle(SYSTEM_OK_LED_NUM);
-	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(500));
-}
-
-static K_WORK_DELAYABLE_DEFINE(ledWork, ledWorkFn);
+/* NOTE: LED heartbeat is now in main.c — heartbeatStart() runs
+ * as a dedicated k_thread for proper PWM/GPIO safety on STM32H7. */
 
 /* ========== Start all periodic tasks ========== */
 
@@ -105,9 +97,6 @@ void schedulerStart(void)
 			K_THREAD_STACK_SIZEOF(sm_stack),
 			smThreadFn, NULL, NULL, NULL,
 			SM_PRIO, 0, K_NO_WAIT);
-
-	/* 500 ms LED heartbeat */
-	k_work_schedule(&ledWork, K_MSEC(500));
 
 	/* Periodic work items — each self-reschedules */
 	k_work_schedule(&ain_work,    K_MSEC(50));
