@@ -1,3 +1,0 @@
-# Kconfig entry for zephyr_epsu
-
-rsource "../src/http/Kconfig"
