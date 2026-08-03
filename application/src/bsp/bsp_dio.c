@@ -62,12 +62,12 @@ static bspDinSettings dinSettings[DIN_MAX];
 static struct k_timer  dinTimer;
 static struct k_work   dinWork;
 
-static void din_timer_cb(struct k_timer *timer)
+static void dinTimerCb(struct k_timer *timer)
 {
 	(void)k_work_submit(&dinWork);
 }
 
-static void din_work_cb(struct k_work *work)
+static void dinWorkCb(struct k_work *work)
 {
 	bspDinUpdate();
 }
@@ -78,7 +78,7 @@ static void din_work_cb(struct k_work *work)
 
 static struct k_timer mirrorTimer;
 
-static void mirror_timer_cb(struct k_timer *timer)
+static void mirrorTimerCb(struct k_timer *timer)
 {
 	bool trolley_ok  = bspDinGet(DIN_TROLLEY_CONNECTED);
 	bool is_pc_on    = bspDinGet(DIN_IS_PC_ON);
@@ -92,9 +92,9 @@ static void mirror_timer_cb(struct k_timer *timer)
 	bspDoutSet(DOUT_MAINS_CONNECTED_IS_PC,   is_pc_on);
 }
 
-static void mirror_timer_start(void)
+static void mirrorTimerStart(void)
 {
-	k_timer_init(&mirrorTimer, mirror_timer_cb, NULL);
+	k_timer_init(&mirrorTimer, mirrorTimerCb, NULL);
 	k_timer_start(&mirrorTimer, K_MSEC(10), K_MSEC(10));
 }
 
@@ -102,7 +102,7 @@ void bspDioInit(void)
 {
 	bspDinInit();
 	bspDoutInit();
-	mirror_timer_start();
+	mirrorTimerStart();
 }
 
 /* ==================== DIN init + update + setters ==================== */
@@ -116,8 +116,8 @@ static void bspDinInit(void)
 		gpio_pin_configure_dt(&din_specs[i], GPIO_INPUT);
 	}
 
-	k_work_init(&dinWork, din_work_cb);
-	k_timer_init(&dinTimer, din_timer_cb, NULL);
+	k_work_init(&dinWork, dinWorkCb);
+	k_timer_init(&dinTimer, dinTimerCb, NULL);
 	k_timer_start(&dinTimer, K_MSEC(1), K_MSEC(1));
 }
 

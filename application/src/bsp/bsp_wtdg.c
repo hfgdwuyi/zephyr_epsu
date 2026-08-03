@@ -74,7 +74,7 @@ static void wdt_callback(const struct device *wdt_dev, int channel_id)
 }
 #endif
 
-void WTDG_Init(void)
+void wtdgInit(void)
 {
 #if WDT_AVAILABLE
     if (!device_is_ready(wdt)) {
@@ -114,11 +114,11 @@ void WTDG_Init(void)
     k_msleep(WDT_MIN_WINDOW);
 #endif
 #else
-    printk("WTDG_Init: watchdog0 not in devicetree, skipping\n");
+    printk("wtdgInit: watchdog0 not in devicetree, skipping\n");
 #endif /* WDT_AVAILABLE */
 }
 
-void WTDG_Feed(void)
+void wtdgFeed(void)
 {
 #if WDT_AVAILABLE
     if (wtdgStopFlag) {

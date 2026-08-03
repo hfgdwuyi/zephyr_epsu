@@ -53,31 +53,31 @@ typedef enum {
 /* ---------- Public API ---------- */
 
 /* Init state machine (call once at boot) */
-void psu_sm_init(void);
+void psuSmInit(void);
 
 /* Main state machine tick — call periodically (e.g., every 1 ms) */
-void psu_sm_tick(void);
+void psuSmTick(void);
 
 /* Get current state */
-psu_state_t psu_sm_get_state(void);
+psu_state_t psuSmGetState(void);
 
 /* Get active fault bits */
-uint32_t psu_sm_get_faults(void);
+uint32_t psuSmGetFaults(void);
 
 /* Get current error code */
-psu_error_t psu_sm_get_error(void);
+psu_error_t psuSmGetError(void);
 
 /* Get latest error description */
-const char *psu_sm_get_error_str(psu_error_t err);
+const char *psuSmGetErrorStr(psu_error_t err);
 
 /* Request system shutdown */
-void psu_sm_request_shutdown(void);
+void psuSmRequestShutdown(void);
 
 /* Request system reset */
-void psu_sm_request_reset(void);
+void psuSmRequestReset(void);
 
 /* Request charging mode */
-void psu_sm_request_charging(void);
+void psuSmRequestCharging(void);
 
 #ifdef __cplusplus
 }

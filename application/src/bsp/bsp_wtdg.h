@@ -11,8 +11,8 @@
 #ifndef BSP_WTDG_H
 #define BSP_WTDG_H
 
-void WTDG_Init(void);
-void WTDG_Feed(void);
+void wtdgInit(void);
+void wtdgFeed(void);
 
 
 #endif

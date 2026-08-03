@@ -16,9 +16,9 @@ int main(void)
 		CONFIG_CIOS_ZHONG_FW_VERSION);
 
 	boardInit();
-	psu_sm_init();
-	WTDG_Init();
-	scheduler_start();
+	psuSmInit();
+	wtdgInit();
+	schedulerStart();
 
 	return 0;
 }

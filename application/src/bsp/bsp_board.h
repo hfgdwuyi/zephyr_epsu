@@ -43,8 +43,8 @@ bool boardI2CTransfer(uint8_t i2cNum, uint16_t devAddr,
 /* SPI transfer: uses Zephyr SPI API; xfer->spi selects which SPI controller is used */
 bool boardSpiTransfer(boardSpiXfer *xfer);
 
-/* WDT init: legacy API. In Zephyr port it should call WTDG_Init() */
-void boardWtdgInit(void);
+/* WDT init: legacy API. In Zephyr port it should call wtdgInit() */
+void wtdgInit(void);
 
 #ifdef __cplusplus
 }

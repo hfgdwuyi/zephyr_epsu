@@ -46,78 +46,78 @@ static psu_config_t g_config        = PSU_CFG_S1;
 static psu_error_t  g_error         = PSU_ERR_NONE;
 static uint32_t     g_faults        = 0;
 static uint32_t     g_state_ticks   = 0;
-static bool         g_state_entered = false;
+static bool         g_stateEntered = false;
 static uint32_t     g_temp_ticks    = 0;      /* consecutive over-temp ms  */
 static int16_t      g_temp1         = 0;      /* temp sensor 1 (×10°C)     */
 static int16_t      g_temp2         = 0;      /* temp sensor 2 (×10°C)     */
 
 /* ==================== Forward declarations ==================== */
 
-static void state_enter(psu_state_t s);
-static void state_run_init(void);
-static void state_run_sys_on(void);
-static void state_run_pilot_contact(void);
-static void state_run_switch_on(void);
-static void state_run_normal_op(void);
-static void state_run_s2_mode(void);
-static void state_run_charging(void);
-static void state_run_shutdown(void);
-static void state_run_fault(void);
-static void state_run_reset(void);
-static void state_run_off(void);
+static void stateEnter(psu_state_t s);
+static void stateRunInit(void);
+static void stateRunSysOn(void);
+static void stateRunPilotContact(void);
+static void stateRunSwitchOn(void);
+static void stateRunNormalOp(void);
+static void stateRunS2Mode(void);
+static void stateRunCharging(void);
+static void stateRunShutdown(void);
+static void stateRunFault(void);
+static void stateRunReset(void);
+static void stateRunOff(void);
 
-static psu_config_t read_config_switches(void);
-static bool check_mains_present(void);
-static void panel_leds_off(void);
-static void panel_leds_update(psu_state_t s);
-static void fan_set(bool on, uint32_t duty_percent);
+static psu_config_t readConfigSwitches(void);
+static bool checkMainsPresent(void);
+static void panelLedsOff(void);
+static void panelLedsUpdate(psu_state_t s);
+static void fanSet(bool on, uint32_t duty_percent);
 
 /* ==================== Public API ==================== */
 
-void psu_sm_init(void)
+void psuSmInit(void)
 {
 	g_state          = PSU_STATE_INIT;
 	g_error          = PSU_ERR_NONE;
 	g_faults         = 0;
 	g_state_ticks    = 0;
-	g_state_entered  = false;
-	g_config         = read_config_switches();
+	g_stateEntered  = false;
+	g_config         = readConfigSwitches();
 
 	printk("PSU_SM: init cfg=%d\n", (int)g_config);
 }
 
-void psu_sm_tick(void)
+void psuSmTick(void)
 {
 	g_state_ticks++;
 
-	if (!g_state_entered) {
-		state_enter(g_state);
-		g_state_entered = true;
+	if (!g_stateEntered) {
+		stateEnter(g_state);
+		g_stateEntered = true;
 	}
 
 	switch (g_state) {
-	case PSU_STATE_INIT:          state_run_init();          break;
-	case PSU_STATE_SYS_ON:        state_run_sys_on();        break;
-	case PSU_STATE_PILOT_CONTACT: state_run_pilot_contact(); break;
-	case PSU_STATE_SWITCH_ON:     state_run_switch_on();     break;
-	case PSU_STATE_NORMAL_OP:     state_run_normal_op();     break;
-	case PSU_STATE_S2_MODE:       state_run_s2_mode();       break;
-	case PSU_STATE_CHARGING:      state_run_charging();      break;
-	case PSU_STATE_SHUTDOWN:      state_run_shutdown();      break;
-	case PSU_STATE_FAULT:         state_run_fault();         break;
-	case PSU_STATE_RESET:         state_run_reset();         break;
-	case PSU_STATE_OFF:           state_run_off();           break;
+	case PSU_STATE_INIT:          stateRunInit();          break;
+	case PSU_STATE_SYS_ON:        stateRunSysOn();        break;
+	case PSU_STATE_PILOT_CONTACT: stateRunPilotContact(); break;
+	case PSU_STATE_SWITCH_ON:     stateRunSwitchOn();     break;
+	case PSU_STATE_NORMAL_OP:     stateRunNormalOp();     break;
+	case PSU_STATE_S2_MODE:       stateRunS2Mode();       break;
+	case PSU_STATE_CHARGING:      stateRunCharging();      break;
+	case PSU_STATE_SHUTDOWN:      stateRunShutdown();      break;
+	case PSU_STATE_FAULT:         stateRunFault();         break;
+	case PSU_STATE_RESET:         stateRunReset();         break;
+	case PSU_STATE_OFF:           stateRunOff();           break;
 	default:
 		g_state = PSU_STATE_FAULT;
 		break;
 	}
 }
 
-psu_state_t psu_sm_get_state(void)           { return g_state; }
-uint32_t   psu_sm_get_faults(void)           { return g_faults; }
-psu_error_t psu_sm_get_error(void)           { return g_error; }
+psu_state_t psuSmGetState(void)           { return g_state; }
+uint32_t   psuSmGetFaults(void)           { return g_faults; }
+psu_error_t psuSmGetError(void)           { return g_error; }
 
-const char *psu_sm_get_error_str(psu_error_t err)
+const char *psuSmGetErrorStr(psu_error_t err)
 {
 	switch (err) {
 	case PSU_ERR_NONE:            return "OK";
@@ -131,57 +131,57 @@ const char *psu_sm_get_error_str(psu_error_t err)
 	}
 }
 
-void psu_sm_request_shutdown(void)
+void psuSmRequestShutdown(void)
 {
 	if (g_state == PSU_STATE_NORMAL_OP ||
 	    g_state == PSU_STATE_S2_MODE ||
 	    g_state == PSU_STATE_CHARGING) {
 		printk("PSU_SM: shutdown requested\n");
 		g_state = PSU_STATE_SHUTDOWN;
-		g_state_entered = false;
+		g_stateEntered = false;
 		g_state_ticks = 0;
 	}
 }
 
-void psu_sm_request_reset(void)
+void psuSmRequestReset(void)
 {
 	printk("PSU_SM: reset requested\n");
 	g_state = PSU_STATE_RESET;
-	g_state_entered = false;
+	g_stateEntered = false;
 	g_state_ticks = 0;
 }
 
-void psu_sm_request_charging(void)
+void psuSmRequestCharging(void)
 {
 	if (g_state == PSU_STATE_NORMAL_OP) {
 		printk("PSU_SM: charging requested\n");
 		g_state = PSU_STATE_CHARGING;
-		g_state_entered = false;
+		g_stateEntered = false;
 		g_state_ticks = 0;
 	}
 }
 
 /* ==================== Helpers ==================== */
 
-static void set_error(psu_error_t err)
+static void setError(psu_error_t err)
 {
 	g_error = err;
 	g_faults |= (uint32_t)err;
 	g_state = PSU_STATE_FAULT;
-	g_state_entered = false;
+	g_stateEntered = false;
 	g_state_ticks = 0;
 }
 
-static void transition_to(psu_state_t s)
+static void transitionTo(psu_state_t s)
 {
 	g_state = s;
-	g_state_entered = false;
+	g_stateEntered = false;
 	g_state_ticks = 0;
 }
 
 /* ==================== Panel LED control ==================== */
 
-static void panel_leds_off(void)
+static void panelLedsOff(void)
 {
 	bspDoutSet(DOUT_LED_S1_SYS_ON,         false);
 	bspDoutSet(DOUT_LED_S2_SYS_ON,         false);
@@ -198,12 +198,12 @@ static void panel_leds_off(void)
 	bspDoutSet(DOUT_LED_APPHOST_ON,        false);
 }
 
-static void panel_leds_update(psu_state_t s)
+static void panelLedsUpdate(psu_state_t s)
 {
 	(void)s;
 
 	if (g_state == PSU_STATE_INIT) {
-		panel_leds_off();
+		panelLedsOff();
 		return;
 	}
 
@@ -238,7 +238,7 @@ static void panel_leds_update(psu_state_t s)
 
 /* ==================== Fan control (PWM) ==================== */
 
-static void fan_set(bool on, uint32_t duty_percent)
+static void fanSet(bool on, uint32_t duty_percent)
 {
 	if (on) {
 		bspPwmSetDutyCycle(FAN_PWM2, duty_percent);
@@ -252,7 +252,7 @@ static void fan_set(bool on, uint32_t duty_percent)
 }
 
 /* Fan duty cycle derived from the hotter of the two NTC sensors */
-static uint32_t fan_duty_from_temp(int16_t temp_max)
+static uint32_t fanDutyFromTemp(int16_t temp_max)
 {
 	if (temp_max >= NTC_TEMP_FAULT)  return 100;
 	if (temp_max >= NTC_TEMP_WARN)   return  80;
@@ -263,13 +263,13 @@ static uint32_t fan_duty_from_temp(int16_t temp_max)
 
 /* ==================== Temperature monitoring ==================== */
 
-static void temp_update(void)
+static void tempUpdate(void)
 {
 	g_temp1 = ntc_read_temp(AIN_TEMP1);
 	g_temp2 = ntc_read_temp(AIN_TEMP2);
 }
 
-static bool temp_overtemp(void)
+static bool tempOvertemp(void)
 {
 	int16_t hi = (g_temp1 > g_temp2) ? g_temp1 : g_temp2;
 	return (hi > 0) && (hi >= NTC_TEMP_FAULT);
@@ -277,7 +277,7 @@ static bool temp_overtemp(void)
 
 /* ==================== State entry ==================== */
 
-static void state_enter(psu_state_t s)
+static void stateEnter(psu_state_t s)
 {
 	printk("PSU_SM: -> state %d (t=%ums)\n", (int)s, (unsigned)g_state_ticks);
 
@@ -297,15 +297,15 @@ static void state_enter(psu_state_t s)
 		bspDoutSet(DOUT_K10_DRV,            false);
 		bspDoutSet(DOUT_K11_DRV,            false);
 		bspDoutSet(DOUT_K12_DRV,            false);
-		panel_leds_off();
-		fan_set(false, 0);
+		panelLedsOff();
+		fanSet(false, 0);
 		ledSwitchOff(0);
 		ledSwitchOff(1);
 		break;
 
 	case PSU_STATE_SYS_ON:
 		bspDoutSet(DOUT_TROLLEY_ENABLE_DRV, true);
-		panel_leds_update(s);
+		panelLedsUpdate(s);
 		ledSwitchOn(0);
 		break;
 
@@ -328,8 +328,8 @@ static void state_enter(psu_state_t s)
 		bspDoutSet(DOUT_K10_DRV,  true);
 		bspDoutSet(DOUT_K11_DRV,  true);
 		bspDoutSet(DOUT_K12_DRV,  true);
-		panel_leds_update(s);
-		fan_set(true, 50);   /* 50% initial, ramp up over time */
+		panelLedsUpdate(s);
+		fanSet(true, 50);   /* 50% initial, ramp up over time */
 		break;
 
 	case PSU_STATE_S2_MODE:
@@ -341,13 +341,13 @@ static void state_enter(psu_state_t s)
 		bspDoutSet(DOUT_K10_DRV,  false);
 		bspDoutSet(DOUT_K11_DRV,  false);
 		bspDoutSet(DOUT_K12_DRV,  false);
-		panel_leds_update(s);
-		fan_set(true, 30);   /* low power, minimal cooling */
+		panelLedsUpdate(s);
+		fanSet(true, 30);   /* low power, minimal cooling */
 		break;
 
 	case PSU_STATE_CHARGING:
-		panel_leds_update(s);
-		fan_set(true, 70);   /* charging needs extra cooling */
+		panelLedsUpdate(s);
+		fanSet(true, 70);   /* charging needs extra cooling */
 		break;
 
 	case PSU_STATE_SHUTDOWN:
@@ -372,8 +372,8 @@ static void state_enter(psu_state_t s)
 		bspDoutSet(DOUT_K8_1_DRV, false); bspDoutSet(DOUT_K8_2_DRV, false);
 		bspDoutSet(DOUT_K9_DRV,  false); bspDoutSet(DOUT_K10_DRV, false);
 		bspDoutSet(DOUT_K11_DRV, false); bspDoutSet(DOUT_K12_DRV, false);
-		panel_leds_off();
-		fan_set(false, 0);
+		panelLedsOff();
+		fanSet(false, 0);
 		ledSwitchOff(0);
 		ledSwitchOn(1);
 		break;
@@ -384,8 +384,8 @@ static void state_enter(psu_state_t s)
 		bspDoutSet(DOUT_K3_1_DRV,           false);
 		bspDoutSet(DOUT_K3_2_DRV,           false);
 		bspDoutSet(DOUT_K4_DRV,             false);
-		panel_leds_off();
-		fan_set(false, 0);
+		panelLedsOff();
+		fanSet(false, 0);
 		ledSwitchOff(0);
 		ledSwitchOff(1);
 		break;
@@ -397,38 +397,38 @@ static void state_enter(psu_state_t s)
 
 /* ==================== State runners ==================== */
 
-static void state_run_init(void)
+static void stateRunInit(void)
 {
 	if (g_state_ticks < T_STARTUP_DELAY) {
 		return;
 	}
 
-	g_config = read_config_switches();
+	g_config = readConfigSwitches();
 
-	if (!check_mains_present()) {
+	if (!checkMainsPresent()) {
 		return;
 	}
 
-	transition_to(PSU_STATE_SYS_ON);
+	transitionTo(PSU_STATE_SYS_ON);
 }
 
-static void state_run_sys_on(void)
+static void stateRunSysOn(void)
 {
 	if (g_state_ticks < T_CONFIG_DEBOUNCE) {
 		return;
 	}
 
-	g_config = read_config_switches();
+	g_config = readConfigSwitches();
 
-	if (!check_mains_present()) {
-		set_error(PSU_ERR_MAINS_LOSS);
+	if (!checkMainsPresent()) {
+		setError(PSU_ERR_MAINS_LOSS);
 		return;
 	}
 
-	transition_to(PSU_STATE_PILOT_CONTACT);
+	transitionTo(PSU_STATE_PILOT_CONTACT);
 }
 
-static void state_run_pilot_contact(void)
+static void stateRunPilotContact(void)
 {
 	if (g_state_ticks < T_K3_WAIT) {
 		return;
@@ -437,15 +437,15 @@ static void state_run_pilot_contact(void)
 	/* Verify pwr_on_off feedback: DIN_LED_PWR_24_ON (PC6) */
 	if (!bspDinGet(DIN_LED_PWR_24_ON)) {
 		if (g_state_ticks > 1000) {
-			set_error(PSU_ERR_K3_TIMEOUT);
+			setError(PSU_ERR_K3_TIMEOUT);
 		}
 		return;
 	}
 
-	transition_to(PSU_STATE_SWITCH_ON);
+	transitionTo(PSU_STATE_SWITCH_ON);
 }
 
-static void state_run_switch_on(void)
+static void stateRunSwitchOn(void)
 {
 	if (g_state_ticks < T_K3_STABLE) {
 		return;
@@ -453,48 +453,48 @@ static void state_run_switch_on(void)
 
 	if (!bspDinGet(DIN_GRID_MAIN_RELAY_STATUS)) {
 		if (g_state_ticks > 2000) {
-			set_error(PSU_ERR_SWITCHON_FAIL);
+			setError(PSU_ERR_SWITCHON_FAIL);
 		}
 		return;
 	}
 
-	transition_to(PSU_STATE_NORMAL_OP);
+	transitionTo(PSU_STATE_NORMAL_OP);
 }
 
-static void state_run_normal_op(void)
+static void stateRunNormalOp(void)
 {
 	if ((g_state_ticks % T_CONFIG_DEBOUNCE) == 0) {
-		psu_config_t cfg = read_config_switches();
+		psu_config_t cfg = readConfigSwitches();
 		if (cfg != g_config) {
 			g_config = cfg;
 			if (cfg == PSU_CFG_S2) {
-				transition_to(PSU_STATE_S2_MODE);
+				transitionTo(PSU_STATE_S2_MODE);
 				return;
 			}
 		}
 	}
 
 	if ((g_state_ticks % T_CHECKS_PERIOD) == 0) {
-		if (!check_mains_present()) {
-			set_error(PSU_ERR_MAINS_LOSS);
+		if (!checkMainsPresent()) {
+			setError(PSU_ERR_MAINS_LOSS);
 			return;
 		}
 		if (!bspDinGet(DIN_SYSTEM_ON_OFF)) {
-			transition_to(PSU_STATE_SHUTDOWN);
+			transitionTo(PSU_STATE_SHUTDOWN);
 			return;
 		}
 	}
 
 	/* Periodic panel LED refresh */
 	if ((g_state_ticks % T_CHECKS_PERIOD) == 0) {
-		panel_leds_update(PSU_STATE_NORMAL_OP);
+		panelLedsUpdate(PSU_STATE_NORMAL_OP);
 	}
 
 	/* Temperature polling */
 	if ((g_state_ticks % T_TEMP_POLL) == 0) {
-		temp_update();
+		tempUpdate();
 
-		if (temp_overtemp()) {
+		if (tempOvertemp()) {
 			g_temp_ticks += T_TEMP_POLL;
 		} else {
 			g_temp_ticks = 0;
@@ -504,88 +504,88 @@ static void state_run_normal_op(void)
 			printk("PSU_SM: over-temp fault! T1=%d.%d T2=%d.%d\n",
 			       g_temp1 / 10, g_temp1 % 10,
 			       g_temp2 / 10, g_temp2 % 10);
-			set_error(PSU_ERR_INIT_FAIL);
+			setError(PSU_ERR_INIT_FAIL);
 			return;
 		}
 
 		/* Adjust fan speed based on temperature */
 		int16_t hi = (g_temp1 > g_temp2) ? g_temp1 : g_temp2;
 		if (hi > 0 && g_state_ticks > T_FAN_SPIN_UP) {
-			fan_set(true, fan_duty_from_temp(hi));
+			fanSet(true, fanDutyFromTemp(hi));
 		}
 	}
 
 	/* Ramp fan to full speed after spin-up (only if no temp data yet) */
 	if (g_state_ticks == T_FAN_SPIN_UP && g_temp1 <= 0 && g_temp2 <= 0) {
-		fan_set(true, 80);
+		fanSet(true, 80);
 	}
 }
 
-static void state_run_s2_mode(void)
+static void stateRunS2Mode(void)
 {
 	if (g_state_ticks < 50) {
 		return;
 	}
 
 	if ((g_state_ticks % T_CHECKS_PERIOD) == 0) {
-		psu_config_t cfg = read_config_switches();
+		psu_config_t cfg = readConfigSwitches();
 		if (cfg != PSU_CFG_S2) {
 			g_config = cfg;
-			transition_to(PSU_STATE_NORMAL_OP);
+			transitionTo(PSU_STATE_NORMAL_OP);
 			return;
 		}
-		if (!check_mains_present()) {
-			set_error(PSU_ERR_MAINS_LOSS);
+		if (!checkMainsPresent()) {
+			setError(PSU_ERR_MAINS_LOSS);
 			return;
 		}
 		if (!bspDinGet(DIN_SYSTEM_ON_OFF)) {
-			transition_to(PSU_STATE_SHUTDOWN);
+			transitionTo(PSU_STATE_SHUTDOWN);
 			return;
 		}
-		panel_leds_update(PSU_STATE_S2_MODE);
+		panelLedsUpdate(PSU_STATE_S2_MODE);
 	}
 }
 
-static void state_run_charging(void)
+static void stateRunCharging(void)
 {
 	if (g_state_ticks < 100) {
 		return;
 	}
 
 	if ((g_state_ticks % T_CHECKS_PERIOD) == 0) {
-		psu_config_t cfg = read_config_switches();
+		psu_config_t cfg = readConfigSwitches();
 		if (cfg != g_config) {
 			g_config = cfg;
-			transition_to(PSU_STATE_NORMAL_OP);
+			transitionTo(PSU_STATE_NORMAL_OP);
 			return;
 		}
-		if (!check_mains_present()) {
-			set_error(PSU_ERR_CHARGING_FAIL);
+		if (!checkMainsPresent()) {
+			setError(PSU_ERR_CHARGING_FAIL);
 			return;
 		}
 		if (!bspDinGet(DIN_SYSTEM_ON_OFF)) {
-			transition_to(PSU_STATE_SHUTDOWN);
+			transitionTo(PSU_STATE_SHUTDOWN);
 			return;
 		}
 
 		/* Temp poll every second, overtemp → fault */
 		if ((g_state_ticks % T_TEMP_POLL) == 0) {
-			temp_update();
-			if (temp_overtemp()) { g_temp_ticks += T_TEMP_POLL; }
+			tempUpdate();
+			if (tempOvertemp()) { g_temp_ticks += T_TEMP_POLL; }
 			else                  { g_temp_ticks = 0; }
 			if (g_temp_ticks >= T_TEMP_FAULT_DELAY) {
-				set_error(PSU_ERR_CHARGING_FAIL);
+				setError(PSU_ERR_CHARGING_FAIL);
 				return;
 			}
 			int16_t hi = (g_temp1 > g_temp2) ? g_temp1 : g_temp2;
-			if (hi > 0)  fan_set(true, fan_duty_from_temp(hi));
+			if (hi > 0)  fanSet(true, fanDutyFromTemp(hi));
 		}
 
-		panel_leds_update(PSU_STATE_CHARGING);
+		panelLedsUpdate(PSU_STATE_CHARGING);
 	}
 }
 
-static void state_run_shutdown(void)
+static void stateRunShutdown(void)
 {
 	if (g_state_ticks < T_RELAY_STEP) {
 		bspDoutSet(DOUT_K4_DRV, false);
@@ -595,17 +595,17 @@ static void state_run_shutdown(void)
 	} else if (g_state_ticks < T_RELAY_STEP * 3) {
 		bspDoutSet(DOUT_PWR_ON_OFF,         false);
 		bspDoutSet(DOUT_TROLLEY_ENABLE_DRV, false);
-		fan_set(false, 0);
+		fanSet(false, 0);
 	} else if (g_state_ticks < T_RELAY_STEP * 4) {
-		panel_leds_off();
+		panelLedsOff();
 		ledSwitchOff(0);
 		ledSwitchOff(1);
 	} else {
-		transition_to(PSU_STATE_OFF);
+		transitionTo(PSU_STATE_OFF);
 	}
 }
 
-static void state_run_fault(void)
+static void stateRunFault(void)
 {
 	/* Error LED blink */
 	if ((g_state_ticks % T_LED_BLINK_FAULT) < (T_LED_BLINK_FAULT / 2)) {
@@ -617,27 +617,27 @@ static void state_run_fault(void)
 	/* Manual reset: DIN_SYSTEM_RESET (PJ1) */
 	if (bspDinGet(DIN_SYSTEM_RESET)) {
 		g_error = PSU_ERR_NONE;
-		transition_to(PSU_STATE_RESET);
+		transitionTo(PSU_STATE_RESET);
 		return;
 	}
 
 	/* Auto-recovery timeout */
 	if (g_state_ticks > T_FAULT_RECOVER) {
 		if (g_faults & (uint32_t)PSU_ERR_MAINS_LOSS) {
-			if (check_mains_present()) {
+			if (checkMainsPresent()) {
 				g_faults &= ~(uint32_t)PSU_ERR_MAINS_LOSS;
 				g_error = PSU_ERR_RESET_RECOVERY;
-				transition_to(PSU_STATE_RESET);
+				transitionTo(PSU_STATE_RESET);
 			}
 		} else {
 			g_faults = 0;
 			g_error = PSU_ERR_RESET_RECOVERY;
-			transition_to(PSU_STATE_RESET);
+			transitionTo(PSU_STATE_RESET);
 		}
 	}
 }
 
-static void state_run_reset(void)
+static void stateRunReset(void)
 {
 	if (g_state_ticks < T_RESET_HOLD) {
 		return;
@@ -645,19 +645,19 @@ static void state_run_reset(void)
 
 	g_faults = 0;
 	g_error = PSU_ERR_NONE;
-	transition_to(PSU_STATE_INIT);
+	transitionTo(PSU_STATE_INIT);
 }
 
-static void state_run_off(void)
+static void stateRunOff(void)
 {
-	if (bspDinGet(DIN_SYSTEM_ON_OFF) && check_mains_present()) {
-		transition_to(PSU_STATE_INIT);
+	if (bspDinGet(DIN_SYSTEM_ON_OFF) && checkMainsPresent()) {
+		transitionTo(PSU_STATE_INIT);
 	}
 }
 
 /* ==================== Input helpers ==================== */
 
-static psu_config_t read_config_switches(void)
+static psu_config_t readConfigSwitches(void)
 {
 	if (bspDinGet(DIN_S1_SYSTEM_CONFIG)) {
 		return PSU_CFG_S1;
@@ -669,7 +669,7 @@ static psu_config_t read_config_switches(void)
 	return PSU_CFG_S1;
 }
 
-static bool check_mains_present(void)
+static bool checkMainsPresent(void)
 {
 	bool trolley = bspDinGet(DIN_TROLLEY_CONNECTED)
 	            || bspDinGet(DIN_TROLLEY_CONNECTED_J);
