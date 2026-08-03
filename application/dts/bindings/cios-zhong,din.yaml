@@ -1,9 +1,13 @@
 # cios-zhong digital input binding
+#
+# Custom compatible because these are industrial switch/status inputs
+# — not key/button inputs (gpio-keys expects zephyr,code events).
+
 description: cios-zhong DIN configuration node
 compatible: "cios-zhong,din"
 
 child-binding:
-    description: Single DIN pin
+    description: Single DIN pin (switch / status / fault input)
     properties:
         gpios:
             type: phandle-array

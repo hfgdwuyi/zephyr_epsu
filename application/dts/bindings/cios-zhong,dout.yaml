@@ -1,9 +1,13 @@
 # cios-zhong digital output binding
+#
+# Custom compatible because these are industrial relay/power drivers
+# and status outputs — not LEDs (gpio-leds expects label/color properties).
+
 description: cios-zhong DOUT configuration node
 compatible: "cios-zhong,dout"
 
 child-binding:
-    description: Single DOUT pin
+    description: Single DOUT pin (relay / LED indicator / status driver)
     properties:
         gpios:
             type: phandle-array
