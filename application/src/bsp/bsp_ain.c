@@ -159,6 +159,23 @@ uint32_t bspAinReadDivMv(uint8_t channel, uint32_t rHigh, uint32_t rLow)
     return (vAdc * (rHigh + rLow)) / rLow;
 }
 
+/*
+ * Mains AC voltage at AIN_ADC_VIN (channel 11).
+ * Vadc = 1.65 + (0.4 x 1.414 x Vin x 50.2 / 3575) x 3.9 / 6.49
+ *   => Vadc = 1.65 + Vin x 0.004773
+ *   => Vin  = (Vadc - 1.65) / 0.004773
+ * All in mV.  Returns 0 if Vadc < 1.65 V.
+ */
+uint32_t bspAinReadVinMv(void)
+{
+    int32_t vAdc = (int32_t)bspAinReadMv(AIN_ADC_VIN);
+    int32_t delta = vAdc - 1650;
+    if (delta <= 0) {
+        return 0;
+    }
+    return (uint32_t)(delta * 20953U / 100U);
+}
+
 const char *bspAinGetName(uint8_t channel)
 {
     if (channel >= AIN_NUMBER) {
@@ -190,5 +207,7 @@ const char *bspAinGetName(uint8_t channel)
     ARG_UNUSED(channel);
     return NULL;
 }
+
+uint32_t bspAinReadVinMv(void)            { return 0; }
 
 #endif
