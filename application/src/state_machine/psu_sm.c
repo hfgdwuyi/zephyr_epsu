@@ -265,8 +265,8 @@ static uint32_t fanDutyFromTemp(int16_t temp_max)
 
 static void tempUpdate(void)
 {
-	g_temp1 = ntc_read_temp(AIN_TEMP1);
-	g_temp2 = ntc_read_temp(AIN_TEMP2);
+	g_temp1 = ntcReadTemp(AIN_TEMP1);
+	g_temp2 = ntcReadTemp(AIN_TEMP2);
 }
 
 static bool tempOvertemp(void)

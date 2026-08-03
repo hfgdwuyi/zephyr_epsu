@@ -84,7 +84,7 @@ static const ntc_point_t ntc_table[] = {
  * adjacent table points. Assumes r is between r_lo (colder, higher R)
  * and r_hi (warmer, lower R).
  */
-static int16_t ntc_interpolate(uint32_t r_ohm)
+static int16_t ntcInterpolate(uint32_t r_ohm)
 {
 	if (r_ohm >= ntc_table[0].r_ohm) {
 		return ntc_table[0].temp;   /* at or below min temp */
@@ -125,7 +125,7 @@ static int16_t ntc_interpolate(uint32_t r_ohm)
 
 /* ─── public API ─── */
 
-int16_t ntc_read_temp(uint8_t ain_channel)
+int16_t ntcReadTemp(uint8_t ain_channel)
 {
 	uint32_t raw = bspAinGetRawValue(ain_channel);
 
@@ -154,5 +154,5 @@ int16_t ntc_read_temp(uint8_t ain_channel)
 		? 0U
 		: (uint32_t)((uint64_t)NTC_RFIXED_OHM * v_mv / v_drop_mv);
 
-	return ntc_interpolate(r_ntc);
+	return ntcInterpolate(r_ntc);
 }

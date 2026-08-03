@@ -35,7 +35,7 @@ extern "C" {
  *
  * Returns temperature × 10 (e.g., 250 = 25.0°C), or INT16_MIN on error.
  */
-int16_t ntc_read_temp(uint8_t ain_channel);
+int16_t ntcReadTemp(uint8_t ain_channel);
 
 #ifdef __cplusplus
 }

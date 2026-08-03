@@ -40,12 +40,12 @@ static const struct device *const spi0_dev = NULL;
 /*----------------------------------------------------------------------------*/
 /*! @brief Pins / peripherals initialization (Zephyr) */
 /*----------------------------------------------------------------------------*/
-static void bsp_din_apply_debounce(void);
+static void bspDinApplyDebounce(void);
 
 void boardInit(void)
 {
 	bspDioInit();       /* DOUT config + DIN init + 1ms polling start */
-	bsp_din_apply_debounce();  /* set debounce for mechanical switches */
+	bspDinApplyDebounce();  /* set debounce for mechanical switches */
 
 	ledInit();          /* NUCLEO on-board LEDs */
 	bspAinInit();
@@ -58,7 +58,7 @@ void boardInit(void)
  * Switches and relay feedback contacts need ~10ms debounce;
  * digital status inputs (already clean) use 0.
  */
-static void bsp_din_apply_debounce(void)
+static void bspDinApplyDebounce(void)
 {
 	static const bspDinSettings deb_10ms = { .deb_en = true, .deb_time = 10 };
 	static const bspDinSettings deb_off  = { .deb_en = false, .deb_time = 0 };
