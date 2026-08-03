@@ -96,15 +96,15 @@ RET_T sdoWrInd(UNSIGNED16 index, UNSIGNED8 subIdx)
 	return 0;
 }
 
-/* ---- CANopen LED heartbeat (CiA 303-3) ---- */
+/* ---- CANopen LED heartbeat (CiA 303-3) ▶ system heartbeat blink (CiA 303-3) ---- */
 
-#define COLED_STACK_SZ 512
-#define COLED_PRIO     7
+#define HEARTBEAT_STACK_SZ 512
+#define HEARTBEAT_PRIO     7
 
-K_THREAD_STACK_DEFINE(coled_stack, COLED_STACK_SZ);
-static struct k_thread coled_thread;
+K_THREAD_STACK_DEFINE(heartbeatStack, HEARTBEAT_STACK_SZ);
+static struct k_thread heartbeatThread;
 
-static void coledThreadFn(void *p1, void *p2, void *p3)
+static void heartbeatThreadFn(void *p1, void *p2, void *p3)
 {
 	while (1) {
 		ledToggle(SYSTEM_OK_LED_NUM);
@@ -174,14 +174,14 @@ static void flushmbxStart(void)
 
 /* ---- CANopen LED thread startup ---- */
 
-static void coledStart(void)
+static void heartbeatStart(void)
 {
-	k_tid_t tid = k_thread_create(&coled_thread,
-			coled_stack,
-			K_THREAD_STACK_SIZEOF(coled_stack),
-			coledThreadFn,
+	k_tid_t tid = k_thread_create(&heartbeatThread,
+			heartbeatStack,
+			K_THREAD_STACK_SIZEOF(heartbeatStack),
+			heartbeatThreadFn,
 			NULL, NULL, NULL,
-			COLED_PRIO, 0, K_NO_WAIT);
+			HEARTBEAT_PRIO, 0, K_NO_WAIT);
 	if (tid == NULL) {
 		printk("CANopen: ERROR spawning LED thread\n");
 	}
@@ -214,7 +214,7 @@ int main(void)
 	 *
 	 *   canopenInit();
 	 *   flushmbxStart();
-	 *   coledStart();
+	 *   heartbeatStart();
 	 */
 
 	/* ---- PSU periodic scheduler ---- */
