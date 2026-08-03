@@ -13,7 +13,7 @@
 
 		/* 0-12: Relay & power drivers */
 		dout_00: dout_00 { gpios = <&gpioh 1  GPIO_ACTIVE_HIGH>; };
-		dout_01: dout_01 { gpios = <&gpioa 5  GPIO_ACTIVE_HIGH>; };
+		/* dout_01 (PA5) removed — now DAC1_OUT2 for PWR_ON_OFF */
 		dout_02: dout_02 { gpios = <&gpiok 1  GPIO_ACTIVE_HIGH>; };
 		dout_03: dout_03 { gpios = <&gpiok 2  GPIO_ACTIVE_HIGH>; };
 		dout_04: dout_04 { gpios = <&gpiok 3  GPIO_ACTIVE_HIGH>; };
@@ -155,9 +155,18 @@
     };
 };
 
-/* Analog input + Fan PWM channels */
+/* DAC1_OUT2 on PA5 — pwr_on_off control */
+&dac1 {
+    status = "okay";
+};
+
+/* Analog input + Fan PWM + DAC channels */
 / {
     zephyr,user {
+        dac = <&dac1>;
+        dac_channel_id = <2>;
+        dac_resolution = <12>;
+
         io-channels =
             <&adc3 4>,
             <&adc3 5>,

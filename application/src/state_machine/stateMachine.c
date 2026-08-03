@@ -17,6 +17,7 @@
 #include <string.h>
 #include <zephyr/sys/printk.h>
 
+#include "bsp_aout.h"
 #include "bsp_dio.h"
 #include "bsp_pwm.h"
 #include "bsp_led.h"
@@ -295,7 +296,7 @@ static void stateEnter(stateMachineState_t s)
 
 	case STATEMACHINE_STATE_INIT:
 		bspDoutSet(DOUT_TROLLEY_ENABLE_DRV, false);
-		bspDoutSet(DOUT_PWR_ON_OFF,         false);
+		bspAoutWrite(0, 0);
 		bspDoutSet(DOUT_K3_1_DRV,           false);
 		bspDoutSet(DOUT_K3_2_DRV,           false);
 		bspDoutSet(DOUT_K4_DRV,             false);
@@ -320,7 +321,7 @@ static void stateEnter(stateMachineState_t s)
 		break;
 
 	case STATEMACHINE_STATE_PILOT_CONTACT:
-		bspDoutSet(DOUT_PWR_ON_OFF, true);
+		bspAoutWrite(0, 3300);
 		break;
 
 	case STATEMACHINE_STATE_SWITCH_ON:
@@ -374,7 +375,7 @@ static void stateEnter(stateMachineState_t s)
 		break;
 
 	case STATEMACHINE_STATE_FAULT:
-		bspDoutSet(DOUT_PWR_ON_OFF,         false);
+		bspAoutWrite(0, 0);
 		bspDoutSet(DOUT_K3_1_DRV,           false);
 		bspDoutSet(DOUT_K3_2_DRV,           false);
 		bspDoutSet(DOUT_K4_DRV,             false);
@@ -390,7 +391,7 @@ static void stateEnter(stateMachineState_t s)
 
 	case STATEMACHINE_STATE_OFF:
 		bspDoutSet(DOUT_TROLLEY_ENABLE_DRV, false);
-		bspDoutSet(DOUT_PWR_ON_OFF,         false);
+		bspAoutWrite(0, 0);
 		bspDoutSet(DOUT_K3_1_DRV,           false);
 		bspDoutSet(DOUT_K3_2_DRV,           false);
 		bspDoutSet(DOUT_K4_DRV,             false);
@@ -603,7 +604,7 @@ static void stateRunShutdown(void)
 		bspDoutSet(DOUT_K3_1_DRV, false);
 		bspDoutSet(DOUT_K3_2_DRV, false);
 	} else if (g_state_ticks < T_RELAY_STEP * 3) {
-		bspDoutSet(DOUT_PWR_ON_OFF,         false);
+		bspAoutWrite(0, 0);
 		bspDoutSet(DOUT_TROLLEY_ENABLE_DRV, false);
 		fanSet(false, FAN_DUTY_OFF);
 	} else if (g_state_ticks < T_RELAY_STEP * 4) {
