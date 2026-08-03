@@ -6,7 +6,7 @@
  *
  * Voltage divider: Vref=3.3V, Rfixed=4700Ω (Vcc—Rf—ADC—NTC—GND).
  *
- * Depends on: hal_adc.h (ADC abstraction), NOT on any BSP or RTOS.
+ * Depends on: bsp_ain.h (ADC/channel definitions)
  */
 
 #ifndef NTC_SENSOR_H
@@ -18,9 +18,9 @@
 extern "C" {
 #endif
 
-/* AIN logical channels for NTC sensors */
-#define AIN_TEMP1       5   /* HAL_AIN_ADC_TEMP1 */
-#define AIN_TEMP2       6   /* HAL_AIN_ADC_TEMP2 */
+/* AIN channels for NTC sensors (matches bsp_ain.h enum) */
+#define AIN_TEMP1  5   /* AIN_ADC_TEMP1 — PA3 ADC1_INP15 */
+#define AIN_TEMP2  6   /* AIN_ADC_TEMP2 — PA4 ADC1_INP18 */
 
 /* Temperature thresholds (×10, i.e. 25.0°C = 250) */
 #define NTC_TEMP_WARN    750    /* 75°C — warning             */

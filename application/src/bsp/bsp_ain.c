@@ -147,6 +147,18 @@ uint32_t bspAinGetRawValue(uint8_t channel)
     return ainData[channel];
 }
 
+uint32_t bspAinReadMv(uint8_t channel)
+{
+    uint32_t raw = bspAinGetRawValue(channel);
+    return (raw * 3300U) / 4095U;
+}
+
+uint32_t bspAinReadDivMv(uint8_t channel, uint32_t rHigh, uint32_t rLow)
+{
+    uint32_t vAdc = bspAinReadMv(channel);
+    return (vAdc * (rHigh + rLow)) / rLow;
+}
+
 const char *bspAinGetName(uint8_t channel)
 {
     if (channel >= AIN_NUMBER) {
