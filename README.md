@@ -205,28 +205,41 @@ Vishay NTCALUG02A472FA: R25=4700Ω ±1%, B(25/85)=3984K.
 
 ## Build & Flash
 
+> **环境隔离（重要）**：本工程用**独立 venv** 构建，避免被 nRF Connect SDK 环境
+> 污染的全局 Python/PyYAML 影响。全局 `west` 可能因 PyYAML 版本不兼容
+> （`collections.Hashable` 报错）而失败，请始终使用 venv 的 west。
+
 ### Prerequisites
 
 ```bash
+# H745 专用构建 venv（独立，不受 nRF/全局 python 影响）
+export VENV_WEST=~/project/02_zephyr/zephyr_h745_venv/bin/west
 export ZEPHYR_BASE=~/project/02_zephyr/zephyrproject/zephyr
 export ZEPHYR_SDK_INSTALL_DIR=~/project/02_zephyr/zephyr-sdk-1.0.1
 source $ZEPHYR_BASE/zephyr-env.sh
 ```
 
+> 若 venv 不存在或依赖过期，重建：
+> ```bash
+> /opt/homebrew/opt/python@3.14/bin/python3.14 -m venv ~/project/02_zephyr/zephyr_h745_venv
+> ~/project/02_zephyr/zephyr_h745_venv/bin/pip install -r \
+>   ~/project/02_zephyr/zephyrproject/zephyr/scripts/requirements-base.txt
+> ```
+
 ### Build
 
 ```bash
 cd ~/project/02_zephyr/zephyrproject
-west build \
-  -d ~/project/02_zephyr/ciosZhong_ePSU/build \
-  ~/project/02_zephyr/ciosZhong_ePSU/application \
+$VENV_WEST build \
+  -d ~/project/03_siemens/ciosZhong_ePSU/build \
+  ~/project/03_siemens/ciosZhong_ePSU/application \
   -b nucleo_h745zi_q/stm32h745xx/m7
 ```
 
 ### Flash
 
 ```bash
-west flash -d ~/project/02_zephyr/ciosZhong_ePSU/build -r openocd
+$VENV_WEST flash -d ~/project/03_siemens/ciosZhong_ePSU/build -r openocd
 ```
 
 ## Expected Serial Output

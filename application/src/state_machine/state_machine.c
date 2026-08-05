@@ -46,6 +46,9 @@ typedef enum {
 	SM_TIMING_FAN_SPIN_UP        = 100,
 	SM_TIMING_TEMP_POLL          = 1000,   /* poll NTC every 1000 ms */
 	SM_TIMING_TEMP_FAULT_DELAY   = 5000,   /* 5s over-temp persist before fault */
+	SM_TIMING_ONOFF_TOGGLE_MS    = 550,    /* on_off rising edge 0.55s → toggle */
+	SM_TIMING_ONOFF_RESET_MS     = 5000,   /* on_off falling edge 5s → reset */
+	SM_TIMING_RESET_MS           = 1000,   /* external reset rising edge 1s → reset */
 } stateMachineTiming_t;
 
 /* ==================== Fan duty settings (PWM percent) ==================== */
@@ -94,12 +97,64 @@ typedef enum {
 
 /* ==================== Internal state ==================== */
 
-static stateMachineState_t  g_state         = STATEMACHINE_STATE_INIT;
+/* volatile on cross-thread-visible state: written by sm_thread, read by
+ * status_work / external getters. Prevents compiler caching stale values. */
+static volatile stateMachineState_t  g_state         = STATEMACHINE_STATE_INIT;
 static stateMachineConfig_t g_config        = STATEMACHINE_CFG_S1;
-static stateMachineError_t  g_error         = STATEMACHINE_ERR_NONE;
-static uint32_t     g_faults        = 0;
+static volatile stateMachineError_t  g_error         = STATEMACHINE_ERR_NONE;
+static volatile uint32_t     g_faults        = 0;
 static uint32_t     g_state_ticks   = 0;
 static bool         g_stateEntered = false;
+
+/* ==================== DIN hold (edge + duration) detectors ====================
+ * Detect a signal staying at a target level for a minimum duration.
+ * dinHoldTick() is called every 1 ms tick; it returns true once when the
+ * signal has been at `target` for at least `hold` ms (one-shot). */
+
+typedef struct {
+	bool     last_level; /* previous sampled level (for edge anchoring)  */
+	bool     armed;      /* false until an edge away from target is seen */
+	uint32_t hold_ms;    /* ms the signal has stayed at target level     */
+	bool     fired;      /* one-shot already triggered for this hold     */
+} dinHold_t;
+
+static dinHold_t s_onoff_rising;   /* on_off 0->1 held 0.55s -> toggle      */
+static dinHold_t s_onoff_falling;  /* on_off 1->0 held 5s   -> reset        */
+static dinHold_t s_reset_rising;   /* reset  0->1 held 1s   -> reset        */
+
+/* Call every 1 ms tick with the current signal level. Returns true once when
+ * the signal rises to `target` and stays there for `hold` ms. Edge-anchored:
+ * it only starts timing after the signal first deviates from `target`, so a
+ * power-on level already equal to `target` cannot falsely trigger. */
+static bool dinHoldTick(dinHold_t *h, bool level, bool target, uint32_t hold)
+{
+	if (level == target) {
+		/* At target level. Only count once armed (i.e. we saw a deviation). */
+		if (h->armed) {
+			h->hold_ms++;
+			if (!h->fired && h->hold_ms >= hold) {
+				h->fired = true;
+				return true;
+			}
+		}
+	} else {
+		/* Away from target: (re)arm. The next rise to target starts timing. */
+		h->hold_ms = 0;
+		h->fired   = false;
+		h->armed   = true;
+	}
+	h->last_level = level;
+	return false;
+}
+
+/* Lock in the power-on level so a static high/low at boot cannot fire. */
+static void dinHoldInit(dinHold_t *h, bool level)
+{
+	h->last_level = level;
+	h->armed      = false;
+	h->hold_ms    = 0;
+	h->fired      = false;
+}
 
 /* ==================== Forward declarations ==================== */
 
@@ -121,6 +176,9 @@ static bool checkMainsPresent(void);
 static void panelLedsOff(void);
 static void panelLedsUpdate(stateMachineState_t s);
 static void fanSet(bool on, fanDuty_t duty_percent);
+static void transitionTo(stateMachineState_t s);
+static bool dinHoldTick(dinHold_t *h, bool level, bool target, uint32_t hold);
+static void dinHoldInit(dinHold_t *h, bool level);
 
 /* ==================== Public API ==================== */
 
@@ -135,6 +193,11 @@ void stateMachineInit(void)
 
 	ntcTempInit();
 
+	/* Lock in power-on levels so a static high/low at boot cannot fire. */
+	dinHoldInit(&s_onoff_rising,  bspDinGet(DIN_SYSTEM_ON_OFF));
+	dinHoldInit(&s_onoff_falling, bspDinGet(DIN_SYSTEM_ON_OFF));
+	dinHoldInit(&s_reset_rising,  bspDinGet(DIN_SYSTEM_RESET));
+
 	printk("STATEMACHINE: init cfg=%d\n", (int)g_config);
 }
 
@@ -145,6 +208,34 @@ void stateMachineTick(void)
 	if (!g_stateEntered) {
 		stateEnter(g_state);
 		g_stateEntered = true;
+	}
+
+	/* DIN hold detection: on_off toggle/reset, external reset.
+	 * Runs every tick; actions depend on the current state. */
+	bool onoff = bspDinGet(DIN_SYSTEM_ON_OFF);
+
+	if (dinHoldTick(&s_onoff_rising, onoff, true, SM_TIMING_ONOFF_TOGGLE_MS)) {
+		/* on_off 0->1 held 0.55s: toggle system on/off */
+		if (g_state == STATEMACHINE_STATE_OFF) {
+			if (checkMainsPresent()) {
+				transitionTo(STATEMACHINE_STATE_INIT);
+			}
+		} else if (g_state != STATEMACHINE_STATE_FAULT &&
+			   g_state != STATEMACHINE_STATE_RESET &&
+			   g_state != STATEMACHINE_STATE_SHUTDOWN) {
+			transitionTo(STATEMACHINE_STATE_SHUTDOWN);
+		}
+	}
+
+	/* Resets are gated off the OFF state: while powered off, a low on_off
+	 * or a reset press must not auto-restart the system. */
+	if (g_state != STATEMACHINE_STATE_OFF) {
+		if (dinHoldTick(&s_onoff_falling, onoff, false, SM_TIMING_ONOFF_RESET_MS) ||
+		    dinHoldTick(&s_reset_rising, bspDinGet(DIN_SYSTEM_RESET), true, SM_TIMING_RESET_MS)) {
+			/* on_off 1->0 held 5s, or external reset 0->1 held 1s */
+			g_error = STATEMACHINE_ERR_NONE;
+			stateMachineRequestReset();
+		}
 	}
 
 	switch (g_state) {
@@ -354,9 +445,9 @@ static void stateEnter(stateMachineState_t s)
 		break;
 
 	case STATEMACHINE_STATE_SHUTDOWN:
+		/* Relays are staged off in stateRunShutdown() — do not open them
+		 * all at once here. Fans stay on briefly for cool-down. */
 		bspAoutSetState(AOUT_PWR_ON_OFF, false);
-		bspDoutSetMask(RELAY_MASK_K4_TO_K12, false);
-		/* Fans stay on briefly for cool-down */
 		break;
 
 	case STATEMACHINE_STATE_FAULT:
@@ -467,10 +558,7 @@ static void stateRunNormalOp(void)
 			setError(STATEMACHINE_ERR_MAINS_LOSS);
 			return;
 		}
-		if (!bspDinGet(DIN_SYSTEM_ON_OFF)) {
-			transitionTo(STATEMACHINE_STATE_SHUTDOWN);
-			return;
-		}
+		/* on_off toggle is handled centrally in stateMachineTick() */
 	}
 
 	/* Periodic panel LED refresh */
@@ -481,6 +569,14 @@ static void stateRunNormalOp(void)
 	/* Temperature polling */
 	if ((g_state_ticks % SM_TIMING_TEMP_POLL) == 0) {
 		ntcTempUpdate(SM_TIMING_TEMP_POLL);
+
+		/* Sensor fault: report immediately rather than treating as cold,
+		 * which would silently disable over-temp protection. */
+		if (ntcTempSensorFault()) {
+			printk("STATEMACHINE: NTC sensor fault!\n");
+			setError(STATEMACHINE_ERR_INIT_FAIL);
+			return;
+		}
 
 		if (ntcTempOvertempFor() >= SM_TIMING_TEMP_FAULT_DELAY) {
 			printk("STATEMACHINE: over-temp fault! Tmax=%d.%d\n",
@@ -519,10 +615,7 @@ static void stateRunS2Mode(void)
 			setError(STATEMACHINE_ERR_MAINS_LOSS);
 			return;
 		}
-		if (!bspDinGet(DIN_SYSTEM_ON_OFF)) {
-			transitionTo(STATEMACHINE_STATE_SHUTDOWN);
-			return;
-		}
+		/* on_off toggle is handled centrally in stateMachineTick() */
 		panelLedsUpdate(STATEMACHINE_STATE_S2_MODE);
 	}
 }
@@ -544,10 +637,7 @@ static void stateRunCharging(void)
 			setError(STATEMACHINE_ERR_CHARGING_FAIL);
 			return;
 		}
-		if (!bspDinGet(DIN_SYSTEM_ON_OFF)) {
-			transitionTo(STATEMACHINE_STATE_SHUTDOWN);
-			return;
-		}
+		/* on_off toggle is handled centrally in stateMachineTick() */
 
 		/* Temp poll every second, overtemp → fault */
 		if ((g_state_ticks % SM_TIMING_TEMP_POLL) == 0) {
@@ -572,6 +662,7 @@ static void stateRunShutdown(void)
 		bspDoutSetStatus(DOUT_K3_1_DRV, false);
 		bspDoutSetStatus(DOUT_K3_2_DRV, false);
 	} else if (g_state_ticks < SM_TIMING_RELAY_STEP * 3) {
+		bspDoutSetMask(RELAY_MASK_K5_TO_K12, false);
 		bspAoutSetState(AOUT_PWR_ON_OFF, false);
 		bspDoutSetStatus(DOUT_TROLLEY_ENABLE_DRV, false);
 		fanSet(false, FAN_DUTY_OFF);
@@ -593,14 +684,13 @@ static void stateRunFault(void)
 		bspLedSwitchOff(1);
 	}
 
-	/* Manual reset: DIN_SYSTEM_RESET (PJ1) */
-	if (bspDinGet(DIN_SYSTEM_RESET)) {
-		g_error = STATEMACHINE_ERR_NONE;
-		transitionTo(STATEMACHINE_STATE_RESET);
-		return;
-	}
+	/* Reset (external button 1s / on_off 5s) handled centrally in
+	 * stateMachineTick(); it clears g_error and enters RESET. */
 
-	/* Auto-recovery timeout */
+	/* Auto-recovery: only for transient mains loss when mains returns.
+	 * Persistent faults (over-temp, switch-on failure, sensor fault) are
+	 * not auto-recovered — they require an external reset, avoiding the
+	 * fault→recover→re-fault oscillation. */
 	if (g_state_ticks > SM_TIMING_FAULT_RECOVER) {
 		if (g_faults & (uint32_t)STATEMACHINE_ERR_MAINS_LOSS) {
 			if (checkMainsPresent()) {
@@ -608,11 +698,8 @@ static void stateRunFault(void)
 				g_error = STATEMACHINE_ERR_RESET_RECOVERY;
 				transitionTo(STATEMACHINE_STATE_RESET);
 			}
-		} else {
-			g_faults = 0;
-			g_error = STATEMACHINE_ERR_RESET_RECOVERY;
-			transitionTo(STATEMACHINE_STATE_RESET);
 		}
+		/* else: persistent fault — wait for external reset only */
 	}
 }
 
@@ -629,9 +716,8 @@ static void stateRunReset(void)
 
 static void stateRunOff(void)
 {
-	if (bspDinGet(DIN_SYSTEM_ON_OFF) && checkMainsPresent()) {
-		transitionTo(STATEMACHINE_STATE_INIT);
-	}
+	/* Power-on (on_off rising 0.55s + mains OK) handled centrally in
+	 * stateMachineTick(); nothing to do here while off. */
 }
 
 /* ==================== Input helpers ==================== */

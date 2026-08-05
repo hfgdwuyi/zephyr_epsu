@@ -50,6 +50,7 @@ int16_t ntcReadTemp(uint8_t ain_channel);
 void     ntcTempInit(void);       /* reset internal state */
 void     ntcTempUpdate(uint32_t period_ms); /* sample both channels; period_ms drives over-temp counter */
 int16_t  ntcTempGetMax(void);     /* hotter of the two temps (×10), or <= 0 if bad */
+bool     ntcTempSensorFault(void);/* true if either NTC sensor read failed */
 bool     ntcTempIsOvertemp(void); /* max temp >= fault threshold */
 uint32_t ntcTempOvertempFor(void);/* consecutive over-temp ms (for fault decision) */
 

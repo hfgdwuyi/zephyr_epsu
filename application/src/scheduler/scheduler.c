@@ -1,14 +1,20 @@
 /*
  * scheduler.c — periodic task scheduler (Zephyr implementation)
  *
- *  1 ms  : k_work_d   → bspDinUpdate()  (GPIO → bitmap)
- *  1 ms  : k_work_d   → bspDoutSet()    (bitmap → GPIO)
- *  1 ms  : k_thread   → stateMachineTick() + bspWtdgFeed()
- *  50 ms : k_work_d   → bspAinPoll()
- *  50 ms : k_work_d   → bspAoutPoll()
+ *  1 ms  : k_work_d   → bspDinUpdate()  (GPIO → bitmap)  [hb]
+ *  1 ms  : k_work_d   → bspDoutSet()    (bitmap → GPIO)  [hb]
+ *  1 ms  : k_thread   → stateMachineTick()               [hb]
+ *  50 ms : k_work_d   → bspAinPoll()                     [hb]
+ *  50 ms : k_work_d   → bspAoutPoll()                    [hb]
+ *  50 ms : k_thread   → wdt supervisor: sm+sys heartbeat → bspWtdgFeed()
  *  500ms : k_work_d   → max6703aFeed()
  *  500ms : k_thread   → main.c: heartbeat (bspLedToggle)
  *  3000ms: k_work_d   → printk status
+ *
+ *  [hb] marks tasks that bump a heartbeat. The WDT supervisor feeds the
+ *  internal WWDG only while BOTH the state-machine heartbeat and the
+ *  system heartbeat advance — a stalled state machine or task chain
+ *  leaves it unfed → WWDG reset.
  */
 
 /* Zephyr */
@@ -26,6 +32,20 @@
 #include "state_machine.h"
 #include "max6703a.h"
 
+/* ========== Heartbeats + WDT supervisor ========== */
+
+/* g_sm_heartbeat: bumped only by the state machine thread. It is the
+ * primary liveness signal — the WDT supervisor will not feed unless this
+ * advances, so a stalled state machine trips the watchdog even if other
+ * workqueue tasks are still running.
+ * g_sys_heartbeat: bumped by the other periodic [hb] tasks (DIN/DOUT/AIN/
+ * AOUT), covering system-level scheduling health. */
+static volatile uint32_t g_sm_heartbeat;
+static volatile uint32_t g_sys_heartbeat;
+
+static void smHbBump(void)  { g_sm_heartbeat++; }
+static void sysHbBump(void) { g_sys_heartbeat++; }
+
 /* ========== 1 ms core thread ========== */
 
 #define SM_STACK_SZ  2048
@@ -38,8 +58,38 @@ static void smThreadFn(void *p1, void *p2, void *p3)
 {
 	while (1) {
 		stateMachineTick();
-		bspWtdgFeed();
+		smHbBump();
 		k_sleep(K_MSEC(1));
+	}
+}
+
+/* ========== WDT supervisor: feed only while system is alive ========== */
+
+#define WDT_SUP_STACK_SZ  1024
+#define WDT_SUP_PRIO      3
+
+static struct k_thread wdt_sup_thread;
+K_THREAD_STACK_DEFINE(wdt_sup_stack, WDT_SUP_STACK_SZ);
+
+static void wdtSupThreadFn(void *p1, void *p2, void *p3)
+{
+	uint32_t last_sm  = 0;
+	uint32_t last_sys = 0;
+
+	while (1) {
+		uint32_t sm  = g_sm_heartbeat;
+		uint32_t sys = g_sys_heartbeat;
+
+		/* Feed only while BOTH the state machine and the system heartbeat
+		 * advanced since last check. A stalled state machine (or a stalled
+		 * task chain) leaves the watchdog unfed → WWDG reset. */
+		if (sm != last_sm && sys != last_sys) {
+			bspWtdgFeed();
+		}
+		last_sm  = sm;
+		last_sys = sys;
+
+		k_sleep(K_MSEC(50));
 	}
 }
 
@@ -48,6 +98,7 @@ static void smThreadFn(void *p1, void *p2, void *p3)
 static void ainWorkFn(struct k_work *w)
 {
 	bspAinPoll();
+	sysHbBump();
 	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(50));
 }
 
@@ -58,6 +109,7 @@ static K_WORK_DELAYABLE_DEFINE(ain_work, ainWorkFn);
 static void dinWorkFn(struct k_work *w)
 {
 	bspDinUpdate();
+	sysHbBump();
 	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(1));
 }
 
@@ -68,6 +120,7 @@ static K_WORK_DELAYABLE_DEFINE(din_work, dinWorkFn);
 static void doutWorkFn(struct k_work *w)
 {
 	bspDoutSet();
+	sysHbBump();
 	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(1));
 }
 
@@ -78,6 +131,7 @@ static K_WORK_DELAYABLE_DEFINE(dout_work, doutWorkFn);
 static void aoutWorkFn(struct k_work *w)
 {
 	bspAoutPoll();
+	sysHbBump();
 	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(50));
 }
 
@@ -127,11 +181,17 @@ static K_WORK_DELAYABLE_DEFINE(status_work, statusWorkFn);
 
 void schedulerStart(void)
 {
-	/* 1 ms thread */
+	/* 1 ms state machine thread */
 	k_thread_create(&sm_thread, sm_stack,
 			K_THREAD_STACK_SIZEOF(sm_stack),
 			smThreadFn, NULL, NULL, NULL,
 			SM_PRIO, 0, K_NO_WAIT);
+
+	/* WDT supervisor thread — feeds WWDG only while heartbeat advances */
+	k_thread_create(&wdt_sup_thread, wdt_sup_stack,
+			K_THREAD_STACK_SIZEOF(wdt_sup_stack),
+			wdtSupThreadFn, NULL, NULL, NULL,
+			WDT_SUP_PRIO, 0, K_NO_WAIT);
 
 	/* Periodic work items — each self-reschedules */
 	k_work_schedule(&din_work,    K_MSEC(1));

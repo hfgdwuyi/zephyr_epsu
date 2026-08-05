@@ -19,6 +19,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/atomic.h>
 #include <zephyr/sys/util.h>
 
 /* BSP */
@@ -60,8 +61,11 @@ const uint8_t dinMax = DIN_MAX;
  * din_state:  sampled DIN levels, one bit per channel (updated by bspDinUpdate)
  * dout_state: requested DOUT levels, one bit per channel (set by state machine)
  */
-static uint32_t din_state;
-static uint32_t dout_state;
+/* volatile: din_state written by workqueue (bspDinUpdate), read by sm_thread;
+ * prevents compiler caching across threads. dout_state is written by
+ * sm_thread + max6703a workqueue, so it is atomic_t for safe RMW. */
+static volatile uint32_t din_state;
+static atomic_t dout_state;
 
 static bspDinSettings_t din_settings[DIN_MAX];
 
@@ -143,14 +147,16 @@ static void bspDoutInit(void)
 	}
 }
 
-/* Set/clear a DOUT flag in the bitmap (called by state machine). */
+/* Set/clear a DOUT flag in the bitmap (called by state machine).
+ * Atomic RMW so concurrent writes (state machine + max6703a workqueue)
+ * cannot lose a bit update. */
 void bspDoutSetStatus(uint8_t pin, bool state)
 {
 	if (pin < DOUT_MAX) {
 		if (state) {
-			dout_state |= BIT(pin);
+			atomic_or(&dout_state, BIT(pin));
 		} else {
-			dout_state &= ~BIT(pin);
+			atomic_and(&dout_state, ~BIT(pin));
 		}
 	}
 }
@@ -160,7 +166,7 @@ bool bspDoutGetStatus(uint8_t pin)
 	if (pin >= DOUT_MAX) {
 		return false;
 	}
-	return (dout_state & BIT(pin)) != 0U;
+	return (atomic_get(&dout_state) & BIT(pin)) != 0U;
 }
 
 /* Set/clear every DOUT bit selected by the mask. Robust to
@@ -178,11 +184,13 @@ void bspDoutSetMask(uint32_t mask, bool state)
  * from the scheduler (e.g. every 1 ms). */
 void bspDoutSet(void)
 {
+	atomic_val_t bitmap = atomic_get(&dout_state);
+
 	for (uint8_t i = 0; i < DOUT_MAX; i++) {
 		if (!gpio_is_ready_dt(&dout_specs[i])) {
 			continue;
 		}
-		const bool want = (dout_state & BIT(i)) != 0U;
+		const bool want = (bitmap & BIT(i)) != 0U;
 		gpio_pin_set_dt(&dout_specs[i], want ? 1 : 0);
 	}
 }
