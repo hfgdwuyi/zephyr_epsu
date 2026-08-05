@@ -12,72 +12,72 @@
 		compatible = "cios-zhong,dout";
 
 		/* 0-12: Relay & power drivers */
-		dout_00: dout_00 { gpios = <&gpioh 1  GPIO_ACTIVE_HIGH>; };
+		trolley_enable_drv: trolley_enable_drv { gpios = <&gpioh 1  GPIO_ACTIVE_HIGH>; };
 		/* dout_01 (PA5) removed — now DAC1_OUT2 for PWR_ON_OFF */
-		dout_02: dout_02 { gpios = <&gpiok 1  GPIO_ACTIVE_HIGH>; };
-		dout_03: dout_03 { gpios = <&gpiok 2  GPIO_ACTIVE_HIGH>; };
-		dout_04: dout_04 { gpios = <&gpiok 3  GPIO_ACTIVE_HIGH>; };
-		dout_05: dout_05 { gpios = <&gpioi 4  GPIO_ACTIVE_HIGH>; };
-		dout_06: dout_06 { gpios = <&gpioi 5  GPIO_ACTIVE_HIGH>; };
-		dout_07: dout_07 { gpios = <&gpioi 6  GPIO_ACTIVE_HIGH>; };
-		dout_08: dout_08 { gpios = <&gpioi 7  GPIO_ACTIVE_HIGH>; };
-		dout_09: dout_09 { gpios = <&gpioi 9  GPIO_ACTIVE_HIGH>; };
-		dout_10: dout_10 { gpios = <&gpioi 10 GPIO_ACTIVE_HIGH>; };
-		dout_11: dout_11 { gpios = <&gpioi 11 GPIO_ACTIVE_HIGH>; };
-		dout_12: dout_12 { gpios = <&gpioi 12 GPIO_ACTIVE_HIGH>; };
+		k3_1_drv: k3_1_drv { gpios = <&gpiok 1  GPIO_ACTIVE_HIGH>; };
+		k3_2_drv: k3_2_drv { gpios = <&gpiok 2  GPIO_ACTIVE_HIGH>; };
+		k4_drv: k4_drv { gpios = <&gpiok 3  GPIO_ACTIVE_HIGH>; };
+		k5_drv: k5_drv { gpios = <&gpioi 4  GPIO_ACTIVE_HIGH>; };
+		k6_drv: k6_drv { gpios = <&gpioi 5  GPIO_ACTIVE_HIGH>; };
+		k8_1_drv: k8_1_drv { gpios = <&gpioi 6  GPIO_ACTIVE_HIGH>; };
+		k8_2_drv: k8_2_drv { gpios = <&gpioi 7  GPIO_ACTIVE_HIGH>; };
+		k9_drv: k9_drv { gpios = <&gpioi 9  GPIO_ACTIVE_HIGH>; };
+		k10_drv: k10_drv { gpios = <&gpioi 10 GPIO_ACTIVE_HIGH>; };
+		k11_drv: k11_drv { gpios = <&gpioi 11 GPIO_ACTIVE_HIGH>; };
+		k12_drv: k12_drv { gpios = <&gpioi 12 GPIO_ACTIVE_HIGH>; };
 
 		/* 13-25: Panel LED indicators */
-		dout_13: dout_13 { gpios = <&gpiob 10 GPIO_ACTIVE_HIGH>; };
-		dout_14: dout_14 { gpios = <&gpiob 11 GPIO_ACTIVE_HIGH>; };
-		dout_15: dout_15 { gpios = <&gpioc 8  GPIO_ACTIVE_HIGH>; };
-		dout_16: dout_16 { gpios = <&gpioc 9  GPIO_ACTIVE_HIGH>; };
-		dout_17: dout_17 { gpios = <&gpioc 10 GPIO_ACTIVE_HIGH>; };
-		dout_18: dout_18 { gpios = <&gpioc 15 GPIO_ACTIVE_HIGH>; };
-		dout_19: dout_19 { gpios = <&gpiod 2  GPIO_ACTIVE_HIGH>; };
-		dout_20: dout_20 { gpios = <&gpiod 3  GPIO_ACTIVE_HIGH>; };
-		dout_21: dout_21 { gpios = <&gpiod 4  GPIO_ACTIVE_HIGH>; };
-		dout_22: dout_22 { gpios = <&gpiod 5  GPIO_ACTIVE_HIGH>; };
-		dout_23: dout_23 { gpios = <&gpiod 6  GPIO_ACTIVE_HIGH>; };
-		dout_24: dout_24 { gpios = <&gpiod 7  GPIO_ACTIVE_HIGH>; };
-		dout_25: dout_25 { gpios = <&gpiod 11 GPIO_ACTIVE_HIGH>; };
+		led_s1_sys_on: led_s1_sys_on { gpios = <&gpiob 10 GPIO_ACTIVE_HIGH>; };
+		led_s2_sys_on: led_s2_sys_on { gpios = <&gpiob 11 GPIO_ACTIVE_HIGH>; };
+		dbg_led0: dbg_led0 { gpios = <&gpioc 8  GPIO_ACTIVE_HIGH>; };
+		dbg_led1: dbg_led1 { gpios = <&gpioc 9  GPIO_ACTIVE_HIGH>; };
+		dbg_led2: dbg_led2 { gpios = <&gpioc 10 GPIO_ACTIVE_HIGH>; };
+		led_pac230v_on: led_pac230v_on { gpios = <&gpioc 15 GPIO_ACTIVE_HIGH>; };
+		led_grid_pwr_in: led_grid_pwr_in { gpios = <&gpiod 2  GPIO_ACTIVE_HIGH>; };
+		led_ups_in: led_ups_in { gpios = <&gpiod 3  GPIO_ACTIVE_HIGH>; };
+		led_system_on: led_system_on { gpios = <&gpiod 4  GPIO_ACTIVE_HIGH>; };
+		led_s2_solo_sys: led_s2_solo_sys { gpios = <&gpiod 5  GPIO_ACTIVE_HIGH>; };
+		led_trolley_connected: led_trolley_connected { gpios = <&gpiod 6  GPIO_ACTIVE_HIGH>; };
+		led_is_pc_on: led_is_pc_on { gpios = <&gpiod 7  GPIO_ACTIVE_HIGH>; };
+		led_apphost_on: led_apphost_on { gpios = <&gpiod 11 GPIO_ACTIVE_HIGH>; };
 
 		/* 26-31: Status output drivers */
-		dout_26: dout_26 { gpios = <&gpioi 13 GPIO_ACTIVE_HIGH>; };
-		dout_27: dout_27 { gpios = <&gpioi 14 GPIO_ACTIVE_HIGH>; };
-		dout_28: dout_28 { gpios = <&gpioj 11 GPIO_ACTIVE_HIGH>; };
-		dout_29: dout_29 { gpios = <&gpioj 12 GPIO_ACTIVE_HIGH>; };
-		dout_30: dout_30 { gpios = <&gpioj 13 GPIO_ACTIVE_HIGH>; };
-		dout_31: dout_31 { gpios = <&gpioj 14 GPIO_ACTIVE_HIGH>; };
+		trolley_connected_mcu: trolley_connected_mcu { gpios = <&gpioi 13 GPIO_ACTIVE_HIGH>; };
+		trolley_connected_is_pc: trolley_connected_is_pc { gpios = <&gpioi 14 GPIO_ACTIVE_HIGH>; };
+		drv_is_pc_site_on: drv_is_pc_site_on { gpios = <&gpioj 11 GPIO_ACTIVE_HIGH>; };
+		drv_app_host_site_on: drv_app_host_site_on { gpios = <&gpioj 12 GPIO_ACTIVE_HIGH>; };
+		mains_connected_apphost: mains_connected_apphost { gpios = <&gpioj 13 GPIO_ACTIVE_HIGH>; };
+		mains_connected_is_pc: mains_connected_is_pc { gpios = <&gpioj 14 GPIO_ACTIVE_HIGH>; };
 
 		/* 32: MAX6703A WDI */
-		dout_32: dout_32 { gpios = <&gpioh 9  GPIO_ACTIVE_HIGH>; };
+		wdi: wdi { gpios = <&gpioh 9  GPIO_ACTIVE_HIGH>; };
 	};
 
 	din_config: din_config {
 		compatible = "cios-zhong,din";
 
 		/* 0-3: Status inputs */
-		din_00: din_00 { gpios = <&gpioh 5  GPIO_ACTIVE_HIGH>; };
-		din_01: din_01 { gpios = <&gpioh 6  GPIO_ACTIVE_HIGH>; };
-		din_02: din_02 { gpios = <&gpioa 0  GPIO_ACTIVE_HIGH>; };
-		din_03: din_03 { gpios = <&gpiob 12 GPIO_ACTIVE_HIGH>; };
+		grid_main_relay_status: grid_main_relay_status { gpios = <&gpioh 5  GPIO_ACTIVE_HIGH>; };
+		me_box_error: me_box_error { gpios = <&gpioh 6  GPIO_ACTIVE_HIGH>; };
+		trolley_connected: trolley_connected { gpios = <&gpioa 0  GPIO_ACTIVE_HIGH>; };
+		temp_alert: temp_alert { gpios = <&gpiob 12 GPIO_ACTIVE_HIGH>; };
 
 		/* 4-5: PWR/CP status monitor */
-		din_04: din_04 { gpios = <&gpioc 6  GPIO_ACTIVE_HIGH>; };
-		din_05: din_05 { gpios = <&gpioc 7  GPIO_ACTIVE_HIGH>; };
+		led_pwr_24_on: led_pwr_24_on { gpios = <&gpioc 6  GPIO_ACTIVE_HIGH>; };
+		led_cp_24v_on: led_cp_24v_on { gpios = <&gpioc 7  GPIO_ACTIVE_HIGH>; };
 
 		/* 6-16: System control inputs */
-		din_06: din_06 { gpios = <&gpioj 0  GPIO_ACTIVE_HIGH>; };
-		din_07: din_07 { gpios = <&gpioj 1  GPIO_ACTIVE_HIGH>; };
-		din_08: din_08 { gpios = <&gpioj 2  GPIO_ACTIVE_HIGH>; };
-		din_09: din_09 { gpios = <&gpioj 3  GPIO_ACTIVE_HIGH>; };
-		din_10: din_10 { gpios = <&gpioj 4  GPIO_ACTIVE_HIGH>; };
-		din_11: din_11 { gpios = <&gpioj 5  GPIO_ACTIVE_HIGH>; };
-		din_12: din_12 { gpios = <&gpioj 6  GPIO_ACTIVE_HIGH>; };
-		din_13: din_13 { gpios = <&gpioj 7  GPIO_ACTIVE_HIGH>; };
-		din_14: din_14 { gpios = <&gpioj 8  GPIO_ACTIVE_HIGH>; };
-		din_15: din_15 { gpios = <&gpioj 9  GPIO_ACTIVE_HIGH>; };
-		din_16: din_16 { gpios = <&gpioj 10 GPIO_ACTIVE_HIGH>; };
+		system_on_off: system_on_off { gpios = <&gpioj 0  GPIO_ACTIVE_HIGH>; };
+		system_reset: system_reset { gpios = <&gpioj 1  GPIO_ACTIVE_HIGH>; };
+		s1_system_config: s1_system_config { gpios = <&gpioj 2  GPIO_ACTIVE_HIGH>; };
+		s2_system_config: s2_system_config { gpios = <&gpioj 3  GPIO_ACTIVE_HIGH>; };
+		solo_system_config: solo_system_config { gpios = <&gpioj 4  GPIO_ACTIVE_HIGH>; };
+		trolley_connected_j: trolley_connected_j { gpios = <&gpioj 5  GPIO_ACTIVE_HIGH>; };
+		is_pc_on: is_pc_on { gpios = <&gpioj 6  GPIO_ACTIVE_HIGH>; };
+		app_host_on: app_host_on { gpios = <&gpioj 7  GPIO_ACTIVE_HIGH>; };
+		smart_whs_indicate: smart_whs_indicate { gpios = <&gpioj 8  GPIO_ACTIVE_HIGH>; };
+		drawer_indicate: drawer_indicate { gpios = <&gpioj 9  GPIO_ACTIVE_HIGH>; };
+		smart_ctrl_whs_search: smart_ctrl_whs_search { gpios = <&gpioj 10 GPIO_ACTIVE_HIGH>; };
 	};
 };
 
@@ -126,7 +126,8 @@
 /* FAN_PWM2: TIM8 CH3 on PI15 */
 &timers8 {
     status = "okay";
-    st,prescaler = <10000>;
+    /* PSC=0 -> 240 MHz counter clock; 25 kHz period = 9600 counts (10% duty = 960) */
+    st,prescaler = <0>;
     pwm_fan2: pwm {
         compatible = "st,stm32-pwm";
         status = "okay";
@@ -146,7 +147,8 @@
 /* FAN_PWM1: TIM2 CH4 on PJ15 */
 &timers2 {
     status = "okay";
-    st,prescaler = <10000>;
+    /* PSC=0 -> 240 MHz counter clock; 25 kHz period = 9600 counts (10% duty = 960) */
+    st,prescaler = <0>;
     pwm_fan1: pwm {
         compatible = "st,stm32-pwm";
         status = "okay";
@@ -184,7 +186,7 @@
             <&adc3 14>;
 
         pwms =
-            <&pwm_fan1 4 PWM_MSEC(20) PWM_POLARITY_NORMAL>,
-            <&pwm_fan2 3 PWM_MSEC(20) PWM_POLARITY_NORMAL>;
+            <&pwm_fan1 4 PWM_USEC(40) PWM_POLARITY_NORMAL>,   /* 40 us = 25 kHz fan carrier */
+            <&pwm_fan2 3 PWM_USEC(40) PWM_POLARITY_NORMAL>;
     };
 };

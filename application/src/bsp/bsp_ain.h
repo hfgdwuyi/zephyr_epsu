@@ -37,12 +37,16 @@ enum {
  * Vactual = Vadc × (470 + 47) / 47 = Vadc × 11
  * 24 V → 2.4 V at pin;  range 19.2 – 28.8 V
  */
-#define AIN_DIV_RHIGH        470
-#define AIN_DIV_RLOW          47
+typedef enum {
+	AIN_DIV_RHIGH       = 470,
+	AIN_DIV_RLOW        = 47,
+} ainDivider_t;
 
 /* PDC validity (24 V PSU output ±20%) */
-#define AIN_PDC_VALID_MIN   19200   /* 19.2 V */
-#define AIN_PDC_VALID_MAX   28800   /* 28.8 V */
+typedef enum {
+	AIN_PDC_VALID_MIN   = 19200,   /* 19.2 V */
+	AIN_PDC_VALID_MAX   = 28800,   /* 28.8 V */
+} ainPdcRange_t;
 
 /* ==================== API ==================== */
 
@@ -84,7 +88,6 @@ static inline bool bspAinPdcValid(uint32_t mv)
 }
 
 const char *bspAinGetName(uint8_t channel);
-extern uint8_t AIN_NUMBER;
 
 #ifdef __cplusplus
 }

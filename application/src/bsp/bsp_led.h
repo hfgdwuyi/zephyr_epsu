@@ -4,11 +4,11 @@
  * Project: Building Block Low End MCU
  *
  * @file
- * @brief Header file for led_ctr.c
+ * @brief Header file for bsp_led.c
  */
 /*----------------------------------------------------------------------------*/
-#ifndef LED_CTRL_H
-#define LED_CTRL_H
+#ifndef BSP_LED_H
+#define BSP_LED_H
 
 #include <stdint.h>
 
@@ -21,10 +21,10 @@
 /*! CAN status LED number */
 #define CAN_STATUS_LED_NUM (3)
 
-void ledInit(void);
-void ledSwitchOn(uint8_t ledNumber);
-void ledSwitchOff(uint8_t ledNumber);
-void ledToggle(uint8_t ledNumber);
+void bspLedInit(void);
+void bspLedSwitchOn(uint8_t ledNumber);
+void bspLedSwitchOff(uint8_t ledNumber);
+void bspLedToggle(uint8_t ledNumber);
 
 #endif
 

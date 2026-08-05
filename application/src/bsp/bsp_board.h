@@ -27,24 +27,24 @@ typedef struct
     void    *rdBuf;
     uint16_t size;
     uint32_t timeout;  /* In Zephyr port this is currently ignored (non-blocking APIs use driver defaults) */
-} boardSpiXfer;
+} boardSpiXfer_t;
 
 #define SYS_I2C_TMP_ADDRESS 0x48U    /* Temperature sensor's 7-bit address */
 
 // extern tlc591xInstance tlcLedDriver;
 
-void    boardInit(void);
+void    bspBoardInit(void);
 
 /* I2C transfer: write (optional) then read (optional). devAddr can be 7-bit or 8-bit (HAL style). */
-bool boardI2CTransfer(uint8_t i2cNum, uint16_t devAddr,
+bool bspBoardI2CTransfer(uint8_t i2cNum, uint16_t devAddr,
                       uint8_t *wrBuf, uint16_t wrSize,
                       uint8_t *rdBuf, uint16_t rdSize);
 
 /* SPI transfer: uses Zephyr SPI API; xfer->spi selects which SPI controller is used */
-bool boardSpiTransfer(boardSpiXfer *xfer);
+bool bspBoardSpiTransfer(boardSpiXfer_t *xfer);
 
-/* WDT init: legacy API. In Zephyr port it should call wtdgInit() */
-void wtdgInit(void);
+/* WDT init: legacy API. In Zephyr port it should call bspWtdgInit() */
+void bspWtdgInit(void);
 
 #ifdef __cplusplus
 }

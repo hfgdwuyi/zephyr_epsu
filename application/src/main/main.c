@@ -6,17 +6,12 @@
  * Uncomment canopenInit() / flushmbxStart() when transceiver is connected.
  */
 
+/* Zephyr */
 #include <zephyr/kernel.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/sys/printk.h>
 
-#include "bsp_board.h"
-#include "bsp_led.h"
-#include "bsp_wtdg.h"
-#include "stateMachine.h"
-#include "scheduler.h"
-
-/* ---- CANopen stack ---- */
+/* CANopen */
 #define DEF_HW_PART
 #include <cal_conf.h>
 #include <co_init.h>
@@ -24,6 +19,16 @@
 #include <co_drv.h>
 #include <co_drvif.h>
 #include "can_zephyr.h"
+
+/* BSP */
+#include "bsp_board.h"
+#include "bsp_led.h"
+#include "bsp_wtdg.h"
+
+/* Application */
+#include "scheduler.h"
+#include "state_machine.h"
+#include "max6703a.h"
 
 /* ---- Constants ---- */
 #define CAN_BAUDRATE 500000
@@ -36,7 +41,7 @@
 K_THREAD_STACK_DEFINE(flushmbx_stack, FLUSHMBX_STACK_SZ);
 static struct k_thread flushmbx_thread;
 
-static void flushmbxThreadFn(void *p1, void *p2, void *p3)
+static void flushMboxThreadFn(void *p1, void *p2, void *p3)
 {
 	while (1) {
 		FlushMbox();
@@ -44,62 +49,11 @@ static void flushmbxThreadFn(void *p1, void *p2, void *p3)
 	}
 }
 
-/* ---- CANopen user callbacks (required by library) ---- */
-
-UNSIGNED8 getNodeId(void)
-{
-	return 1;   /* cios-zhong CANopen node ID */
-}
-
-BOOL_T canErrorInd(UNSIGNED8 flags)
-{
-	(void)flags;
-	return 0;
-}
-
-RET_T coResetObjDirInd(UNSIGNED8 reason)
-{
-	(void)reason;
-	return 0;
-}
-
-BOOL_T newStateInd(NODE_STATE_T st)
-{
-	printk("CANopen: NMT state change -> %u\n", (unsigned)st);
-	return 0;
-}
-
-void resetCommInd(void)
-{
-	printk("CANopen: communication reset\n");
-}
-
-void resetApplInd(void)
-{
-	printk("CANopen: application reset\n");
-}
-
-RET_T sdoRdInd(UNSIGNED16 index, UNSIGNED8 subIdx)
-{
-	(void)index; (void)subIdx;
-	return 0;
-}
-
-RET_T sdoWrInd(UNSIGNED16 index, UNSIGNED8 subIdx)
-{
-	(void)index; (void)subIdx;
-	return 0;
-}
-
 /* ---- CANopen init wrapper ---- */
 
 static void canopenInit(void)
 {
-	unsigned int key;
-
 	printk("CANopen: initializing (no CAN transceiver on NUCLEO)\n");
-
-	key = irq_lock();
 
 	/* Step 1: Init CAN controller (fdcan1, 500 kbit/s).
 	 * Without a transceiver this succeeds at register level
@@ -108,7 +62,6 @@ static void canopenInit(void)
 				  CAN_BAUDRATE);
 	if (canRet != 0) {
 		printk("CANopen: Init_CAN failed (%u)\n", (unsigned)canRet);
-		irq_unlock(key);
 		return;
 	}
 
@@ -119,7 +72,6 @@ static void canopenInit(void)
 	if (libRet != CO_OK) {
 		printk("CANopen: init_Library failed (0x%02X)\n",
 		       (unsigned)libRet);
-		irq_unlock(key);
 		return;
 	}
 
@@ -131,8 +83,6 @@ static void canopenInit(void)
 	 * will trigger a bus-off; the driver logs it and keeps going. */
 	Start_CAN();
 
-	irq_unlock(key);
-
 	printk("CANopen: nodeId=%d operational\n", getNodeId());
 }
 
@@ -141,7 +91,7 @@ static void canopenInit(void)
 static void heartbeatThreadFn(void *p1, void *p2, void *p3)
 {
 	while (1) {
-		ledToggle(SYSTEM_OK_LED_NUM);
+		bspLedToggle(SYSTEM_OK_LED_NUM);
 		k_sleep(K_MSEC(500));
 	}
 }
@@ -172,7 +122,7 @@ static void flushmbxStart(void)
 	k_tid_t tid = k_thread_create(&flushmbx_thread,
 			flushmbx_stack,
 			K_THREAD_STACK_SIZEOF(flushmbx_stack),
-			flushmbxThreadFn,
+			flushMboxThreadFn,
 			NULL, NULL, NULL,
 			FLUSHMBX_PRIO, 0, K_NO_WAIT);
 	if (tid == NULL) {
@@ -187,9 +137,10 @@ int main(void)
 	printk("\n===== CiosZhong PSU v%s =====\n",
 	       CONFIG_CIOS_ZHONG_FW_VERSION);
 
-	boardInit();
+	bspBoardInit();
 	stateMachineInit();
-	wtdgInit();
+	bspWtdgInit();
+	max6703aInit();
 
 	/* LED heartbeat */
 	heartbeatStart();

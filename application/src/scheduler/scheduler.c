@@ -1,25 +1,30 @@
 /*
  * scheduler.c — periodic task scheduler (Zephyr implementation)
  *
- *  1 ms  : k_thread  → stateMachineTick() + wtdgFeed()
- *  10 ms : k_timer    → DOUT status mirror (bsp_dio internal, auto-started)
+ *  1 ms  : k_work_d   → bspDinUpdate()  (GPIO → bitmap)
+ *  1 ms  : k_work_d   → bspDoutSet()    (bitmap → GPIO)
+ *  1 ms  : k_thread   → stateMachineTick() + bspWtdgFeed()
  *  50 ms : k_work_d   → bspAinPoll()
- *  500ms : k_work_d   → bspWdiFeed()
- *  500ms : k_thread    → main.c: heartbeat LED toggle
+ *  50 ms : k_work_d   → bspAoutPoll()
+ *  500ms : k_work_d   → max6703aFeed()
+ *  500ms : k_thread   → main.c: heartbeat (bspLedToggle)
  *  3000ms: k_work_d   → printk status
  */
 
-#include "scheduler.h"
-
+/* Zephyr */
 #include <zephyr/kernel.h>
-
 #include <zephyr/sys/printk.h>
 
-#include "bsp_dio.h"
+/* BSP */
 #include "bsp_ain.h"
+#include "bsp_aout.h"
+#include "bsp_dio.h"
 #include "bsp_wtdg.h"
 
-#include "stateMachine.h"
+/* Application */
+#include "scheduler.h"
+#include "state_machine.h"
+#include "max6703a.h"
 
 /* ========== 1 ms core thread ========== */
 
@@ -33,7 +38,7 @@ static void smThreadFn(void *p1, void *p2, void *p3)
 {
 	while (1) {
 		stateMachineTick();
-		wtdgFeed();
+		bspWtdgFeed();
 		k_sleep(K_MSEC(1));
 	}
 }
@@ -48,11 +53,41 @@ static void ainWorkFn(struct k_work *w)
 
 static K_WORK_DELAYABLE_DEFINE(ain_work, ainWorkFn);
 
+/* ========== 1 ms: DIN sampling ========== */
+
+static void dinWorkFn(struct k_work *w)
+{
+	bspDinUpdate();
+	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(1));
+}
+
+static K_WORK_DELAYABLE_DEFINE(din_work, dinWorkFn);
+
+/* ========== 1 ms: DOUT commit ========== */
+
+static void doutWorkFn(struct k_work *w)
+{
+	bspDoutSet();
+	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(1));
+}
+
+static K_WORK_DELAYABLE_DEFINE(dout_work, doutWorkFn);
+
+/* ========== 50 ms: DAC output refresh ========== */
+
+static void aoutWorkFn(struct k_work *w)
+{
+	bspAoutPoll();
+	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(50));
+}
+
+static K_WORK_DELAYABLE_DEFINE(aout_work, aoutWorkFn);
+
 /* ========== 500 ms: MAX6703A WDI feed ========== */
 
 static void wdiWorkFn(struct k_work *w)
 {
-	bspWdiFeed();
+	max6703aFeed();
 	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(500));
 }
 
@@ -99,7 +134,10 @@ void schedulerStart(void)
 			SM_PRIO, 0, K_NO_WAIT);
 
 	/* Periodic work items — each self-reschedules */
+	k_work_schedule(&din_work,    K_MSEC(1));
+	k_work_schedule(&dout_work,   K_MSEC(1));
 	k_work_schedule(&ain_work,    K_MSEC(50));
+	k_work_schedule(&aout_work,   K_MSEC(50));
 	k_work_schedule(&wdi_work,    K_MSEC(500));
 	k_work_schedule(&status_work, K_MSEC(3000));
 }

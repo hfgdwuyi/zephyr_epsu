@@ -8,21 +8,24 @@
  */
 /*----------------------------------------------------------------------------*/
 
-#include <zephyr/kernel.h>
-#include <zephyr/device.h>
-#include <zephyr/sys/printk.h>
-#include <zephyr/drivers/i2c.h>
-#include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/gpio.h>
-
+/* C standard library */
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "bsp_led.h"
-#include "bsp_board.h"
+/* Zephyr */
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/spi.h>
+
+/* BSP */
 #include "bsp_ain.h"
 #include "bsp_aout.h"
+#include "bsp_board.h"
 #include "bsp_dio.h"
+#include "bsp_led.h"
 #include "bsp_pwm.h"
 
 #if DT_NODE_HAS_STATUS(DT_ALIAS(i2c0), okay)
@@ -42,12 +45,13 @@ static const struct device *const spi0_dev = NULL;
 /*----------------------------------------------------------------------------*/
 static void bspDinApplyDebounce(void);
 
-void boardInit(void)
+void bspBoardInit(void)
 {
-	bspDioInit();       /* DOUT config + DIN init + 1ms polling start */
+	bspDioInit();       /* DOUT config + DIN init */
 	bspDinApplyDebounce();  /* set debounce for mechanical switches */
+	/* DIN sampling / DOUT commit run as 1 ms tasks in scheduler */
 
-	ledInit();          /* NUCLEO on-board LEDs */
+	bspLedInit();          /* NUCLEO on-board LEDs */
 	bspAinInit();
 	bspAoutInit();
 	bspPwmInit();
@@ -60,8 +64,8 @@ void boardInit(void)
  */
 static void bspDinApplyDebounce(void)
 {
-	static const bspDinSettings deb_10ms = { .deb_en = true, .deb_time = 10 };
-	static const bspDinSettings deb_off  = { .deb_en = false, .deb_time = 0 };
+	static const bspDinSettings_t deb_10ms = { .deb_en = true, .deb_time = 10 };
+	static const bspDinSettings_t deb_off  = { .deb_en = false, .deb_time = 0 };
 
 	/* Mechanical switches — 10ms debounce */
 	bspDinSetDebouncing(DIN_SYSTEM_ON_OFF,          deb_10ms);
@@ -88,7 +92,7 @@ static void bspDinApplyDebounce(void)
 /*----------------------------------------------------------------------------*/
 /*! @brief I2C transfer (write then read) */
 /*----------------------------------------------------------------------------*/
-bool boardI2CTransfer(uint8_t i2cNum, uint16_t devAddr,
+bool bspBoardI2CTransfer(uint8_t i2cNum, uint16_t devAddr,
                       uint8_t *wrBuf, uint16_t wrSize,
                       uint8_t *rdBuf, uint16_t rdSize)
 {
@@ -138,7 +142,7 @@ bool boardI2CTransfer(uint8_t i2cNum, uint16_t devAddr,
 /*----------------------------------------------------------------------------*/
 /*! @brief SPI transfer (full duplex) */
 /*----------------------------------------------------------------------------*/
-bool boardSpiTransfer(boardSpiXfer *xfer)
+bool bspBoardSpiTransfer(boardSpiXfer_t *xfer)
 {
     if (!xfer) {
         return false;

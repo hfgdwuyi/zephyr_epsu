@@ -8,17 +8,16 @@
  */
 /*----------------------------------------------------------------------------*/
 
-// Zephyr includes
+/* C standard library */
+#include <stdbool.h>
+#include <stdint.h>
+
+/* Zephyr */
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/printk.h>
 
-
-// Standard includes
-#include <stdbool.h>
-#include <stdint.h>
-
-// project includes
+/* BSP */
 #include "bsp_led.h"
 
 /*! @struct Structure for LED description */
@@ -46,7 +45,7 @@ static const struct gpio_dt_spec ledPinCfg[LED_PIN_COUNT] =
  *
  */
 /*----------------------------------------------------------------------------*/
-void ledInit(void)
+void bspLedInit(void)
 {
     for (uint8_t i = 0; i < LED_PIN_COUNT; i++)
     {
@@ -68,7 +67,7 @@ void ledInit(void)
  *
  */
 /*----------------------------------------------------------------------------*/
-void ledSwitchOn(uint8_t ledNumber)
+void bspLedSwitchOn(uint8_t ledNumber)
 {
     if (ledNumber < LED_PIN_COUNT)
     {
@@ -84,7 +83,7 @@ void ledSwitchOn(uint8_t ledNumber)
  *
  */
 /*----------------------------------------------------------------------------*/
-void ledSwitchOff(uint8_t ledNumber)
+void bspLedSwitchOff(uint8_t ledNumber)
 {
     if (ledNumber < LED_PIN_COUNT)
     {
@@ -96,11 +95,11 @@ void ledSwitchOff(uint8_t ledNumber)
 /*!
  * @brief          Toggle the specified LED
  *
- * @param[in]      ledNumber - Index of LED to switch off
+ * @param[in]      ledNumber - Index of LED to toggle
  *
  */
 /*----------------------------------------------------------------------------*/
-void ledToggle(uint8_t ledNumber)
+void bspLedToggle(uint8_t ledNumber)
 {
     if (ledNumber < LED_PIN_COUNT)
     {

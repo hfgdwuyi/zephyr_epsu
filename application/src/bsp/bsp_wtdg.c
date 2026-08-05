@@ -7,13 +7,17 @@
  * @brief Watchdog control functions (Zephyr port)
  */
 
-#include <zephyr/kernel.h>
-#include <zephyr/device.h>
-#include <zephyr/drivers/watchdog.h>
-#include <zephyr/sys/printk.h>
-#include <zephyr/devicetree.h>
+/* C standard library */
 #include <stdbool.h>
 
+/* Zephyr */
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/watchdog.h>
+#include <zephyr/sys/printk.h>
+
+/* BSP */
 #include "bsp_wtdg.h"
 
 /* Check if watchdog0 alias exists and is okay in devicetree */
@@ -27,7 +31,7 @@ const struct device *const wdt = NULL;
 
 static bool wtdgStopFlag;
 static int wdt_channel_id;
-static int err;
+static int wdt_err;
 
 static struct wdt_timeout_cfg wdt_config = {
     .flags = WDT_FLAG_RESET_SOC,
@@ -74,7 +78,7 @@ static void wdt_callback(const struct device *wdt_dev, int channel_id)
 }
 #endif
 
-void wtdgInit(void)
+void bspWtdgInit(void)
 {
 #if WDT_AVAILABLE
     if (!device_is_ready(wdt)) {
@@ -104,9 +108,9 @@ void wtdgInit(void)
         return;
     }
 
-    err = wdt_setup(wdt, WDT_OPT);
-    if (err < 0) {
-        printk("Watchdog setup error (%d)\n", err);
+    wdt_err = wdt_setup(wdt, WDT_OPT);
+    if (wdt_err < 0) {
+        printk("Watchdog setup error (%d)\n", wdt_err);
         return;
     }
 
@@ -114,11 +118,11 @@ void wtdgInit(void)
     k_msleep(WDT_MIN_WINDOW);
 #endif
 #else
-    printk("wtdgInit: watchdog0 not in devicetree, skipping\n");
+    printk("bspWtdgInit: watchdog0 not in devicetree, skipping\n");
 #endif /* WDT_AVAILABLE */
 }
 
-void wtdgFeed(void)
+void bspWtdgFeed(void)
 {
 #if WDT_AVAILABLE
     if (wtdgStopFlag) {
@@ -137,7 +141,7 @@ void wtdgFeed(void)
 #endif /* WDT_AVAILABLE */
 }
 
-void wtdgStop(void)
+void bspWtdgStop(void)
 {
     wtdgStopFlag = true;
 }

@@ -1,5 +1,5 @@
 /*
- * * stateMachine.h
+ * * state_machine.h
  *
  * ePSU Power Supply State Machine — cios-zhong
  *
@@ -7,8 +7,8 @@
  * and mode transitions per the ePSU timing diagram.
  */
 
-#ifndef STATEMACHINE_H
-#define STATEMACHINE_H
+#ifndef STATE_MACHINE_H
+#define STATE_MACHINE_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -83,4 +83,4 @@ void stateMachineRequestCharging(void);
 }
 #endif
 
-#endif /* STATEMACHINE_H */
+#endif /* STATE_MACHINE_H */

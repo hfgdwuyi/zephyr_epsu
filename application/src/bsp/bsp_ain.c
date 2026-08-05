@@ -1,16 +1,17 @@
-#include "bsp_ain.h"
-
+/* Zephyr */
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
-#include <zephyr/sys/util.h>
 #include <zephyr/sys/printk.h>
+#include <zephyr/sys/util.h>
 #include <zephyr/drivers/adc.h>
 #include <zephyr/logging/log.h>
 
+/* BSP */
+#include "bsp_ain.h"
+
 LOG_MODULE_REGISTER(bsp_ain, LOG_LEVEL_INF);
 
-#if DT_NODE_HAS_STATUS(DT_PATH(zephyr_user), okay) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), io_channels)
-
+/* ADC is fixed on this platform (H745) — io-channels always present. */
 #define AIN_IO_CHANNELS_NODE DT_PATH(zephyr_user)
 #define AIN_NUMBER DT_PROP_LEN(AIN_IO_CHANNELS_NODE, io_channels)
 
@@ -183,31 +184,3 @@ const char *bspAinGetName(uint8_t channel)
     }
     return (channel < ARRAY_SIZE(ainName)) ? ainName[channel] : NULL;
 }
-
-#else
-
-void bspAinInit(void)
-{
-    printk("AIN: disabled (no /zephyr,user io-channels)\n");
-}
-
-void bspAinPoll(void)
-{
-    /* no-op */
-}
-
-uint32_t bspAinGetRawValue(uint8_t channel)
-{
-    ARG_UNUSED(channel);
-    return 0;
-}
-
-const char *bspAinGetName(uint8_t channel)
-{
-    ARG_UNUSED(channel);
-    return NULL;
-}
-
-uint32_t bspAinReadVinMv(void)            { return 0; }
-
-#endif

@@ -8,20 +8,30 @@
  *   Vadc = Vref × Rntc / (Rf + Rntc)
  *   Rntc = Rf × Vadc / (Vref - Vadc)
  *   where Vref=3.3V, Rf=4700Ω, Vadc = raw × 3.3 / 4095
+ *
+ * Also provides the temperature monitoring service (ntcTemp*): samples
+ * both NTC channels and accumulates over-temp duration for the state
+ * machine's fault decision.
  */
 
-#include "ntc_sensor.h"
-#include "bsp_ain.h"
-
-#include <stdint.h>
+/* C standard library */
 #include <stddef.h>
+#include <stdint.h>
 #include <limits.h>
 
+/* BSP */
+#include "bsp_ain.h"
+
+/* Application */
+#include "ntc_sensor.h"
+
 /* ─── voltage divider params ─── */
-#define NTC_VREF_MV         3300U
-#define NTC_RFIXED_OHM      4700U
-#define NTC_ADC_BITS        12
-#define NTC_ADC_MAX         ((1U << NTC_ADC_BITS) - 1)  /* 4095 */
+typedef enum {
+	NTC_HW_VREF_MV     = 3300,
+	NTC_HW_RFIXED_OHM  = 4700,
+	NTC_HW_ADC_BITS    = 12,
+	NTC_HW_ADC_MAX     = (1U << NTC_HW_ADC_BITS) - 1,   /* 4095 */
+} ntcHwParam_t;
 
 /* ─── lookup table entry ─── */
 typedef struct {
@@ -132,12 +142,12 @@ int16_t ntcReadTemp(uint8_t ain_channel)
 	if (raw == 0) {
 		return INT16_MIN;   /* ADC not ready or read failed */
 	}
-	if (raw >= NTC_ADC_MAX) {
+	if (raw >= NTC_HW_ADC_MAX) {
 		return INT16_MIN;   /* open / short to Vcc  */
 	}
 
 	/* Vadc(mV) = raw × Vref / ADCmax */
-	uint32_t v_mv = (raw * NTC_VREF_MV) / NTC_ADC_MAX;
+	uint32_t v_mv = (raw * NTC_HW_VREF_MV) / NTC_HW_ADC_MAX;
 
 	/*
 	 * Vadc = Vref × Rntc / (Rf + Rntc)
@@ -145,14 +155,53 @@ int16_t ntcReadTemp(uint8_t ain_channel)
 	 *
 	 * All in mV, R in Ω.
 	 */
-	if (v_mv >= NTC_VREF_MV) {
+	if (v_mv >= NTC_HW_VREF_MV) {
 		return INT16_MIN;   /* NTC disconnected or short to Vref */
 	}
 
-	uint32_t v_drop_mv = NTC_VREF_MV - v_mv;
+	uint32_t v_drop_mv = NTC_HW_VREF_MV - v_mv;
 	uint32_t r_ntc = (v_drop_mv == 0)
 		? 0U
-		: (uint32_t)((uint64_t)NTC_RFIXED_OHM * v_mv / v_drop_mv);
+		: (uint32_t)((uint64_t)NTC_HW_RFIXED_OHM * v_mv / v_drop_mv);
 
 	return ntcInterpolate(r_ntc);
+}
+
+/* ---- Temperature monitoring service ---- */
+
+static int16_t  s_temp1;      /* temp sensor 1 (×10°C)     */
+static int16_t  s_temp2;      /* temp sensor 2 (×10°C)     */
+static uint32_t s_overtemp_ms; /* consecutive over-temp ms  */
+
+void ntcTempInit(void)
+{
+	s_temp1 = 0;
+	s_temp2 = 0;
+	s_overtemp_ms = 0;
+}
+
+void ntcTempUpdate(uint32_t period_ms)
+{
+	s_temp1 = ntcReadTemp(NTC_AIN_CH_TEMP1);
+	s_temp2 = ntcReadTemp(NTC_AIN_CH_TEMP2);
+
+	/* Accumulate while over-temp, reset otherwise. period_ms lets the
+	 * caller's poll period drive the over-temp counter in ms. */
+	s_overtemp_ms = ntcTempIsOvertemp() ? s_overtemp_ms + period_ms : 0U;
+}
+
+int16_t ntcTempGetMax(void)
+{
+	return (s_temp1 > s_temp2) ? s_temp1 : s_temp2;
+}
+
+bool ntcTempIsOvertemp(void)
+{
+	int16_t hi = ntcTempGetMax();
+	return (hi > 0) && (hi >= NTC_TEMP_THRESH_FAULT);
+}
+
+uint32_t ntcTempOvertempFor(void)
+{
+	return s_overtemp_ms;
 }

@@ -11,8 +11,10 @@
 #ifndef BSP_WTDG_H
 #define BSP_WTDG_H
 
-void wtdgInit(void);
-void wtdgFeed(void);
+/* Internal watchdog (MCU WWDG) */
+void bspWtdgInit(void);
+void bspWtdgFeed(void);
+void bspWtdgStop(void);
 
 
 #endif

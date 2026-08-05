@@ -66,23 +66,23 @@ enum {
 /* ==================== DIN index — pin_config.xlsx ==================== */
 
 enum {
-	DIN_GRID_MAIN_RELAY_STATUS  = 0,  /* PH5  */
-	DIN_ME_BOX_ERROR            = 1,  /* PH6  */
-	DIN_TROLLEY_CONNECTED			    = 1, /* PA0  */
-	DIN_TEMP_ALERT			    = 2, /* PB12 */
-	DIN_LED_PWR_24_ON			    = 3, /* PC6  */
-	DIN_LED_CP_24V_ON			    = 4, /* PC7  */
-	DIN_SYSTEM_ON_OFF			    = 5, /* PJ0  */
-	DIN_SYSTEM_RESET			    = 6, /* PJ1  */
-	DIN_S1_SYSTEM_CONFIG			    = 7, /* PJ2  */
-	DIN_S2_SYSTEM_CONFIG			    = 8, /* PJ3  */
-	DIN_SOLO_SYSTEM_CONFIG			    = 9, /* PJ4  */
-	DIN_TROLLEY_CONNECTED_J			    = 10, /* PJ5  */
-	DIN_IS_PC_ON			    = 11, /* PJ6  */
-	DIN_APP_HOST_ON			    = 12, /* PJ7  */
-	DIN_SMART_WHS_INDICATE			    = 13, /* PJ8  */
-	DIN_DRAWER_INDICATE			    = 14, /* PJ9  */
-	DIN_SMART_CTRL_WHS_SEARCH			    = 15, /* PJ10 */
+	DIN_GRID_MAIN_RELAY_STATUS  = 0,   /* PH5  — high=valid, low=invalid */
+	DIN_ME_BOX_ERROR            = 1,   /* PH6  — high=normal, low=fault */
+	DIN_TROLLEY_CONNECTED			= 2,   /* PA0  — high=connected, low=disconnected */
+	DIN_TEMP_ALERT			= 3,   /* PB12 */
+	DIN_LED_PWR_24_ON			= 4,   /* PC6  */
+	DIN_LED_CP_24V_ON			= 5,   /* PC7  */
+	DIN_SYSTEM_ON_OFF			= 6,   /* PJ0  */
+	DIN_SYSTEM_RESET			= 7,   /* PJ1  */
+	DIN_S1_SYSTEM_CONFIG			= 8,   /* PJ2  */
+	DIN_S2_SYSTEM_CONFIG			= 9,   /* PJ3  */
+	DIN_SOLO_SYSTEM_CONFIG		= 10,  /* PJ4  */
+	DIN_TROLLEY_CONNECTED_J		= 11,  /* PJ5  — high=connected */
+	DIN_IS_PC_ON			= 12,  /* PJ6  */
+	DIN_APP_HOST_ON			= 13,  /* PJ7  */
+	DIN_SMART_WHS_INDICATE		= 14,  /* PJ8  */
+	DIN_DRAWER_INDICATE			= 15,  /* PJ9  */
+	DIN_SMART_CTRL_WHS_SEARCH	= 16,  /* PJ10 */
 };
 
 /* ==================== Fan PWM index (via bsp_pwm) ==================== */
@@ -97,7 +97,7 @@ enum {
 typedef struct {
 	bool    deb_en;    /* Debouncing enabled */
 	uint8_t deb_time;  /* Debouncing time (in update ticks; 1ms per tick) */
-} bspDinSettings;
+} bspDinSettings_t;
 
 extern const uint8_t dinMax;
 extern const uint8_t doutMax;
@@ -107,23 +107,30 @@ extern const uint8_t doutMax;
 void bspDioInit(void);
 
 /* Configure debouncing for a DIN pin index */
-void bspDinSetDebouncing(uint8_t pin, bspDinSettings settings);
+void bspDinSetDebouncing(uint8_t pin, bspDinSettings_t settings);
 
-/* Read one packed DIN byte (byte index [0..DIN_BYTES-1]) */
-uint8_t bspDinRead(uint8_t byte);
+/* ---- DIN: bitmap-based state (updated by bspDinUpdate, called from scheduler) ----
+ * bspDinUpdate() samples all DIN pins into the internal bitmap.
+ * bspDinGet()/bspDinGetBitmap() read the sampled state. */
 
-/* Read a single DIN pin state by index (e.g., DIN_GRID_MAIN_RELAY_STATUS) */
+void bspDinUpdate(void);
+uint32_t bspDinGetBitmap(void);
+
 static inline bool bspDinGet(uint8_t pin)
 {
-	return (bspDinRead((pin) / 8U) & BIT((pin) % 8U)) != 0U;
+	return (bspDinGetBitmap() & BIT(pin)) != 0U;
 }
 
-/* Set/read DOUT by pin index */
-void bspDoutSet(uint8_t pinNumber, bool state);
-bool bspDoutRead(uint8_t pinNumber);
+/* ---- DOUT: bitmap-based control ----
+ * State machine sets a DOUT bit via bspDoutSetStatus(pin, state);
+ * bspDoutSet() (called from the scheduler) applies the bitmap to
+ * the GPIO pins once per period. bspDoutSet() stays for immediate
+ * writes (init, safety shutdown). */
 
-/* MAX6703A WDI toggle — must be called within 1.6s timeout */
-void bspWdiFeed(void);
+void bspDoutSetStatus(uint8_t pin, bool state);
+bool bspDoutGetStatus(uint8_t pin);
+void bspDoutSetMask(uint32_t mask, bool state);
+void bspDoutSet(void);
 
 #ifdef __cplusplus
 }
