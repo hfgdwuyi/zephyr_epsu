@@ -112,7 +112,6 @@ static bool         g_stateEntered = false;
  * signal has been at `target` for at least `hold` ms (one-shot). */
 
 typedef struct {
-	bool     last_level; /* previous sampled level (for edge anchoring)  */
 	bool     armed;      /* false until an edge away from target is seen */
 	uint32_t hold_ms;    /* ms the signal has stayed at target level     */
 	bool     fired;      /* one-shot already triggered for this hold     */
@@ -143,17 +142,16 @@ static bool dinHoldTick(dinHold_t *h, bool level, bool target, uint32_t hold)
 		h->fired   = false;
 		h->armed   = true;
 	}
-	h->last_level = level;
 	return false;
 }
 
-/* Lock in the power-on level so a static high/low at boot cannot fire. */
-static void dinHoldInit(dinHold_t *h, bool level)
+/* Start disarmed: the signal must first deviate from its target before
+ * timing begins, so a static high/low at boot cannot fire. */
+static void dinHoldInit(dinHold_t *h)
 {
-	h->last_level = level;
-	h->armed      = false;
-	h->hold_ms    = 0;
-	h->fired      = false;
+	h->armed   = false;
+	h->hold_ms = 0;
+	h->fired   = false;
 }
 
 /* ==================== Forward declarations ==================== */
@@ -174,11 +172,11 @@ static void stateRunOff(void);
 static stateMachineConfig_t readConfigSwitches(void);
 static bool checkMainsPresent(void);
 static void panelLedsOff(void);
-static void panelLedsUpdate(stateMachineState_t s);
+static void panelLedsUpdate(void);
 static void fanSet(bool on, fanDuty_t duty_percent);
 static void transitionTo(stateMachineState_t s);
 static bool dinHoldTick(dinHold_t *h, bool level, bool target, uint32_t hold);
-static void dinHoldInit(dinHold_t *h, bool level);
+static void dinHoldInit(dinHold_t *h);
 
 /* ==================== Public API ==================== */
 
@@ -193,10 +191,10 @@ void stateMachineInit(void)
 
 	ntcTempInit();
 
-	/* Lock in power-on levels so a static high/low at boot cannot fire. */
-	dinHoldInit(&s_onoff_rising,  bspDinGet(DIN_SYSTEM_ON_OFF));
-	dinHoldInit(&s_onoff_falling, bspDinGet(DIN_SYSTEM_ON_OFF));
-	dinHoldInit(&s_reset_rising,  bspDinGet(DIN_SYSTEM_RESET));
+	/* Start disarmed so a static power-on level cannot fire. */
+	dinHoldInit(&s_onoff_rising);
+	dinHoldInit(&s_onoff_falling);
+	dinHoldInit(&s_reset_rising);
 
 	printk("STATEMACHINE: init cfg=%d\n", (int)g_config);
 }
@@ -329,9 +327,8 @@ static void panelLedsOff(void)
 	bspDoutSetMask(PANEL_LED_MASK, false);
 }
 
-static void panelLedsUpdate(stateMachineState_t s)
+static void panelLedsUpdate(void)
 {
-	(void)s;
 
 	if (g_state == STATEMACHINE_STATE_INIT) {
 		panelLedsOff();
@@ -415,7 +412,7 @@ static void stateEnter(stateMachineState_t s)
 
 	case STATEMACHINE_STATE_SYS_ON:
 		bspDoutSetStatus(DOUT_TROLLEY_ENABLE_DRV, true);
-		panelLedsUpdate(s);
+		panelLedsUpdate();
 		bspLedSwitchOn(0);
 		break;
 
@@ -429,18 +426,18 @@ static void stateEnter(stateMachineState_t s)
 
 	case STATEMACHINE_STATE_NORMAL_OP:
 		bspDoutSetMask(RELAY_MASK_K4_TO_K12, true);
-		panelLedsUpdate(s);
+		panelLedsUpdate();
 		fanSet(true, FAN_DUTY_NORMAL);   /* 50% initial, ramp up over time */
 		break;
 
 	case STATEMACHINE_STATE_S2_MODE:
 		bspDoutSetMask(RELAY_MASK_K5_TO_K12, false);
-		panelLedsUpdate(s);
+		panelLedsUpdate();
 		fanSet(true, FAN_DUTY_S2_MODE);   /* low power, minimal cooling */
 		break;
 
 	case STATEMACHINE_STATE_CHARGING:
-		panelLedsUpdate(s);
+		panelLedsUpdate();
 		fanSet(true, FAN_DUTY_CHARGING);   /* charging needs extra cooling */
 		break;
 
@@ -563,7 +560,7 @@ static void stateRunNormalOp(void)
 
 	/* Periodic panel LED refresh */
 	if ((g_state_ticks % SM_TIMING_CHECKS_PERIOD) == 0) {
-		panelLedsUpdate(STATEMACHINE_STATE_NORMAL_OP);
+		panelLedsUpdate();
 	}
 
 	/* Temperature polling */
@@ -616,7 +613,7 @@ static void stateRunS2Mode(void)
 			return;
 		}
 		/* on_off toggle is handled centrally in stateMachineTick() */
-		panelLedsUpdate(STATEMACHINE_STATE_S2_MODE);
+		panelLedsUpdate();
 	}
 }
 
@@ -650,7 +647,7 @@ static void stateRunCharging(void)
 			if (hi > 0)  fanSet(true, fanDutyFromTemp(hi));
 		}
 
-		panelLedsUpdate(STATEMACHINE_STATE_CHARGING);
+		panelLedsUpdate();
 	}
 }
 
