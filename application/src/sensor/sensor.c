@@ -9,18 +9,26 @@
  *   Vadc = Vref × Rntc / (Rf + Rntc)  ⇒  Rntc = Rf × Vadc / (Vref - Vadc)
  *   where Vref=3.3V, Rf=4700Ω, Vadc = raw × 3.3 / 4095
  *
- *   Also provides the temperature monitoring service (sensorTemp*): samples
- *   both NTC channels and accumulates over-temp duration for the state
- *   machine's fault decision.
- *
  * Voltage: external-circuit scaling for the PDC dividers (47k:4.7k) and the
  *   mains AC sense network.  bsp_ain only exposes raw ADC counts.
+ *
+ * Thread model:
+ *   sensorStart() spawns a dedicated thread at a fixed base period. Each tick
+ *   it reads the raw ADC snapshot (filled by bspAinPoll), low-pass filters
+ *   every configured channel, and every update_n ticks converts + publishes
+ *   the physical value into phys_cache. This gives per-quantity sample rates
+ *   from a single base tick (multi-rate decimation). Over-temp duration is
+ *   accumulated here too, so consumers only query.
  */
 
 /* C standard library */
 #include <stddef.h>
 #include <stdint.h>
 #include <limits.h>
+
+/* Zephyr */
+#include <zephyr/kernel.h>
+#include <zephyr/sys/util.h>
 
 /* BSP */
 #include "bsp_ain.h"
@@ -138,26 +146,19 @@ static int16_t ntcInterpolate(uint32_t r_ohm)
 	return (int16_t)interp;
 }
 
-int16_t sensorReadTemp(uint8_t ain_channel)
+/*
+ * NTC raw ADC count → temperature × 10.
+ * Returns INT16_MIN on fault (ADC not ready, open, or short to Vcc).
+ */
+static int16_t tempFromRaw(uint32_t raw)
 {
-	uint32_t raw = bspAinGetRawValue(ain_channel);
-
-	if (raw == 0) {
-		return INT16_MIN;   /* ADC not ready or read failed */
-	}
-	if (raw >= NTC_HW_ADC_MAX) {
+	if (raw == 0 || raw >= NTC_HW_ADC_MAX) {
 		return INT16_MIN;   /* open / short to Vcc  */
 	}
 
 	/* Vadc(mV) = raw × Vref / ADCmax */
 	uint32_t v_mv = (raw * NTC_HW_VREF_MV) / NTC_HW_ADC_MAX;
 
-	/*
-	 * Vadc = Vref × Rntc / (Rf + Rntc)
-	 *   ⇒  Rntc = Rf × Vadc / (Vref - Vadc)
-	 *
-	 * All in mV, R in Ω.
-	 */
 	if (v_mv >= NTC_HW_VREF_MV) {
 		return INT16_MIN;   /* NTC disconnected or short to Vref */
 	}
@@ -170,11 +171,17 @@ int16_t sensorReadTemp(uint8_t ain_channel)
 	return ntcInterpolate(r_ntc);
 }
 
-/* ---- Temperature monitoring service ---- */
+int16_t sensorReadTemp(uint8_t ain_channel)
+{
+	return tempFromRaw(bspAinGetRawValue(ain_channel));
+}
 
-static int16_t  s_temp1;      /* temp sensor 1 (×10°C)     */
-static int16_t  s_temp2;      /* temp sensor 2 (×10°C)     */
-static uint32_t s_overtemp_ms; /* consecutive over-temp ms  */
+/* ---- Temperature monitoring service ----
+ * Updated by the sensor thread; read cross-thread by the state machine. */
+
+static volatile int16_t  s_temp1;       /* temp sensor 1 (×10°C)     */
+static volatile int16_t  s_temp2;       /* temp sensor 2 (×10°C)     */
+static volatile uint32_t s_overtemp_ms; /* consecutive over-temp ms  */
 
 void sensorTempInit(void)
 {
@@ -183,14 +190,14 @@ void sensorTempInit(void)
 	s_overtemp_ms = 0;
 }
 
-void sensorTempUpdate(uint32_t period_ms)
+int16_t sensorTempGet1(void)
 {
-	s_temp1 = sensorReadTemp(SENSOR_AIN_CH_TEMP1);
-	s_temp2 = sensorReadTemp(SENSOR_AIN_CH_TEMP2);
+	return s_temp1;
+}
 
-	/* Accumulate while over-temp, reset otherwise. period_ms lets the
-	 * caller's poll period drive the over-temp counter in ms. */
-	s_overtemp_ms = sensorTempIsOvertemp() ? s_overtemp_ms + period_ms : 0U;
+int16_t sensorTempGet2(void)
+{
+	return s_temp2;
 }
 
 int16_t sensorTempGetMax(void)
@@ -198,7 +205,7 @@ int16_t sensorTempGetMax(void)
 	return (s_temp1 > s_temp2) ? s_temp1 : s_temp2;
 }
 
-/* True if either NTC sensor read failed (open/short). sensorReadTemp returns
+/* True if either NTC sensor read failed (open/short). tempFromRaw returns
  * INT16_MIN on failure, so a negative sample means a sensor fault. */
 bool sensorTempSensorFault(void)
 {
@@ -216,18 +223,23 @@ uint32_t sensorTempOvertempFor(void)
 	return s_overtemp_ms;
 }
 
-/* ==================== Voltage (dividers / mains AC) ==================== */
+/* ==================== Voltage conversions ==================== */
 
-uint32_t sensorReadMv(uint8_t channel)
+/* raw ADC count → mV at the pin (0–3300 mV) */
+static uint32_t mvFromRaw(uint32_t raw)
 {
-	uint32_t raw = bspAinGetRawValue(channel);
 	return (raw * 3300U) / 4095U;
 }
 
-uint32_t sensorReadDivMv(uint8_t channel, uint32_t rHigh, uint32_t rLow)
+/* PDC divider 47k:4.7k → actual rail mV.
+ * Vactual = Vadc × (470 + 47) / 47 = Vadc × 11.  All in 0.1kΩ units. */
+#define SENSOR_DIV_RHIGH 470
+#define SENSOR_DIV_RLOW  47
+
+static uint32_t divMvFromRaw(uint32_t raw)
 {
-	uint32_t vAdc = sensorReadMv(channel);
-	return (vAdc * (rHigh + rLow)) / rLow;
+	uint32_t vAdc = mvFromRaw(raw);
+	return (vAdc * (SENSOR_DIV_RHIGH + SENSOR_DIV_RLOW)) / SENSOR_DIV_RLOW;
 }
 
 /*
@@ -238,14 +250,131 @@ uint32_t sensorReadDivMv(uint8_t channel, uint32_t rHigh, uint32_t rLow)
  *   => Vadc = 1.65 + Vin x 0.004773
  *   => Vin  = (Vadc - 1.65) / 0.004773
  * ADC output range: 0.568 V .. 2.732 V.
- * All in mV.  Returns 0 if Vadc < 1.65 V.
+ * Returns 0 if Vadc < 1.65 V.
  */
-uint32_t sensorReadVinMv(void)
+static uint32_t vinMvFromRaw(uint32_t raw)
 {
-	int32_t vAdc = (int32_t)sensorReadMv(AIN_ADC_VIN);
+	int32_t vAdc = (int32_t)mvFromRaw(raw);
 	int32_t delta = vAdc - 1650;
 	if (delta <= 0) {
 		return 0;
 	}
 	return (uint32_t)(delta * 20953U / 100U);
+}
+
+/* ==================== Multi-rate sampling thread ==================== */
+
+typedef uint32_t (*sensorConvertFn_t)(uint32_t filtered_raw);
+
+/* Per-channel processing config. update_n gives multi-rate decimation:
+ * a channel publishes its physical value every update_n base ticks. */
+typedef struct {
+	uint8_t           chan;           /* AIN channel (bsp_ain.h index) */
+	uint8_t           update_n;       /* publish every N base ticks    */
+	uint8_t           filter_shift;   /* IIR: filtered += (raw-filtered)>>shift; 0 = none */
+	bool              is_temp;        /* true → also publish to s_temp1/2 */
+	sensorConvertFn_t convert;
+} sensorChanCfg_t;
+
+#define SENSOR_BASE_PERIOD_MS  50
+
+/* tempFromRaw returns int16_t; wrap so the generic converter is uniform. */
+static uint32_t tempFromRawU(uint32_t raw)
+{
+	return (uint32_t)tempFromRaw(raw);
+}
+
+static const sensorChanCfg_t sensor_cfg[] = {
+	/* PDC rails: base rate (50 ms) — power output, fastest quantity */
+	{ AIN_ADC_PDC0,     1,  2, false, divMvFromRaw },
+	{ AIN_ADC_PDC1,     1,  2, false, divMvFromRaw },
+	{ AIN_ADC_PDC2,     1,  2, false, divMvFromRaw },
+	{ AIN_ADC_PDC3,     1,  2, false, divMvFromRaw },
+	{ AIN_ADC_PDC4,     1,  2, false, divMvFromRaw },
+	{ AIN_ADC_PDC5,     1,  2, false, divMvFromRaw },
+	{ AIN_ADC_PDC6,     1,  2, false, divMvFromRaw },
+	{ AIN_ADC_PDC7,     1,  2, false, divMvFromRaw },
+	{ AIN_ADC_PDC0_ALT, 1,  2, false, divMvFromRaw },
+	/* mains AC: 100 ms */
+	{ AIN_ADC_VIN,      2,  2, false, vinMvFromRaw },
+	/* monitor rails: 500 ms */
+	{ AIN_ADC_12V,     10,  2, false, mvFromRaw },
+	{ AIN_ADC_5V0,     10,  2, false, mvFromRaw },
+	{ AIN_ADC_3V3,     10,  2, false, mvFromRaw },
+	/* NTC temperature: 1 s — slow thermal time constant */
+	{ AIN_ADC_TEMP1,   20,  3, true,  tempFromRawU },
+	{ AIN_ADC_TEMP2,   20,  3, true,  tempFromRawU },
+};
+
+static volatile uint32_t filtered_raw[BSP_AIN_NUMBER];   /* IIR state per channel */
+static volatile uint32_t phys_cache[BSP_AIN_NUMBER];     /* published values      */
+static uint8_t           filt_init[BSP_AIN_NUMBER];      /* 1 once first sample seen */
+static uint8_t           update_ctr[BSP_AIN_NUMBER];     /* decimation countdown   */
+
+#define SENSOR_STACK_SZ  1024
+#define SENSOR_PRIO      4
+
+static struct k_thread sensor_thread;
+K_THREAD_STACK_DEFINE(sensor_stack, SENSOR_STACK_SZ);
+
+static void sensorThreadFn(void *p1, void *p2, void *p3)
+{
+	for (;;) {
+		for (size_t i = 0; i < ARRAY_SIZE(sensor_cfg); i++) {
+			const sensorChanCfg_t *cfg = &sensor_cfg[i];
+			uint8_t ch = cfg->chan;
+			uint32_t raw = bspAinGetRawValue(ch);
+
+			/* first-order IIR low-pass on raw counts; snap on first sample */
+			if (!filt_init[ch]) {
+				filtered_raw[ch] = raw;
+				filt_init[ch] = 1;
+			} else if (cfg->filter_shift != 0) {
+				int32_t diff = (int32_t)raw - (int32_t)filtered_raw[ch];
+				filtered_raw[ch] += (uint32_t)(diff >> cfg->filter_shift);
+			} else {
+				filtered_raw[ch] = raw;
+			}
+
+			/* multi-rate decimation: publish every update_n base ticks */
+			if (++update_ctr[ch] < cfg->update_n) {
+				continue;
+			}
+			update_ctr[ch] = 0;
+
+			uint32_t phys = cfg->convert(filtered_raw[ch]);
+			if (cfg->is_temp) {
+				int16_t t = (int16_t)phys;
+				if (ch == AIN_ADC_TEMP1) {
+					s_temp1 = t;
+				} else if (ch == AIN_ADC_TEMP2) {
+					s_temp2 = t;
+				}
+			}
+			phys_cache[ch] = phys;
+		}
+
+		/* over-temp accumulator: reset while cool, else count base ticks */
+		s_overtemp_ms = sensorTempIsOvertemp()
+			? s_overtemp_ms + SENSOR_BASE_PERIOD_MS
+			: 0U;
+
+		k_sleep(K_MSEC(SENSOR_BASE_PERIOD_MS));
+	}
+}
+
+void sensorStart(void)
+{
+	k_thread_create(&sensor_thread, sensor_stack,
+			K_THREAD_STACK_SIZEOF(sensor_stack),
+			sensorThreadFn, NULL, NULL, NULL,
+			SENSOR_PRIO, 0, K_NO_WAIT);
+}
+
+uint32_t sensorGetPhys(uint8_t channel)
+{
+	if (channel >= BSP_AIN_NUMBER) {
+		return 0;
+	}
+	return phys_cache[channel];
 }

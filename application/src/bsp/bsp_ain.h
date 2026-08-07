@@ -6,10 +6,15 @@
 #define BSP_AIN_H
 
 #include <stdint.h>
+#include <zephyr/devicetree.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Channel count derives from the io-channels array in app.overlay. */
+#define BSP_AIN_IO_CHANNELS_NODE DT_PATH(zephyr_user)
+#define BSP_AIN_NUMBER           DT_PROP_LEN(BSP_AIN_IO_CHANNELS_NODE, io_channels)
 
 /* AIN logical channels (matches app.overlay io-channels order) */
 

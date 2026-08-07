@@ -11,20 +11,16 @@
 
 LOG_MODULE_REGISTER(bsp_ain, LOG_LEVEL_INF);
 
-/* ADC is fixed on this platform (H745) — io-channels always present. */
-#define AIN_IO_CHANNELS_NODE DT_PATH(zephyr_user)
-#define AIN_NUMBER DT_PROP_LEN(AIN_IO_CHANNELS_NODE, io_channels)
-
 #define AIN_ADC_SPEC_ELEM(node_id, prop, idx) ADC_DT_SPEC_GET_BY_IDX(node_id, idx)
 
-static const struct adc_dt_spec ain_specs[AIN_NUMBER] = {
-    DT_FOREACH_PROP_ELEM_SEP(AIN_IO_CHANNELS_NODE, io_channels, AIN_ADC_SPEC_ELEM, (,))
+static const struct adc_dt_spec ain_specs[BSP_AIN_NUMBER] = {
+    DT_FOREACH_PROP_ELEM_SEP(BSP_AIN_IO_CHANNELS_NODE, io_channels, AIN_ADC_SPEC_ELEM, (,))
 };
 
-static uint32_t ainData[AIN_NUMBER];
+static uint32_t ainData[BSP_AIN_NUMBER];
 
 /* Names follow pin_config.xlsx order (matches io-channels order in app.overlay) */
-static const char *const ainName[AIN_NUMBER] = {
+static const char *const ainName[BSP_AIN_NUMBER] = {
     "adc_12v",         /* 0  - PH2   */
     "adc_pdc7",        /* 1  - PF11  */
     "adc_pdc6",        /* 2  - PF12  */
@@ -44,12 +40,12 @@ static const char *const ainName[AIN_NUMBER] = {
 
 void bspAinInit(void)
 {
-    for (size_t i = 0; i < AIN_NUMBER; i++) {
+    for (size_t i = 0; i < BSP_AIN_NUMBER; i++) {
         ainData[i] = 0;
     }
 
     /* Setup each channel (best-effort; some drivers may return -ENOTSUP) */
-    for (size_t i = 0; i < AIN_NUMBER; i++) {
+    for (size_t i = 0; i < BSP_AIN_NUMBER; i++) {
         const struct adc_dt_spec *spec = &ain_specs[i];
 
         if (!adc_is_ready_dt(spec)) {
@@ -69,8 +65,8 @@ void bspAinInit(void)
     }
 
     /* Print summary */
-    printk("AIN: init done (poll), inputs=%u\n", (unsigned)AIN_NUMBER);
-    for (size_t i = 0; i < AIN_NUMBER; i++) {
+    printk("AIN: init done (poll), inputs=%u\n", (unsigned)BSP_AIN_NUMBER);
+    for (size_t i = 0; i < BSP_AIN_NUMBER; i++) {
         const struct adc_dt_spec *spec = &ain_specs[i];
         printk("AIN[%u]: name=%s dev=%s ch=%u\n",
                (unsigned)i,
@@ -84,7 +80,7 @@ void bspAinInit(void)
 void bspAinPoll(void)
 {
     /* 1) sample all channels */
-    for (size_t i = 0; i < AIN_NUMBER; i++) {
+    for (size_t i = 0; i < BSP_AIN_NUMBER; i++) {
         const struct adc_dt_spec *spec = &ain_specs[i];
 
         if (!adc_is_ready_dt(spec) || spec->dev == NULL) {
@@ -132,7 +128,7 @@ void bspAinPoll(void)
 
     /* 2) log all sampled values every poll (DBG level for production) */
     LOG_DBG("AIN: samples:");
-    for (size_t i = 0; i < AIN_NUMBER; i++) {
+    for (size_t i = 0; i < BSP_AIN_NUMBER; i++) {
         LOG_DBG(" [%u]%s=%u",
                 (unsigned)i,
                 (i < ARRAY_SIZE(ainName) && ainName[i]) ? ainName[i] : "(unnamed)",
@@ -142,7 +138,7 @@ void bspAinPoll(void)
 
 uint32_t bspAinGetRawValue(uint8_t channel)
 {
-    if (channel >= AIN_NUMBER) {
+    if (channel >= BSP_AIN_NUMBER) {
         return 0;
     }
     return ainData[channel];
@@ -150,7 +146,7 @@ uint32_t bspAinGetRawValue(uint8_t channel)
 
 const char *bspAinGetName(uint8_t channel)
 {
-    if (channel >= AIN_NUMBER) {
+    if (channel >= BSP_AIN_NUMBER) {
         return NULL;
     }
     return (channel < ARRAY_SIZE(ainName)) ? ainName[channel] : NULL;

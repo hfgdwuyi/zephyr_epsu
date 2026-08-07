@@ -44,7 +44,6 @@ typedef enum {
 	SM_TIMING_LED_BLINK_FAULT    = 500,
 	SM_TIMING_LED_BLINK_NORMAL   = 1000,
 	SM_TIMING_FAN_SPIN_UP        = 100,
-	SM_TIMING_TEMP_POLL          = 1000,   /* poll NTC every 1000 ms */
 	SM_TIMING_TEMP_FAULT_DELAY   = 5000,   /* 5s over-temp persist before fault */
 	SM_TIMING_ONOFF_TOGGLE_MS    = 550,    /* on_off rising edge 0.55s → toggle */
 	SM_TIMING_ONOFF_RESET_MS     = 5000,   /* on_off falling edge 5s → reset */
@@ -563,14 +562,10 @@ static void stateRunNormalOp(void)
 		/* on_off toggle is handled centrally in stateMachineTick() */
 	}
 
-	/* Periodic panel LED refresh */
+	/* Periodic panel LED refresh + temperature checks.
+	 * Temperatures are sampled by the sensor thread; here we only query. */
 	if ((g_state_ticks % SM_TIMING_CHECKS_PERIOD) == 0) {
 		panelLedsUpdate();
-	}
-
-	/* Temperature polling */
-	if ((g_state_ticks % SM_TIMING_TEMP_POLL) == 0) {
-		sensorTempUpdate(SM_TIMING_TEMP_POLL);
 
 		/* Sensor fault: report immediately rather than treating as cold,
 		 * which would silently disable over-temp protection. */
@@ -641,16 +636,13 @@ static void stateRunCharging(void)
 		}
 		/* on_off toggle is handled centrally in stateMachineTick() */
 
-		/* Temp poll every second, overtemp → fault */
-		if ((g_state_ticks % SM_TIMING_TEMP_POLL) == 0) {
-			sensorTempUpdate(SM_TIMING_TEMP_POLL);
-			if (sensorTempOvertempFor() >= SM_TIMING_TEMP_FAULT_DELAY) {
-				setError(STATEMACHINE_ERR_CHARGING_FAIL);
-				return;
-			}
-			int16_t hi = sensorTempGetMax();
-			if (hi > 0)  fanSet(true, fanDutyFromTemp(hi));
+		/* Over-temp duration is accumulated by the sensor thread */
+		if (sensorTempOvertempFor() >= SM_TIMING_TEMP_FAULT_DELAY) {
+			setError(STATEMACHINE_ERR_CHARGING_FAIL);
+			return;
 		}
+		int16_t hi = sensorTempGetMax();
+		if (hi > 0)  fanSet(true, fanDutyFromTemp(hi));
 
 		panelLedsUpdate();
 	}

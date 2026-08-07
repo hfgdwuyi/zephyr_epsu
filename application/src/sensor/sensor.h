@@ -4,7 +4,17 @@
  * ADC-based sensor interpretation — cios-zhong (application layer).
  *
  * All engineering-unit conversion of AIN samples lives here. The BSP
- * (bsp_ain) only exposes raw 12-bit ADC counts.
+ * (bsp_ain) only exposes raw 12-bit ADC counts, refreshed on a fixed poll
+ * cadence into a per-channel snapshot array.
+ *
+ * The sensor module runs as its own thread: it reads the raw snapshot,
+ * low-pass filters each channel, then converts and publishes physical values
+ * into a cache. Each physical quantity is processed at its own rate
+ * (multi-rate decimation), so fast signals (PDC rails) update at the base
+ * tick while slow signals (NTC temperature) update less often.
+ *
+ * Consumers (state machine, display task) read the published values through
+ * sensorGetPhys() / sensorTempGet*().
  *
  *   Temperature — NTC thermistor (Vishay NTCALUG02A472FA: R25=4700Ω,
  *                 B(25/85)=3984K) via lookup table + linear interpolation.
@@ -40,75 +50,41 @@ typedef enum {
 } sensorTempThresh_t;
 
 /*
- * Read NTC temperature via ADC channel.
+ * One-shot live read of an NTC channel (raw → temperature).
  *
- * channel: AIN channel index (SENSOR_AIN_CH_TEMP1 or SENSOR_AIN_CH_TEMP2)
- *
- * Returns temperature × 10 (e.g., 250 = 25.0°C), or INT16_MIN on error.
+ * Returns temperature × 10 (e.g., 250 = 25.0°C), or INT16_MIN on error
+ * (ADC not ready, open/short). For continuous monitoring prefer the cache
+ * via the sensor thread and sensorTempGet*().
  */
 int16_t sensorReadTemp(uint8_t ain_channel);
 
 /* ---- Temperature monitoring service ----
- * Manages sampling of both NTC channels plus over-temp accumulation.
- * The state machine calls sensorTempUpdate() periodically (e.g. every 1 s)
- * and queries the result. Fan-speed policy stays in the state machine. */
+ * Samples are captured by the sensor thread at the temperature channel rate
+ * (1 s). Over-temp duration is accumulated there as well, so consumers only
+ * query. Values are shared across threads via volatile state. */
 
-void     sensorTempInit(void);        /* reset internal state */
-void     sensorTempUpdate(uint32_t period_ms); /* sample both channels; period_ms drives over-temp counter */
-int16_t  sensorTempGetMax(void);      /* hotter of the two temps (×10), or <= 0 if bad */
-bool     sensorTempSensorFault(void); /* true if either NTC sensor read failed */
-bool     sensorTempIsOvertemp(void);  /* max temp >= fault threshold */
-uint32_t sensorTempOvertempFor(void); /* consecutive over-temp ms (for fault decision) */
+void     sensorTempInit(void);         /* reset internal state */
+int16_t  sensorTempGet1(void);         /* temp sensor 1 (×10), INT16_MIN on fault */
+int16_t  sensorTempGet2(void);         /* temp sensor 2 (×10), INT16_MIN on fault */
+int16_t  sensorTempGetMax(void);       /* hotter of the two temps (×10), or <= 0 if bad */
+bool     sensorTempSensorFault(void);  /* true if either NTC sensor read failed */
+bool     sensorTempIsOvertemp(void);   /* max temp >= fault threshold */
+uint32_t sensorTempOvertempFor(void);  /* consecutive over-temp ms (for fault decision) */
 
-/* ==================== Voltage (dividers / mains AC) ==================== */
+/* ==================== Sensor thread ==================== */
 
-/*
- * PDC divider constants (all PDCx channels).
- * rHigh/rLow in 0.1kΩ units: 47kΩ / 4.7kΩ.
- * Vactual = Vadc × (470 + 47) / 47 = Vadc × 11
- * 24 V → 2.4 V at pin;  range 19.2 – 28.8 V
- */
-typedef enum {
-	SENSOR_DIV_RHIGH       = 470,
-	SENSOR_DIV_RLOW        = 47,
-} sensorDivider_t;
-
-/* PDC validity (24 V PSU output ±20%) */
-typedef enum {
-	SENSOR_PDC_VALID_MIN   = 19200,   /* 19.2 V */
-	SENSOR_PDC_VALID_MAX   = 28800,   /* 28.8 V */
-} sensorPdcRange_t;
-
-/* ADC pin voltage in millivolts (0–3300 mV) */
-uint32_t sensorReadMv(uint8_t channel);
+/* Start the sensor processing thread. Each base tick it filters every
+ * configured channel and publishes physical values at each channel's rate. */
+void sensorStart(void);
 
 /*
- * Actual voltage behind a resistor divider, in mV.
- * rHigh / rLow in 0.1kΩ units.  E.g. PDC: sensorReadDivMv(ch, 470, 47)
- * returns the PSU output voltage in mV.
+ * Latest published physical value for an AIN channel.
+ *
+ * Units depend on the channel: voltage channels return mV, NTC channels
+ * return temperature ×10 (int16 bit-pattern; check sensorTempGet*() for a
+ * typed read). Returns 0 if the channel has never been published.
  */
-uint32_t sensorReadDivMv(uint8_t channel, uint32_t rHigh, uint32_t rLow);
-
-/*
- * Mains AC voltage at AIN_ADC_VIN, result in mV.
- * Vadc = 1.65 + (0.4 x 1.414 x Vin x 50.2 / 3575) x 3.9 / 6.49
- *   => Vin = (Vadc - 1.65) / 0.004773
- */
-uint32_t sensorReadVinMv(void);
-
-/*
- * Convenience: PDCx channel through standard divider → mV.
- * Equivalent to sensorReadDivMv(ch, SENSOR_DIV_RHIGH, SENSOR_DIV_RLOW).
- */
-static inline uint32_t sensorReadPdcMv(uint8_t channel)
-{
-	return sensorReadDivMv(channel, SENSOR_DIV_RHIGH, SENSOR_DIV_RLOW);
-}
-
-static inline bool sensorPdcValid(uint32_t mv)
-{
-	return mv >= SENSOR_PDC_VALID_MIN && mv <= SENSOR_PDC_VALID_MAX;
-}
+uint32_t sensorGetPhys(uint8_t channel);
 
 #ifdef __cplusplus
 }
