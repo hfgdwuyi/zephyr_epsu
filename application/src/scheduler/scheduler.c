@@ -19,9 +19,6 @@
  *  leaves it unfed → WWDG reset.
  */
 
-/* C standard library */
-#include <limits.h>
-
 /* Zephyr */
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
@@ -36,6 +33,7 @@
 #include "scheduler.h"
 #include "state_machine.h"
 #include "sensor.h"
+#include "display.h"
 #include "max6703a.h"
 
 /* ========== Heartbeats + WDT supervisor ========== */
@@ -199,95 +197,19 @@ static void sensorThreadFn(void *p1, void *p2, void *p3)
 	}
 }
 
-/* ========== 500 ms: change-triggered sensor print ========== */
+/* ========== 500 ms: display thread ========== */
 
 #define DISP_STACK_SZ  1024
 #define DISP_PRIO      5
 
-/* Print only when a physical value has moved meaningfully:
- * temperature > 3.0 °C (×10), voltage > 3.0 V (mV). */
-#define DISP_TEMP_DELTA  30     /* 3.0 °C, in ×10 units */
-#define DISP_MV_DELTA   3000    /* 3.0 V, in mV */
-
 static struct k_thread disp_thread;
 K_THREAD_STACK_DEFINE(disp_stack, DISP_STACK_SZ);
 
-/* Voltage channels to monitor (PDC rails + monitor rails + mains). Temps are
- * handled separately via sensorTempGet1/2. */
-static const uint8_t disp_mv_chan[] = {
-	AIN_ADC_PDC0, AIN_ADC_PDC1, AIN_ADC_PDC2, AIN_ADC_PDC3,
-	AIN_ADC_PDC4, AIN_ADC_PDC5, AIN_ADC_PDC6, AIN_ADC_PDC7,
-	AIN_ADC_PDC0_ALT,
-	AIN_ADC_12V, AIN_ADC_5V0, AIN_ADC_3V3, AIN_ADC_VIN,
-};
-
-static void printTemp(const char *name, int16_t t)
-{
-	if (t == INT16_MIN) {
-		printk("SENSOR %s: FAULT\n", name);
-	} else if (t <= 0) {
-		printk("SENSOR %s: n/a\n", name);
-	} else {
-		printk("SENSOR %s: %d.%d °C\n", name, t / 10, t % 10);
-	}
-}
-
 static void dispThreadFn(void *p1, void *p2, void *p3)
 {
-	uint32_t last_mv[ARRAY_SIZE(disp_mv_chan)];
-	int16_t  last_t1 = 0;
-	int16_t  last_t2 = 0;
-	bool     first = true;
-
 	while (1) {
-		int16_t t1 = sensorTempGet1();
-		int16_t t2 = sensorTempGet2();
-
-		if (first) {
-			/* initial snapshot once, then only print on change */
-			printTemp("temp1", t1);
-			printTemp("temp2", t2);
-			for (size_t i = 0; i < ARRAY_SIZE(disp_mv_chan); i++) {
-				uint32_t mv = sensorGetPhys(disp_mv_chan[i]);
-				last_mv[i] = mv;
-				printk("SENSOR %s: %u.%03u V\n",
-				       bspAinGetName(disp_mv_chan[i]),
-				       mv / 1000U, mv % 1000U);
-			}
-			last_t1 = t1;
-			last_t2 = t2;
-			first = false;
-			k_sleep(K_MSEC(500));
-			continue;
-		}
-
-		/* temperature — print when it moved > 3 °C */
-		int32_t dt1 = (int32_t)t1 - last_t1;
-		int32_t dt2 = (int32_t)t2 - last_t2;
-		if (dt1 < 0) dt1 = -dt1;
-		if (dt2 < 0) dt2 = -dt2;
-		if (dt1 >= DISP_TEMP_DELTA && t1 > 0) {
-			printTemp("temp1", t1);
-			last_t1 = t1;
-		}
-		if (dt2 >= DISP_TEMP_DELTA && t2 > 0) {
-			printTemp("temp2", t2);
-			last_t2 = t2;
-		}
-
-		/* voltage — print when it moved > 3 V */
-		for (size_t i = 0; i < ARRAY_SIZE(disp_mv_chan); i++) {
-			uint32_t mv = sensorGetPhys(disp_mv_chan[i]);
-			uint32_t d = (mv > last_mv[i]) ? (mv - last_mv[i]) : (last_mv[i] - mv);
-			if (d >= DISP_MV_DELTA) {
-				printk("SENSOR %s: %u.%03u V\n",
-				       bspAinGetName(disp_mv_chan[i]),
-				       mv / 1000U, mv % 1000U);
-				last_mv[i] = mv;
-			}
-		}
-
-		k_sleep(K_MSEC(500));
+		displayUpdate();
+		k_sleep(K_MSEC(DISPLAY_BASE_PERIOD_MS));
 	}
 }
 
