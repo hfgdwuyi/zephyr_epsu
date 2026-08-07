@@ -14,7 +14,7 @@
  * own rate (multi-rate decimation), so fast signals (PDC rails) update at
  * the base tick while slow signals (NTC temperature) update less often.
  *
- * Consumers (state machine, display task) read the published values through
+ * Consumers (state machine, terminal task) read the published values through
  * sensorGetPhys() / sensorTempGet*().
  *
  *   Temperature — NTC thermistor (Vishay NTCALUG02A472FA: R25=4700Ω,

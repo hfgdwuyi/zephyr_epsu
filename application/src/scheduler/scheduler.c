@@ -33,7 +33,7 @@
 #include "scheduler.h"
 #include "state_machine.h"
 #include "sensor.h"
-#include "display.h"
+#include "terminal.h"
 #include "max6703a.h"
 
 /* ========== Heartbeats + WDT supervisor ========== */
@@ -197,19 +197,19 @@ static void sensorThreadFn(void *p1, void *p2, void *p3)
 	}
 }
 
-/* ========== 500 ms: display thread ========== */
+/* ========== 500 ms: terminal thread ========== */
 
-#define DISP_STACK_SZ  1024
-#define DISP_PRIO      5
+#define TERM_STACK_SZ  1024
+#define TERM_PRIO      5
 
-static struct k_thread disp_thread;
-K_THREAD_STACK_DEFINE(disp_stack, DISP_STACK_SZ);
+static struct k_thread term_thread;
+K_THREAD_STACK_DEFINE(term_stack, TERM_STACK_SZ);
 
-static void dispThreadFn(void *p1, void *p2, void *p3)
+static void termThreadFn(void *p1, void *p2, void *p3)
 {
 	while (1) {
-		displayUpdate();
-		k_sleep(K_MSEC(DISPLAY_BASE_PERIOD_MS));
+		terminalUpdate();
+		k_sleep(K_MSEC(TERMINAL_BASE_PERIOD_MS));
 	}
 }
 
@@ -236,11 +236,11 @@ void schedulerStart(void)
 			sensorThreadFn, NULL, NULL, NULL,
 			SENSOR_PRIO, 0, K_NO_WAIT);
 
-	/* Change-triggered sensor value print thread */
-	k_thread_create(&disp_thread, disp_stack,
-			K_THREAD_STACK_SIZEOF(disp_stack),
-			dispThreadFn, NULL, NULL, NULL,
-			DISP_PRIO, 0, K_NO_WAIT);
+	/* Terminal thread — change-triggered sensor value print */
+	k_thread_create(&term_thread, term_stack,
+			K_THREAD_STACK_SIZEOF(term_stack),
+			termThreadFn, NULL, NULL, NULL,
+			TERM_PRIO, 0, K_NO_WAIT);
 
 	/* Periodic work items — each self-reschedules */
 	k_work_schedule(&din_work,    K_MSEC(1));

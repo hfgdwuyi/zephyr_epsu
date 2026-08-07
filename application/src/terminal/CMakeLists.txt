@@ -1,4 +1,4 @@
-target_sources(app PRIVATE display.c)
+target_sources(app PRIVATE terminal.c)
 
 target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
