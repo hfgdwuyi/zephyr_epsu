@@ -1,17 +1,20 @@
 /*
- * ntc_sensor.c
+ * sensor.c
  *
- * NTC thermistor R→T conversion via lookup table + linear interpolation.
- * Vishay NTCALUG02A472FA: R25=4700Ω ±1%, B(25/85)=3984K.
+ * ADC-based sensor interpretation — application layer.
  *
- * Voltage divider:  Vcc ─── Rf(4700Ω) ─── ADC ─── NTC ─── GND
- *   Vadc = Vref × Rntc / (Rf + Rntc)
- *   Rntc = Rf × Vadc / (Vref - Vadc)
+ * Temperature (NTC): thermistor R→T conversion via lookup table + linear
+ *   interpolation.  Vishay NTCALUG02A472FA: R25=4700Ω ±1%, B(25/85)=3984K.
+ *   Voltage divider:  Vcc ─── Rf(4700Ω) ─── ADC ─── NTC ─── GND
+ *   Vadc = Vref × Rntc / (Rf + Rntc)  ⇒  Rntc = Rf × Vadc / (Vref - Vadc)
  *   where Vref=3.3V, Rf=4700Ω, Vadc = raw × 3.3 / 4095
  *
- * Also provides the temperature monitoring service (ntcTemp*): samples
- * both NTC channels and accumulates over-temp duration for the state
- * machine's fault decision.
+ *   Also provides the temperature monitoring service (sensorTemp*): samples
+ *   both NTC channels and accumulates over-temp duration for the state
+ *   machine's fault decision.
+ *
+ * Voltage: external-circuit scaling for the PDC dividers (47k:4.7k) and the
+ *   mains AC sense network.  bsp_ain only exposes raw ADC counts.
  */
 
 /* C standard library */
@@ -23,7 +26,9 @@
 #include "bsp_ain.h"
 
 /* Application */
-#include "ntc_sensor.h"
+#include "sensor.h"
+
+/* ==================== Temperature (NTC) ==================== */
 
 /* ─── voltage divider params ─── */
 typedef enum {
@@ -133,9 +138,7 @@ static int16_t ntcInterpolate(uint32_t r_ohm)
 	return (int16_t)interp;
 }
 
-/* ─── public API ─── */
-
-int16_t ntcReadTemp(uint8_t ain_channel)
+int16_t sensorReadTemp(uint8_t ain_channel)
 {
 	uint32_t raw = bspAinGetRawValue(ain_channel);
 
@@ -173,42 +176,76 @@ static int16_t  s_temp1;      /* temp sensor 1 (×10°C)     */
 static int16_t  s_temp2;      /* temp sensor 2 (×10°C)     */
 static uint32_t s_overtemp_ms; /* consecutive over-temp ms  */
 
-void ntcTempInit(void)
+void sensorTempInit(void)
 {
 	s_temp1 = 0;
 	s_temp2 = 0;
 	s_overtemp_ms = 0;
 }
 
-void ntcTempUpdate(uint32_t period_ms)
+void sensorTempUpdate(uint32_t period_ms)
 {
-	s_temp1 = ntcReadTemp(NTC_AIN_CH_TEMP1);
-	s_temp2 = ntcReadTemp(NTC_AIN_CH_TEMP2);
+	s_temp1 = sensorReadTemp(SENSOR_AIN_CH_TEMP1);
+	s_temp2 = sensorReadTemp(SENSOR_AIN_CH_TEMP2);
 
 	/* Accumulate while over-temp, reset otherwise. period_ms lets the
 	 * caller's poll period drive the over-temp counter in ms. */
-	s_overtemp_ms = ntcTempIsOvertemp() ? s_overtemp_ms + period_ms : 0U;
+	s_overtemp_ms = sensorTempIsOvertemp() ? s_overtemp_ms + period_ms : 0U;
 }
 
-int16_t ntcTempGetMax(void)
+int16_t sensorTempGetMax(void)
 {
 	return (s_temp1 > s_temp2) ? s_temp1 : s_temp2;
 }
 
-/* True if either NTC sensor read failed (open/short). ntcReadTemp returns
+/* True if either NTC sensor read failed (open/short). sensorReadTemp returns
  * INT16_MIN on failure, so a negative sample means a sensor fault. */
-bool ntcTempSensorFault(void)
+bool sensorTempSensorFault(void)
 {
 	return (s_temp1 < 0) || (s_temp2 < 0);
 }
 
-bool ntcTempIsOvertemp(void)
+bool sensorTempIsOvertemp(void)
 {
-	int16_t hi = ntcTempGetMax();
-	return (hi > 0) && (hi >= NTC_TEMP_THRESH_FAULT);
+	int16_t hi = sensorTempGetMax();
+	return (hi > 0) && (hi >= SENSOR_TEMP_THRESH_FAULT);
 }
 
-uint32_t ntcTempOvertempFor(void)
+uint32_t sensorTempOvertempFor(void)
 {
 	return s_overtemp_ms;
+}
+
+/* ==================== Voltage (dividers / mains AC) ==================== */
+
+uint32_t sensorReadMv(uint8_t channel)
+{
+	uint32_t raw = bspAinGetRawValue(channel);
+	return (raw * 3300U) / 4095U;
+}
+
+uint32_t sensorReadDivMv(uint8_t channel, uint32_t rHigh, uint32_t rLow)
+{
+	uint32_t vAdc = sensorReadMv(channel);
+	return (vAdc * (rHigh + rLow)) / rLow;
+}
+
+/*
+ * Mains AC voltage at AIN_ADC_VIN (PC2_C, ADC3_INP0 — direct channel).
+ * Vadc = 1.65 + (0.4 x 1.414 x Vin x 50.2 / (750x4 + 500 + 75)) x 3.9 / 6.49
+ *        denominator = 3000 + 575 = 3575
+ *   => Vadc = 1.65 + Vin x (0.4 x 1.414 x 50.2 / 3575 x 3.9 / 6.49)
+ *   => Vadc = 1.65 + Vin x 0.004773
+ *   => Vin  = (Vadc - 1.65) / 0.004773
+ * ADC output range: 0.568 V .. 2.732 V.
+ * All in mV.  Returns 0 if Vadc < 1.65 V.
+ */
+uint32_t sensorReadVinMv(void)
+{
+	int32_t vAdc = (int32_t)sensorReadMv(AIN_ADC_VIN);
+	int32_t delta = vAdc - 1650;
+	if (delta <= 0) {
+		return 0;
+	}
+	return (uint32_t)(delta * 20953U / 100U);
 }

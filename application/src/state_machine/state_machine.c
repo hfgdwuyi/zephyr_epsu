@@ -9,7 +9,7 @@
  * Layer split:
  *   state_machine   — state transitions, relay control (K3-K12, pwr_on_off,
  *                      trolley_enable), panel LEDs, and fan-speed policy
- *   ntc_sensor      — NTC temperature service (sampling + over-temp detect)
+ *   sensor          — NTC temperature + voltage scaling (ADC interpretation)
  *   bsp_pwm         — fan PWM control
  *   bsp_aout        — pwr_on_off DAC output
  */
@@ -27,7 +27,7 @@
 #include "bsp_pwm.h"
 
 /* Application */
-#include "ntc_sensor.h"
+#include "sensor.h"
 #include "state_machine.h"
 
 /* ==================== Timing constants (ms) ==================== */
@@ -194,7 +194,7 @@ void stateMachineInit(void)
 	g_stateEntered  = false;
 	g_config         = readConfigSwitches();
 
-	ntcTempInit();
+	sensorTempInit();
 
 	/* Start disarmed so a static power-on level cannot fire. */
 	dinHoldInit(&s_onoff_rising);
@@ -385,10 +385,10 @@ static void fanSet(bool on, fanDuty_t duty_percent)
 /* Fan duty cycle derived from the hotter of the two NTC sensors */
 static fanDuty_t fanDutyFromTemp(int16_t temp_max)
 {
-	if (temp_max >= NTC_TEMP_THRESH_FAULT)  return FAN_DUTY_MAX;
-	if (temp_max >= NTC_TEMP_THRESH_WARN)   return FAN_DUTY_WARN;
-	if (temp_max >= NTC_TEMP_THRESH_FAN_MAX) return FAN_DUTY_HIGH;
-	if (temp_max >= NTC_TEMP_THRESH_FAN_MID) return FAN_DUTY_MID;
+	if (temp_max >= SENSOR_TEMP_THRESH_FAULT)  return FAN_DUTY_MAX;
+	if (temp_max >= SENSOR_TEMP_THRESH_WARN)   return FAN_DUTY_WARN;
+	if (temp_max >= SENSOR_TEMP_THRESH_FAN_MAX) return FAN_DUTY_HIGH;
+	if (temp_max >= SENSOR_TEMP_THRESH_FAN_MID) return FAN_DUTY_MID;
 	return FAN_DUTY_MIN;
 }
 
@@ -570,32 +570,32 @@ static void stateRunNormalOp(void)
 
 	/* Temperature polling */
 	if ((g_state_ticks % SM_TIMING_TEMP_POLL) == 0) {
-		ntcTempUpdate(SM_TIMING_TEMP_POLL);
+		sensorTempUpdate(SM_TIMING_TEMP_POLL);
 
 		/* Sensor fault: report immediately rather than treating as cold,
 		 * which would silently disable over-temp protection. */
-		if (ntcTempSensorFault()) {
+		if (sensorTempSensorFault()) {
 			printk("STATEMACHINE: NTC sensor fault!\n");
 			setError(STATEMACHINE_ERR_INIT_FAIL);
 			return;
 		}
 
-		if (ntcTempOvertempFor() >= SM_TIMING_TEMP_FAULT_DELAY) {
+		if (sensorTempOvertempFor() >= SM_TIMING_TEMP_FAULT_DELAY) {
 			printk("STATEMACHINE: over-temp fault! Tmax=%d.%d\n",
-			       ntcTempGetMax() / 10, ntcTempGetMax() % 10);
+			       sensorTempGetMax() / 10, sensorTempGetMax() % 10);
 			setError(STATEMACHINE_ERR_INIT_FAIL);
 			return;
 		}
 
 		/* Adjust fan speed based on temperature */
-		int16_t hi = ntcTempGetMax();
+		int16_t hi = sensorTempGetMax();
 		if (hi > 0 && g_state_ticks > SM_TIMING_FAN_SPIN_UP) {
 			fanSet(true, fanDutyFromTemp(hi));
 		}
 	}
 
 	/* Ramp fan to full speed after spin-up (only if no temp data yet) */
-	if (g_state_ticks == SM_TIMING_FAN_SPIN_UP && ntcTempGetMax() <= 0) {
+	if (g_state_ticks == SM_TIMING_FAN_SPIN_UP && sensorTempGetMax() <= 0) {
 		fanSet(true, FAN_DUTY_WARN);
 	}
 }
@@ -643,12 +643,12 @@ static void stateRunCharging(void)
 
 		/* Temp poll every second, overtemp → fault */
 		if ((g_state_ticks % SM_TIMING_TEMP_POLL) == 0) {
-			ntcTempUpdate(SM_TIMING_TEMP_POLL);
-			if (ntcTempOvertempFor() >= SM_TIMING_TEMP_FAULT_DELAY) {
+			sensorTempUpdate(SM_TIMING_TEMP_POLL);
+			if (sensorTempOvertempFor() >= SM_TIMING_TEMP_FAULT_DELAY) {
 				setError(STATEMACHINE_ERR_CHARGING_FAIL);
 				return;
 			}
-			int16_t hi = ntcTempGetMax();
+			int16_t hi = sensorTempGetMax();
 			if (hi > 0)  fanSet(true, fanDutyFromTemp(hi));
 		}
 

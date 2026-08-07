@@ -4,7 +4,7 @@
  *  1 ms  : k_work_d   → bspDinUpdate()  (GPIO → bitmap)  [hb]
  *  1 ms  : k_work_d   → bspDoutUpdate() (bitmap → GPIO)  [hb]
  *  1 ms  : k_thread   → stateMachineTick()               [hb]
- *  50 ms : k_work_d   → ainPoll()                        [hb]
+ *  50 ms : k_work_d   → bspAinPoll()                     [hb]
  *  50 ms : k_work_d   → bspAoutPoll()                    [hb]
  *  50 ms : k_thread   → wdt supervisor: sm+sys heartbeat → bspWtdgFeed()
  *  500ms : k_work_d   → max6703aFeed()
@@ -22,6 +22,7 @@
 #include <zephyr/sys/printk.h>
 
 /* BSP */
+#include "bsp_ain.h"
 #include "bsp_aout.h"
 #include "bsp_dio.h"
 #include "bsp_wtdg.h"
@@ -30,7 +31,6 @@
 #include "scheduler.h"
 #include "state_machine.h"
 #include "max6703a.h"
-#include "ain.h"
 
 /* ========== Heartbeats + WDT supervisor ========== */
 
@@ -97,7 +97,7 @@ static void wdtSupThreadFn(void *p1, void *p2, void *p3)
 
 static void ainWorkFn(struct k_work *w)
 {
-	ainPoll();
+	bspAinPoll();
 	sysHbBump();
 	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(50));
 }

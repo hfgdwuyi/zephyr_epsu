@@ -5,7 +5,6 @@
 #ifndef BSP_AIN_H
 #define BSP_AIN_H
 
-#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
