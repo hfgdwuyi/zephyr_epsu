@@ -25,20 +25,21 @@ static uint32_t ainData[AIN_NUMBER];
 
 /* Names follow pin_config.xlsx order (matches io-channels order in app.overlay) */
 static const char *const ainName[AIN_NUMBER] = {
-    "adc_3v3",         /* 0  - PF6 */
-    "adc_pdc1",        /* 1  - PF7 */
-    "adc_pdc7",        /* 2  - PF8 */
-    "adc_pdc6",        /* 3  - PF9 */
-    "adc_pdc5",        /* 4  - PF10 */
-    "adc_temp1",       /* 5  - PA3 */
-    "adc_temp2",       /* 6  - PA4 */
-    "adc_pdc0",        /* 7  - PA6 */
-    "adc_pdc4",        /* 8  - PC0 */
-    "adc_pdc2",        /* 9  - PB0 */
-    "adc_pdc3",        /* 10 - PB1 */
-    "adc_vin",         /* 11 - PC2 */
-    "adc_pdc0_alt",    /* 12 - PC3 (second PDC0 channel) */
-    "adc_5v",          /* 13 - PH4 */
+    "adc_12v",         /* 0  - PH2   */
+    "adc_pdc7",        /* 1  - PF11  */
+    "adc_pdc6",        /* 2  - PF12  */
+    "adc_pdc5",        /* 3  - PF13  */
+    "adc_5v0",         /* 4  - PF14  */
+    "adc_temp1",       /* 5  - PA3   */
+    "adc_temp2",       /* 6  - PA4   */
+    "adc_pdc0",        /* 7  - PA6   */
+    "adc_pdc4",        /* 8  - PA0_C */
+    "adc_pdc2",        /* 9  - PB0   */
+    "adc_pdc3",        /* 10 - PB1   */
+    "adc_3v3",         /* 11 - PC0   */
+    "adc_pdc1",        /* 12 - PC2   */
+    "adc_vin",         /* 13 - PC2_C */
+    "adc_pdc0_alt",    /* 14 - PC3_C */
 };
 
 void bspAinInit(void)
@@ -79,7 +80,6 @@ void bspAinInit(void)
     }
 }
 
-/* Call this periodically (e.g., 20ms/50ms/100ms/1000ms) to refresh all channels */
 /* Call this periodically (e.g., 20ms/50ms/100ms/1000ms) to refresh all channels */
 void bspAinPoll(void)
 {
@@ -146,35 +146,6 @@ uint32_t bspAinGetRawValue(uint8_t channel)
         return 0;
     }
     return ainData[channel];
-}
-
-uint32_t bspAinReadMv(uint8_t channel)
-{
-    uint32_t raw = bspAinGetRawValue(channel);
-    return (raw * 3300U) / 4095U;
-}
-
-uint32_t bspAinReadDivMv(uint8_t channel, uint32_t rHigh, uint32_t rLow)
-{
-    uint32_t vAdc = bspAinReadMv(channel);
-    return (vAdc * (rHigh + rLow)) / rLow;
-}
-
-/*
- * Mains AC voltage at AIN_ADC_VIN (channel 11).
- * Vadc = 1.65 + (0.4 x 1.414 x Vin x 50.2 / 3575) x 3.9 / 6.49
- *   => Vadc = 1.65 + Vin x 0.004773
- *   => Vin  = (Vadc - 1.65) / 0.004773
- * All in mV.  Returns 0 if Vadc < 1.65 V.
- */
-uint32_t bspAinReadVinMv(void)
-{
-    int32_t vAdc = (int32_t)bspAinReadMv(AIN_ADC_VIN);
-    int32_t delta = vAdc - 1650;
-    if (delta <= 0) {
-        return 0;
-    }
-    return (uint32_t)(delta * 20953U / 100U);
 }
 
 const char *bspAinGetName(uint8_t channel)

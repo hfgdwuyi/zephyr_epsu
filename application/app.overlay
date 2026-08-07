@@ -11,73 +11,94 @@
 	dout_config: dout_config {
 		compatible = "cios-zhong,dout";
 
-		/* 0-12: Relay & power drivers */
+		/* 0: trolley enable (relay/power driver) */
 		trolley_enable_drv: trolley_enable_drv { gpios = <&gpioh 1  GPIO_ACTIVE_HIGH>; };
-		/* dout_01 (PA5) removed — now DAC1_OUT2 for PWR_ON_OFF */
-		k3_1_drv: k3_1_drv { gpios = <&gpiok 1  GPIO_ACTIVE_HIGH>; };
-		k3_2_drv: k3_2_drv { gpios = <&gpiok 2  GPIO_ACTIVE_HIGH>; };
-		k4_drv: k4_drv { gpios = <&gpiok 3  GPIO_ACTIVE_HIGH>; };
-		k5_drv: k5_drv { gpios = <&gpioi 4  GPIO_ACTIVE_HIGH>; };
-		k6_drv: k6_drv { gpios = <&gpioi 5  GPIO_ACTIVE_HIGH>; };
-		k8_1_drv: k8_1_drv { gpios = <&gpioi 6  GPIO_ACTIVE_HIGH>; };
-		k8_2_drv: k8_2_drv { gpios = <&gpioi 7  GPIO_ACTIVE_HIGH>; };
-		k9_drv: k9_drv { gpios = <&gpioi 9  GPIO_ACTIVE_HIGH>; };
-		k10_drv: k10_drv { gpios = <&gpioi 10 GPIO_ACTIVE_HIGH>; };
-		k11_drv: k11_drv { gpios = <&gpioi 11 GPIO_ACTIVE_HIGH>; };
-		k12_drv: k12_drv { gpios = <&gpioi 12 GPIO_ACTIVE_HIGH>; };
 
-		/* 13-25: Panel LED indicators */
-		led_s1_sys_on: led_s1_sys_on { gpios = <&gpiob 10 GPIO_ACTIVE_HIGH>; };
-		led_s2_sys_on: led_s2_sys_on { gpios = <&gpiob 11 GPIO_ACTIVE_HIGH>; };
+		/* 1: MAX6703A WDI */
+		wdi: wdi { gpios = <&gpioh 9  GPIO_ACTIVE_HIGH>; };
+
+		/* 2-3: Power good / K13 enable */
+		pg_13v5: pg_13v5 { gpios = <&gpioa 12 GPIO_ACTIVE_HIGH>; };
+		k13_en: k13_en { gpios = <&gpiob 6  GPIO_ACTIVE_HIGH>; };
+
+		/* 4-6: Debug LEDs */
 		dbg_led0: dbg_led0 { gpios = <&gpioc 8  GPIO_ACTIVE_HIGH>; };
 		dbg_led1: dbg_led1 { gpios = <&gpioc 9  GPIO_ACTIVE_HIGH>; };
 		dbg_led2: dbg_led2 { gpios = <&gpioc 10 GPIO_ACTIVE_HIGH>; };
-		led_pac230v_on: led_pac230v_on { gpios = <&gpioc 15 GPIO_ACTIVE_HIGH>; };
+
+		/* 7-16: Panel LED indicators
+		 * Note: PD8 (led_pac230v_on) and PD9 (led_s1_sys_on) removed —
+		 * those pins are USART3 TX/RX (ST-Link VCP console). */
+		led_pwr_24_on: led_pwr_24_on { gpios = <&gpiod 0  GPIO_ACTIVE_HIGH>; };
+		led_cp_224v_on: led_cp_224v_on { gpios = <&gpiod 1  GPIO_ACTIVE_HIGH>; };
 		led_grid_pwr_in: led_grid_pwr_in { gpios = <&gpiod 2  GPIO_ACTIVE_HIGH>; };
 		led_ups_in: led_ups_in { gpios = <&gpiod 3  GPIO_ACTIVE_HIGH>; };
 		led_system_on: led_system_on { gpios = <&gpiod 4  GPIO_ACTIVE_HIGH>; };
 		led_s2_solo_sys: led_s2_solo_sys { gpios = <&gpiod 5  GPIO_ACTIVE_HIGH>; };
 		led_trolley_connected: led_trolley_connected { gpios = <&gpiod 6  GPIO_ACTIVE_HIGH>; };
 		led_is_pc_on: led_is_pc_on { gpios = <&gpiod 7  GPIO_ACTIVE_HIGH>; };
-		led_apphost_on: led_apphost_on { gpios = <&gpiod 11 GPIO_ACTIVE_HIGH>; };
+		led_s2_sys_on: led_s2_sys_on { gpios = <&gpiod 10 GPIO_ACTIVE_HIGH>; };
+		led_app_host_on: led_app_host_on { gpios = <&gpiod 12 GPIO_ACTIVE_HIGH>; };
 
-		/* 26-31: Status output drivers */
-		trolley_connected_mcu: trolley_connected_mcu { gpios = <&gpioi 13 GPIO_ACTIVE_HIGH>; };
-		trolley_connected_is_pc: trolley_connected_is_pc { gpios = <&gpioi 14 GPIO_ACTIVE_HIGH>; };
+		/* 17-28: Relay / power drivers (K2..K13) */
+		k5_drv: k5_drv { gpios = <&gpioi 4  GPIO_ACTIVE_HIGH>; };
+		k6_drv: k6_drv { gpios = <&gpioi 5  GPIO_ACTIVE_HIGH>; };
+		k3_drv: k3_drv { gpios = <&gpioi 6  GPIO_ACTIVE_HIGH>; };
+		k2_drv: k2_drv { gpios = <&gpioi 7  GPIO_ACTIVE_HIGH>; };
+		k4_drv: k4_drv { gpios = <&gpioi 8  GPIO_ACTIVE_HIGH>; };
+		k7_drv: k7_drv { gpios = <&gpioi 9  GPIO_ACTIVE_HIGH>; };
+		k10_en: k10_en { gpios = <&gpioi 10 GPIO_ACTIVE_HIGH>; };
+		k11_en: k11_en { gpios = <&gpioi 11 GPIO_ACTIVE_HIGH>; };
+		k12_en: k12_en { gpios = <&gpioi 12 GPIO_ACTIVE_HIGH>; };
+		k8_1_en: k8_1_en { gpios = <&gpioi 13 GPIO_ACTIVE_HIGH>; };
+		k8_2_en: k8_2_en { gpios = <&gpioi 14 GPIO_ACTIVE_HIGH>; };
+		k9_en: k9_en { gpios = <&gpioi 15 GPIO_ACTIVE_HIGH>; };
+
+		/* 29-32: Status output drivers */
 		drv_is_pc_site_on: drv_is_pc_site_on { gpios = <&gpioj 11 GPIO_ACTIVE_HIGH>; };
 		drv_app_host_site_on: drv_app_host_site_on { gpios = <&gpioj 12 GPIO_ACTIVE_HIGH>; };
-		mains_connected_apphost: mains_connected_apphost { gpios = <&gpioj 13 GPIO_ACTIVE_HIGH>; };
-		mains_connected_is_pc: mains_connected_is_pc { gpios = <&gpioj 14 GPIO_ACTIVE_HIGH>; };
-
-		/* 32: MAX6703A WDI */
-		wdi: wdi { gpios = <&gpioh 9  GPIO_ACTIVE_HIGH>; };
+		mains_connected_is_pc: mains_connected_is_pc { gpios = <&gpioj 13 GPIO_ACTIVE_HIGH>; };
+		mains_connected_mcu: mains_connected_mcu { gpios = <&gpioj 14 GPIO_ACTIVE_HIGH>; };
 	};
 
 	din_config: din_config {
 		compatible = "cios-zhong,din";
 
-		/* 0-3: Status inputs */
+		/* 0-1: Status inputs */
 		grid_main_relay_status: grid_main_relay_status { gpios = <&gpioh 5  GPIO_ACTIVE_HIGH>; };
 		me_box_error: me_box_error { gpios = <&gpioh 6  GPIO_ACTIVE_HIGH>; };
-		trolley_connected: trolley_connected { gpios = <&gpioa 0  GPIO_ACTIVE_HIGH>; };
+
+		/* 2-5: Fault inputs (PA8-PA11) */
+		fault0: fault0 { gpios = <&gpioa 8  GPIO_ACTIVE_HIGH>; };
+		fault1: fault1 { gpios = <&gpioa 9  GPIO_ACTIVE_HIGH>; };
+		fault2: fault2 { gpios = <&gpioa 10 GPIO_ACTIVE_HIGH>; };
+		fault3: fault3 { gpios = <&gpioa 11 GPIO_ACTIVE_HIGH>; };
+
+		/* 6-7: Temperature alert + PWR-24 feedback */
 		temp_alert: temp_alert { gpios = <&gpiob 12 GPIO_ACTIVE_HIGH>; };
+		led_pwr_24_fb: led_pwr_24_fb { gpios = <&gpioc 6  GPIO_ACTIVE_HIGH>; };
 
-		/* 4-5: PWR/CP status monitor */
-		led_pwr_24_on: led_pwr_24_on { gpios = <&gpioc 6  GPIO_ACTIVE_HIGH>; };
-		led_cp_24v_on: led_cp_24v_on { gpios = <&gpioc 7  GPIO_ACTIVE_HIGH>; };
+		/* 8-10: Fault inputs (PC11-PC13) */
+		fault4: fault4 { gpios = <&gpioc 11 GPIO_ACTIVE_HIGH>; };
+		fault5: fault5 { gpios = <&gpioc 12 GPIO_ACTIVE_HIGH>; };
+		fault6: fault6 { gpios = <&gpioc 13 GPIO_ACTIVE_HIGH>; };
 
-		/* 6-16: System control inputs */
+		/* 11-12: Trolley / status monitor */
+		trl_mu_connected_mcu: trl_mu_connected_mcu { gpios = <&gpiod 13 GPIO_ACTIVE_HIGH>; };
+		trl_mu_connected_is_pc: trl_mu_connected_is_pc { gpios = <&gpiod 14 GPIO_ACTIVE_HIGH>; };
+
+		/* 13-23: System control inputs */
 		system_on_off: system_on_off { gpios = <&gpioj 0  GPIO_ACTIVE_HIGH>; };
 		system_reset: system_reset { gpios = <&gpioj 1  GPIO_ACTIVE_HIGH>; };
 		s1_system_config: s1_system_config { gpios = <&gpioj 2  GPIO_ACTIVE_HIGH>; };
 		s2_system_config: s2_system_config { gpios = <&gpioj 3  GPIO_ACTIVE_HIGH>; };
 		solo_system_config: solo_system_config { gpios = <&gpioj 4  GPIO_ACTIVE_HIGH>; };
-		trolley_connected_j: trolley_connected_j { gpios = <&gpioj 5  GPIO_ACTIVE_HIGH>; };
-		is_pc_on: is_pc_on { gpios = <&gpioj 6  GPIO_ACTIVE_HIGH>; };
+		trolley_connected: trolley_connected { gpios = <&gpioj 5  GPIO_ACTIVE_HIGH>; };
 		app_host_on: app_host_on { gpios = <&gpioj 7  GPIO_ACTIVE_HIGH>; };
 		smart_whs_indicate: smart_whs_indicate { gpios = <&gpioj 8  GPIO_ACTIVE_HIGH>; };
 		drawer_indicate: drawer_indicate { gpios = <&gpioj 9  GPIO_ACTIVE_HIGH>; };
 		smart_ctrl_whs_search: smart_ctrl_whs_search { gpios = <&gpioj 10 GPIO_ACTIVE_HIGH>; };
+		is_pc_on: is_pc_on { gpios = <&gpioj 15 GPIO_ACTIVE_HIGH>; };
 	};
 };
 
@@ -107,31 +128,35 @@
     st,adc-prescaler = <4>;
 };
 
+&adc2 {
+    status = "okay";
+    st,adc-clock-source = "SYNC";
+    st,adc-prescaler = <4>;
+};
+
 &adc3 {
     status = "okay";
     st,adc-clock-source = "SYNC";
     st,adc-prescaler = <4>;
 };
 
-/* Fan PWM pinctrl */
+/* Fan PWM pinctrl (H745 alternate functions) */
 &pinctrl {
-    tim8_ch3_pi15: tim8_ch3_pi15 {
-        pinmux = <STM32_PINMUX('I', 15, AF2)>;
-    };
-    tim2_ch4_pj15: tim2_ch4_pj15 {
-        pinmux = <STM32_PINMUX('J', 15, AF1)>;
+    /* fan2_pwm: TIM4_CH4 on PD15 (AF2) — auto-generated node exists */
+    tim8_ch2_pj6: tim8_ch2_pj6 {
+        pinmux = <STM32_PINMUX('J', 6, AF3)>;   /* fan1_pwm: TIM8_CH2 */
     };
 };
 
-/* FAN_PWM2: TIM8 CH3 on PI15 */
-&timers8 {
+/* FAN_PWM2: TIM4 CH4 on PD15 */
+&timers4 {
     status = "okay";
     /* PSC=0 -> 240 MHz counter clock; 25 kHz period = 9600 counts (10% duty = 960) */
     st,prescaler = <0>;
     pwm_fan2: pwm {
         compatible = "st,stm32-pwm";
         status = "okay";
-        pinctrl-0 = <&tim8_ch3_pi15>;
+        pinctrl-0 = <&tim4_ch4_pd15>;
         pinctrl-names = "default";
     };
 };
@@ -144,15 +169,15 @@
 	current-speed = <115200>;
 };
 
-/* FAN_PWM1: TIM2 CH4 on PJ15 */
-&timers2 {
+/* FAN_PWM1: TIM8 CH2 on PJ6 */
+&timers8 {
     status = "okay";
     /* PSC=0 -> 240 MHz counter clock; 25 kHz period = 9600 counts (10% duty = 960) */
     st,prescaler = <0>;
     pwm_fan1: pwm {
         compatible = "st,stm32-pwm";
         status = "okay";
-        pinctrl-0 = <&tim2_ch4_pj15>;
+        pinctrl-0 = <&tim8_ch2_pj6>;
         pinctrl-names = "default";
     };
 };
@@ -170,23 +195,24 @@
         dac_resolution = <12>;
 
         io-channels =
-            <&adc3 4>,
-            <&adc3 5>,
-            <&adc3 6>,
-            <&adc3 7>,
-            <&adc3 8>,
-            <&adc1 15>,
-            <&adc1 18>,
-            <&adc1 3>,
-            <&adc1 10>,
-            <&adc1 9>,
-            <&adc1 5>,
-            <&adc1 12>,
-            <&adc1 13>,
-            <&adc3 14>;
+            <&adc3 13>,   /*  0: adc_12v   — PH2     ADC3_INP13 */
+            <&adc1 2>,    /*  1: adc_pdc7  — PF11    ADC1_INP2  */
+            <&adc1 6>,    /*  2: adc_pdc6  — PF12    ADC1_INP6  */
+            <&adc2 2>,    /*  3: adc_pdc5  — PF13    ADC2_INP2  */
+            <&adc2 6>,    /*  4: adc_5v0   — PF14    ADC2_INP6  */
+            <&adc1 15>,   /*  5: adc_temp1 — PA3     ADC12_INP15 */
+            <&adc1 18>,   /*  6: adc_temp2 — PA4     ADC12_INP18 */
+            <&adc1 3>,    /*  7: adc_pdc0  — PA6     ADC12_INP3  */
+            <&adc1 0>,    /*  8: adc_pdc4  — PA0_C   ADC12_INP0  */
+            <&adc1 9>,    /*  9: adc_pdc2  — PB0     ADC12_INP9  */
+            <&adc1 5>,    /* 10: adc_pdc3  — PB1     ADC12_INP5  */
+            <&adc3 10>,   /* 11: adc_3v3   — PC0     ADC3_INP10 */
+            <&adc3 12>,   /* 12: adc_pdc1  — PC2     ADC3_INP12 */
+            <&adc3 0>,    /* 13: adc_vin   — PC2_C   ADC3_INP0  */
+            <&adc3 1>;    /* 14: adc_pdc0  — PC3_C   ADC3_INP1  */
 
         pwms =
-            <&pwm_fan1 4 PWM_USEC(40) PWM_POLARITY_NORMAL>,   /* 40 us = 25 kHz fan carrier */
-            <&pwm_fan2 3 PWM_USEC(40) PWM_POLARITY_NORMAL>;
+            <&pwm_fan1 2 PWM_USEC(40) PWM_POLARITY_NORMAL>,   /* 40 us = 25 kHz fan carrier */
+            <&pwm_fan2 4 PWM_USEC(40) PWM_POLARITY_NORMAL>;
     };
 };

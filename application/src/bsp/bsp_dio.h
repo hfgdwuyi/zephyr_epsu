@@ -21,46 +21,53 @@ extern "C" {
 /* ==================== DOUT index — pin_config.xlsx ==================== */
 
 enum {
-	/* Relay / power drivers */
+	/* Trolley enable */
 	DOUT_TROLLEY_ENABLE_DRV    = 0,   /* PH1  */
-	DOUT_K3_1_DRV			    = 1, /* PK1  */
-	DOUT_K3_2_DRV			    = 2, /* PK2  */
-	DOUT_K4_DRV			    = 3, /* PK3  */
-	DOUT_K5_DRV			    = 4, /* PI4  */
-	DOUT_K6_DRV			    = 5, /* PI5  */
-	DOUT_K8_1_DRV			    = 6, /* PI6  */
-	DOUT_K8_2_DRV			    = 7, /* PI7  */
-	DOUT_K9_DRV			    = 8, /* PI9  */
-	DOUT_K10_DRV			    = 9, /* PI10 */
-	DOUT_K11_DRV			    = 10, /* PI11 */
-	DOUT_K12_DRV			    = 11, /* PI12 */
-
-	/* Panel LED indicators */
-	DOUT_LED_S1_SYS_ON			    = 12, /* PB10 */
-	DOUT_LED_S2_SYS_ON			    = 13, /* PB11 */
-	DOUT_DBG_LED0			    = 14, /* PC8  */
-	DOUT_DBG_LED1			    = 15, /* PC9  */
-	DOUT_DBG_LED2			    = 16, /* PC10 */
-	DOUT_LED_PAC230V_ON			    = 17, /* PC15 */
-	DOUT_LED_GRID_PWR_IN			    = 18, /* PD2  */
-	DOUT_LED_UPS_IN			    = 19, /* PD3  */
-	DOUT_LED_SYSTEM_ON			    = 20, /* PD4  */
-	DOUT_LED_S2_SOLO_SYS			    = 21, /* PD5  */
-	DOUT_LED_TROLLEY_CONNECTED			    = 22, /* PD6  */
-	DOUT_LED_IS_PC_ON			    = 23, /* PD7  */
-	DOUT_LED_APPHOST_ON			    = 24, /* PD11 */
-
-	/* Status output drivers */
-	DOUT_TROLLEY_CONNECTED_MCU			    = 25, /* PI13 */
-	DOUT_TROLLEY_CONNECTED_IS_PC			    = 26, /* PI14 */
-	DOUT_DRV_IS_PC_SITE_ON			    = 27, /* PJ11 */
-	DOUT_DRV_APP_HOST_SITE_ON			    = 28, /* PJ12 */
-	DOUT_MAINS_CONNECTED_APPHOST		    = 29, /* PJ13 */
-	DOUT_MAINS_CONNECTED_IS_PC			    = 30, /* PJ14 */
 
 	/* External watchdog (MAX6703A WDI) */
-	DOUT_WDI			    = 31, /* PH9 */
+	DOUT_WDI                   = 1,   /* PH9  */
 
+	/* Power good / K13 enable */
+	DOUT_PG_13V5               = 2,   /* PA12 */
+	DOUT_K13_EN                = 3,   /* PB6  */
+
+	/* Debug LEDs */
+	DOUT_DBG_LED0              = 4,   /* PC8  */
+	DOUT_DBG_LED1              = 5,   /* PC9  */
+	DOUT_DBG_LED2              = 6,   /* PC10 */
+
+	/* Panel LED indicators
+	 * Note: PD8 (led_pac230v_on) / PD9 (led_s1_sys_on) removed — USART3 */
+	DOUT_LED_PWR_24_ON         = 7,   /* PD0  */
+	DOUT_LED_CP_224V_ON        = 8,   /* PD1  */
+	DOUT_LED_GRID_PWR_IN       = 9,   /* PD2  */
+	DOUT_LED_UPS_IN            = 10,  /* PD3  */
+	DOUT_LED_SYSTEM_ON         = 11,  /* PD4  */
+	DOUT_LED_S2_SOLO_SYS       = 12,  /* PD5  */
+	DOUT_LED_TROLLEY_CONNECTED = 13,  /* PD6  */
+	DOUT_LED_IS_PC_ON          = 14,  /* PD7  */
+	DOUT_LED_S2_SYS_ON         = 15,  /* PD10 */
+	DOUT_LED_APP_HOST_ON       = 16,  /* PD12 */
+
+	/* Relay / power drivers (K2..K13) */
+	DOUT_K5_DRV                = 17,  /* PI4  */
+	DOUT_K6_DRV                = 18,  /* PI5  */
+	DOUT_K3_DRV                = 19,  /* PI6  */
+	DOUT_K2_DRV                = 20,  /* PI7  */
+	DOUT_K4_DRV                = 21,  /* PI8  */
+	DOUT_K7_DRV                = 22,  /* PI9  */
+	DOUT_K10_EN                = 23,  /* PI10 */
+	DOUT_K11_EN                = 24,  /* PI11 */
+	DOUT_K12_EN                = 25,  /* PI12 */
+	DOUT_K8_1_EN               = 26,  /* PI13 */
+	DOUT_K8_2_EN               = 27,  /* PI14 */
+	DOUT_K9_EN                 = 28,  /* PI15 */
+
+	/* Status output drivers */
+	DOUT_DRV_IS_PC_SITE_ON     = 29,  /* PJ11 */
+	DOUT_DRV_APP_HOST_SITE_ON  = 30,  /* PJ12 */
+	DOUT_MAINS_CONNECTED_IS_PC = 31,  /* PJ13 */
+	DOUT_MAINS_CONNECTED_MCU   = 32,  /* PJ14 */
 };
 
 /* ==================== DIN index — pin_config.xlsx ==================== */
@@ -68,21 +75,28 @@ enum {
 enum {
 	DIN_GRID_MAIN_RELAY_STATUS  = 0,   /* PH5  — high=valid, low=invalid */
 	DIN_ME_BOX_ERROR            = 1,   /* PH6  — high=normal, low=fault */
-	DIN_TROLLEY_CONNECTED			= 2,   /* PA0  — high=connected, low=disconnected */
-	DIN_TEMP_ALERT			= 3,   /* PB12 */
-	DIN_LED_PWR_24_ON			= 4,   /* PC6  */
-	DIN_LED_CP_24V_ON			= 5,   /* PC7  */
-	DIN_SYSTEM_ON_OFF			= 6,   /* PJ0  */
-	DIN_SYSTEM_RESET			= 7,   /* PJ1  */
-	DIN_S1_SYSTEM_CONFIG			= 8,   /* PJ2  */
-	DIN_S2_SYSTEM_CONFIG			= 9,   /* PJ3  */
-	DIN_SOLO_SYSTEM_CONFIG		= 10,  /* PJ4  */
-	DIN_TROLLEY_CONNECTED_J		= 11,  /* PJ5  — high=connected */
-	DIN_IS_PC_ON			= 12,  /* PJ6  */
-	DIN_APP_HOST_ON			= 13,  /* PJ7  */
-	DIN_SMART_WHS_INDICATE		= 14,  /* PJ8  */
-	DIN_DRAWER_INDICATE			= 15,  /* PJ9  */
-	DIN_SMART_CTRL_WHS_SEARCH	= 16,  /* PJ10 */
+	DIN_FAULT0                  = 2,   /* PA8  */
+	DIN_FAULT1                  = 3,   /* PA9  */
+	DIN_FAULT2                  = 4,   /* PA10 */
+	DIN_FAULT3                  = 5,   /* PA11 */
+	DIN_TEMP_ALERT              = 6,   /* PB12 */
+	DIN_LED_PWR_24_ON           = 7,   /* PC6  */
+	DIN_FAULT4                  = 8,   /* PC11 */
+	DIN_FAULT5                  = 9,   /* PC12 */
+	DIN_FAULT6                  = 10,  /* PC13 */
+	DIN_TRL_MU_CONNECTED_MCU    = 11,  /* PD13 */
+	DIN_TRL_MU_CONNECTED_IS_PC  = 12,  /* PD14 */
+	DIN_SYSTEM_ON_OFF           = 13,  /* PJ0  */
+	DIN_SYSTEM_RESET            = 14,  /* PJ1  */
+	DIN_S1_SYSTEM_CONFIG        = 15,  /* PJ2  */
+	DIN_S2_SYSTEM_CONFIG        = 16,  /* PJ3  */
+	DIN_SOLO_SYSTEM_CONFIG      = 17,  /* PJ4  */
+	DIN_TROLLEY_CONNECTED       = 18,  /* PJ5  — high=connected */
+	DIN_APP_HOST_ON             = 19,  /* PJ7  */
+	DIN_SMART_WHS_INDICATE      = 20,  /* PJ8  */
+	DIN_DRAWER_INDICATE         = 21,  /* PJ9  */
+	DIN_SMART_CTRL_WHS_SEARCH   = 22,  /* PJ10 */
+	DIN_IS_PC_ON                = 23,  /* PJ15 */
 };
 
 /* ==================== Fan PWM index (via bsp_pwm) ==================== */
@@ -122,15 +136,16 @@ static inline bool bspDinGet(uint8_t pin)
 }
 
 /* ---- DOUT: bitmap-based control ----
- * State machine sets a DOUT bit via bspDoutSetStatus(pin, state);
- * bspDoutSet() (called from the scheduler) applies the bitmap to
- * the GPIO pins once per period. bspDoutSet() stays for immediate
- * writes (init, safety shutdown). */
+ * State machine drives the DOUT bitmap via bspDoutSetBit(pin, state) and
+ * bspDoutSetBitmap(mask, state); bspDoutUpdate() (called from the
+ * scheduler) applies the bitmap to the GPIO pins once per period.
+ * bspDoutUpdate() stays for immediate writes (init, safety shutdown). */
 
-void bspDoutSetStatus(uint8_t pin, bool state);
-bool bspDoutGetStatus(uint8_t pin);
-void bspDoutSetMask(uint32_t mask, bool state);
-void bspDoutSet(void);
+void bspDoutSetBit(uint8_t pin, bool state);
+bool bspDoutGetBit(uint8_t pin);
+void bspDoutSetBitmap(uint32_t mask, bool state);
+uint32_t bspDoutGetBitmap(void);
+void bspDoutUpdate(void);
 
 #ifdef __cplusplus
 }

@@ -150,39 +150,40 @@ static void bspDoutInit(void)
 /* Set/clear a DOUT flag in the bitmap (called by state machine).
  * Atomic RMW so concurrent writes (state machine + max6703a workqueue)
  * cannot lose a bit update. */
-void bspDoutSetStatus(uint8_t pin, bool state)
+void bspDoutSetBit(uint8_t pin, bool state)
 {
 	if (pin < DOUT_MAX) {
-		if (state) {
-			atomic_or(&dout_state, BIT(pin));
-		} else {
-			atomic_and(&dout_state, ~BIT(pin));
-		}
+		atomic_set_bit_to(&dout_state, pin, state);
 	}
 }
 
-bool bspDoutGetStatus(uint8_t pin)
+bool bspDoutGetBit(uint8_t pin)
 {
 	if (pin >= DOUT_MAX) {
 		return false;
 	}
-	return (atomic_get(&dout_state) & BIT(pin)) != 0U;
+	return atomic_test_bit(&dout_state, pin);
 }
 
 /* Set/clear every DOUT bit selected by the mask. Robust to
  * non-contiguous pin groups. */
-void bspDoutSetMask(uint32_t mask, bool state)
+void bspDoutSetBitmap(uint32_t mask, bool state)
 {
 	for (uint8_t i = 0; i < DOUT_MAX; i++) {
 		if (mask & BIT(i)) {
-			bspDoutSetStatus(i, state);
+			bspDoutSetBit(i, state);
 		}
 	}
 }
 
+uint32_t bspDoutGetBitmap(void)
+{
+	return atomic_get(&dout_state);
+}
+
 /* Apply the output bitmap to the GPIO pins. Call periodically
  * from the scheduler (e.g. every 1 ms). */
-void bspDoutSet(void)
+void bspDoutUpdate(void)
 {
 	atomic_val_t bitmap = atomic_get(&dout_state);
 

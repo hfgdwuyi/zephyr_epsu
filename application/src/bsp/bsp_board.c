@@ -67,24 +67,31 @@ static void bspDinApplyDebounce(void)
 	static const bspDinSettings_t deb_10ms = { .deb_en = true, .deb_time = 10 };
 	static const bspDinSettings_t deb_off  = { .deb_en = false, .deb_time = 0 };
 
-	/* Mechanical switches — 10ms debounce */
+	/* Mechanical switches / fault inputs — 10ms debounce */
 	bspDinSetDebouncing(DIN_SYSTEM_ON_OFF,          deb_10ms);
 	bspDinSetDebouncing(DIN_SYSTEM_RESET,           deb_10ms);
 	bspDinSetDebouncing(DIN_S1_SYSTEM_CONFIG,       deb_10ms);
 	bspDinSetDebouncing(DIN_S2_SYSTEM_CONFIG,       deb_10ms);
 	bspDinSetDebouncing(DIN_SOLO_SYSTEM_CONFIG,     deb_10ms);
 	bspDinSetDebouncing(DIN_TROLLEY_CONNECTED,      deb_10ms);
-	bspDinSetDebouncing(DIN_TROLLEY_CONNECTED_J,    deb_10ms);
 	bspDinSetDebouncing(DIN_SMART_WHS_INDICATE,     deb_10ms);
 	bspDinSetDebouncing(DIN_DRAWER_INDICATE,        deb_10ms);
 	bspDinSetDebouncing(DIN_SMART_CTRL_WHS_SEARCH,  deb_10ms);
+	bspDinSetDebouncing(DIN_FAULT0,                 deb_10ms);
+	bspDinSetDebouncing(DIN_FAULT1,                 deb_10ms);
+	bspDinSetDebouncing(DIN_FAULT2,                 deb_10ms);
+	bspDinSetDebouncing(DIN_FAULT3,                 deb_10ms);
+	bspDinSetDebouncing(DIN_FAULT4,                 deb_10ms);
+	bspDinSetDebouncing(DIN_FAULT5,                 deb_10ms);
+	bspDinSetDebouncing(DIN_FAULT6,                 deb_10ms);
 
 	/* Status / LED monitor inputs — no debounce needed */
 	bspDinSetDebouncing(DIN_GRID_MAIN_RELAY_STATUS, deb_off);
 	bspDinSetDebouncing(DIN_ME_BOX_ERROR,           deb_off);
 	bspDinSetDebouncing(DIN_TEMP_ALERT,             deb_off);
 	bspDinSetDebouncing(DIN_LED_PWR_24_ON,          deb_off);
-	bspDinSetDebouncing(DIN_LED_CP_24V_ON,          deb_off);
+	bspDinSetDebouncing(DIN_TRL_MU_CONNECTED_MCU,   deb_off);
+	bspDinSetDebouncing(DIN_TRL_MU_CONNECTED_IS_PC, deb_off);
 	bspDinSetDebouncing(DIN_IS_PC_ON,               deb_off);
 	bspDinSetDebouncing(DIN_APP_HOST_ON,            deb_off);
 }
