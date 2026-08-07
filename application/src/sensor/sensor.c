@@ -13,11 +13,12 @@
  *   mains AC sense network.  bsp_ain only exposes raw ADC counts.
  *
  * Thread model:
- *   sensorStart() spawns a dedicated thread at a fixed base period. Each tick
- *   it reads the raw ADC snapshot (filled by bspAinPoll), low-pass filters
- *   every configured channel, and every update_n ticks converts + publishes
- *   the physical value into phys_cache. This gives per-quantity sample rates
- *   from a single base tick (multi-rate decimation). Over-temp duration is
+ *   The scheduler owns a dedicated sensor thread and calls sensorUpdate()
+ *   each base period (see SENSOR_BASE_PERIOD_MS in sensor.h). Each tick reads
+ *   the raw ADC snapshot (filled by bspAinPoll), low-pass filters every
+ *   configured channel, and every update_n ticks converts + publishes the
+ *   physical value into phys_cache. This gives per-quantity sample rates from
+ *   a single base tick (multi-rate decimation). Over-temp duration is
  *   accumulated here too, so consumers only query.
  */
 
@@ -27,7 +28,6 @@
 #include <limits.h>
 
 /* Zephyr */
-#include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
 
 /* BSP */
@@ -276,8 +276,6 @@ typedef struct {
 	sensorConvertFn_t convert;
 } sensorChanCfg_t;
 
-#define SENSOR_BASE_PERIOD_MS  50
-
 /* tempFromRaw returns int16_t; wrap so the generic converter is uniform. */
 static uint32_t tempFromRawU(uint32_t raw)
 {
@@ -311,64 +309,46 @@ static volatile uint32_t phys_cache[BSP_AIN_NUMBER];     /* published values    
 static uint8_t           filt_init[BSP_AIN_NUMBER];      /* 1 once first sample seen */
 static uint8_t           update_ctr[BSP_AIN_NUMBER];     /* decimation countdown   */
 
-#define SENSOR_STACK_SZ  1024
-#define SENSOR_PRIO      4
-
-static struct k_thread sensor_thread;
-K_THREAD_STACK_DEFINE(sensor_stack, SENSOR_STACK_SZ);
-
-static void sensorThreadFn(void *p1, void *p2, void *p3)
+void sensorUpdate(void)
 {
-	for (;;) {
-		for (size_t i = 0; i < ARRAY_SIZE(sensor_cfg); i++) {
-			const sensorChanCfg_t *cfg = &sensor_cfg[i];
-			uint8_t ch = cfg->chan;
-			uint32_t raw = bspAinGetRawValue(ch);
+	for (size_t i = 0; i < ARRAY_SIZE(sensor_cfg); i++) {
+		const sensorChanCfg_t *cfg = &sensor_cfg[i];
+		uint8_t ch = cfg->chan;
+		uint32_t raw = bspAinGetRawValue(ch);
 
-			/* first-order IIR low-pass on raw counts; snap on first sample */
-			if (!filt_init[ch]) {
-				filtered_raw[ch] = raw;
-				filt_init[ch] = 1;
-			} else if (cfg->filter_shift != 0) {
-				int32_t diff = (int32_t)raw - (int32_t)filtered_raw[ch];
-				filtered_raw[ch] += (uint32_t)(diff >> cfg->filter_shift);
-			} else {
-				filtered_raw[ch] = raw;
-			}
-
-			/* multi-rate decimation: publish every update_n base ticks */
-			if (++update_ctr[ch] < cfg->update_n) {
-				continue;
-			}
-			update_ctr[ch] = 0;
-
-			uint32_t phys = cfg->convert(filtered_raw[ch]);
-			if (cfg->is_temp) {
-				int16_t t = (int16_t)phys;
-				if (ch == AIN_ADC_TEMP1) {
-					s_temp1 = t;
-				} else if (ch == AIN_ADC_TEMP2) {
-					s_temp2 = t;
-				}
-			}
-			phys_cache[ch] = phys;
+		/* first-order IIR low-pass on raw counts; snap on first sample */
+		if (!filt_init[ch]) {
+			filtered_raw[ch] = raw;
+			filt_init[ch] = 1;
+		} else if (cfg->filter_shift != 0) {
+			int32_t diff = (int32_t)raw - (int32_t)filtered_raw[ch];
+			filtered_raw[ch] += (uint32_t)(diff >> cfg->filter_shift);
+		} else {
+			filtered_raw[ch] = raw;
 		}
 
-		/* over-temp accumulator: reset while cool, else count base ticks */
-		s_overtemp_ms = sensorTempIsOvertemp()
-			? s_overtemp_ms + SENSOR_BASE_PERIOD_MS
-			: 0U;
+		/* multi-rate decimation: publish every update_n base ticks */
+		if (++update_ctr[ch] < cfg->update_n) {
+			continue;
+		}
+		update_ctr[ch] = 0;
 
-		k_sleep(K_MSEC(SENSOR_BASE_PERIOD_MS));
+		uint32_t phys = cfg->convert(filtered_raw[ch]);
+		if (cfg->is_temp) {
+			int16_t t = (int16_t)phys;
+			if (ch == AIN_ADC_TEMP1) {
+				s_temp1 = t;
+			} else if (ch == AIN_ADC_TEMP2) {
+				s_temp2 = t;
+			}
+		}
+		phys_cache[ch] = phys;
 	}
-}
 
-void sensorStart(void)
-{
-	k_thread_create(&sensor_thread, sensor_stack,
-			K_THREAD_STACK_SIZEOF(sensor_stack),
-			sensorThreadFn, NULL, NULL, NULL,
-			SENSOR_PRIO, 0, K_NO_WAIT);
+	/* over-temp accumulator: reset while cool, else count base ticks */
+	s_overtemp_ms = sensorTempIsOvertemp()
+		? s_overtemp_ms + SENSOR_BASE_PERIOD_MS
+		: 0U;
 }
 
 uint32_t sensorGetPhys(uint8_t channel)

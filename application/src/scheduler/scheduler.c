@@ -183,6 +183,22 @@ static K_WORK_DELAYABLE_DEFINE(status_work, statusWorkFn);
 /* NOTE: LED heartbeat is now in main.c — heartbeatStart() runs
  * as a dedicated k_thread for proper PWM/GPIO safety on STM32H7. */
 
+/* ========== 50 ms: sensor processing thread ========== */
+
+#define SENSOR_STACK_SZ  1024
+#define SENSOR_PRIO      4
+
+static struct k_thread sensor_thread;
+K_THREAD_STACK_DEFINE(sensor_stack, SENSOR_STACK_SZ);
+
+static void sensorThreadFn(void *p1, void *p2, void *p3)
+{
+	while (1) {
+		sensorUpdate();
+		k_sleep(K_MSEC(SENSOR_BASE_PERIOD_MS));
+	}
+}
+
 /* ========== 500 ms: change-triggered sensor print ========== */
 
 #define DISP_STACK_SZ  1024
@@ -293,7 +309,10 @@ void schedulerStart(void)
 
 	/* Sensor thread — filters/converts AIN raw snapshot, publishes
 	 * physical values at per-quantity rates (multi-rate decimation). */
-	sensorStart();
+	k_thread_create(&sensor_thread, sensor_stack,
+			K_THREAD_STACK_SIZEOF(sensor_stack),
+			sensorThreadFn, NULL, NULL, NULL,
+			SENSOR_PRIO, 0, K_NO_WAIT);
 
 	/* Change-triggered sensor value print thread */
 	k_thread_create(&disp_thread, disp_stack,

@@ -7,11 +7,12 @@
  * (bsp_ain) only exposes raw 12-bit ADC counts, refreshed on a fixed poll
  * cadence into a per-channel snapshot array.
  *
- * The sensor module runs as its own thread: it reads the raw snapshot,
- * low-pass filters each channel, then converts and publishes physical values
- * into a cache. Each physical quantity is processed at its own rate
- * (multi-rate decimation), so fast signals (PDC rails) update at the base
- * tick while slow signals (NTC temperature) update less often.
+ * The sensor module is driven by a dedicated thread owned by the scheduler
+ * (scheduler.c). sensorUpdate() is that thread's periodic tick: it reads the
+ * raw snapshot, low-pass filters each channel, then converts and publishes
+ * physical values into a cache. Each physical quantity is processed at its
+ * own rate (multi-rate decimation), so fast signals (PDC rails) update at
+ * the base tick while slow signals (NTC temperature) update less often.
  *
  * Consumers (state machine, display task) read the published values through
  * sensorGetPhys() / sensorTempGet*().
@@ -71,11 +72,18 @@ bool     sensorTempSensorFault(void);  /* true if either NTC sensor read failed 
 bool     sensorTempIsOvertemp(void);   /* max temp >= fault threshold */
 uint32_t sensorTempOvertempFor(void);  /* consecutive over-temp ms (for fault decision) */
 
-/* ==================== Sensor thread ==================== */
+/* ==================== Sensor processing ==================== */
 
-/* Start the sensor processing thread. Each base tick it filters every
- * configured channel and publishes physical values at each channel's rate. */
-void sensorStart(void);
+/* Sensor thread cadence — the scheduler calls sensorUpdate() every base tick. */
+#define SENSOR_BASE_PERIOD_MS  50
+
+/*
+ * Process one base tick: read the raw ADC snapshot, IIR-filter each
+ * configured channel, and publish physical values at each channel's rate
+ * (multi-rate decimation). Also accumulates over-temp duration. Called by
+ * the scheduler's sensor thread.
+ */
+void sensorUpdate(void);
 
 /*
  * Latest published physical value for an AIN channel.
