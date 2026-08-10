@@ -70,34 +70,36 @@ typedef enum {
  * New relay set (per pin_config.xlsx): K2..K13 + trolley_enable. */
 
 /* K3 closes on switch-on; the rest of the main group closes on NORMAL_OP */
-#define RELAY_MASK_K3        (BIT(DOUT_K3_DRV))
-#define RELAY_MASK_K2_TO_K13 (BIT(DOUT_K2_DRV)   | RELAY_MASK_K3      | \
-                              BIT(DOUT_K4_DRV)   | BIT(DOUT_K5_DRV)   | \
-                              BIT(DOUT_K6_DRV)   | BIT(DOUT_K7_DRV)   | \
-                              BIT(DOUT_K8_1_EN)  | BIT(DOUT_K8_2_EN)  | \
-                              BIT(DOUT_K9_EN)    | BIT(DOUT_K10_EN)   | \
-                              BIT(DOUT_K11_EN)   | BIT(DOUT_K12_EN)   | \
-                              BIT(DOUT_K13_EN))
-#define RELAY_MASK_K5_TO_K13 (BIT(DOUT_K5_DRV)   | BIT(DOUT_K6_DRV)   | \
-                              BIT(DOUT_K7_DRV)   | BIT(DOUT_K8_1_EN)  | \
-                              BIT(DOUT_K8_2_EN)  | BIT(DOUT_K9_EN)    | \
-                              BIT(DOUT_K10_EN)   | BIT(DOUT_K11_EN)   | \
-                              BIT(DOUT_K12_EN)   | BIT(DOUT_K13_EN))
+#define RELAY_MASK_K3        (BIT64(DOUT_K3_DRV))
+#define RELAY_MASK_K2_TO_K13 (BIT64(DOUT_K2_DRV)   | RELAY_MASK_K3      | \
+                              BIT64(DOUT_K4_DRV)   | BIT64(DOUT_K5_DRV)   | \
+                              BIT64(DOUT_K6_DRV)   | BIT64(DOUT_K7_DRV)   | \
+                              BIT64(DOUT_K8_1_EN)  | BIT64(DOUT_K8_2_EN)  | \
+                              BIT64(DOUT_K9_EN)    | BIT64(DOUT_K10_EN)   | \
+                              BIT64(DOUT_K11_EN)   | BIT64(DOUT_K12_EN)   | \
+                              BIT64(DOUT_K13_EN))
+#define RELAY_MASK_K5_TO_K13 (BIT64(DOUT_K5_DRV)   | BIT64(DOUT_K6_DRV)   | \
+                              BIT64(DOUT_K7_DRV)   | BIT64(DOUT_K8_1_EN)  | \
+                              BIT64(DOUT_K8_2_EN)  | BIT64(DOUT_K9_EN)    | \
+                              BIT64(DOUT_K10_EN)   | BIT64(DOUT_K11_EN)   | \
+                              BIT64(DOUT_K12_EN)   | BIT64(DOUT_K13_EN))
 #define RELAY_MASK_ALL       RELAY_MASK_K2_TO_K13
 
-#define PANEL_LED_MASK       (BIT(DOUT_DBG_LED0)             | \
-                              BIT(DOUT_DBG_LED1)             | \
-                              BIT(DOUT_DBG_LED2)             | \
-                              BIT(DOUT_LED_PWR_24_ON)        | \
-                              BIT(DOUT_LED_CP_224V_ON)       | \
-                              BIT(DOUT_LED_GRID_PWR_IN)      | \
-                              BIT(DOUT_LED_UPS_IN)           | \
-                              BIT(DOUT_LED_SYSTEM_ON)        | \
-                              BIT(DOUT_LED_S2_SOLO_SYS)      | \
-                              BIT(DOUT_LED_TROLLEY_CONNECTED)| \
-                              BIT(DOUT_LED_IS_PC_ON)         | \
-                              BIT(DOUT_LED_S2_SYS_ON)        | \
-                              BIT(DOUT_LED_APP_HOST_ON))
+#define TROLLEY_EN_MASK      BIT64(DOUT_TROLLEY_ENABLE_DRV)
+
+#define PANEL_LED_MASK       (BIT64(DOUT_DBG_LED0)             | \
+                              BIT64(DOUT_DBG_LED1)             | \
+                              BIT64(DOUT_DBG_LED2)             | \
+                              BIT64(DOUT_LED_PWR_24_ON)        | \
+                              BIT64(DOUT_LED_CP_224V_ON)       | \
+                              BIT64(DOUT_LED_GRID_PWR_IN)      | \
+                              BIT64(DOUT_LED_UPS_IN)           | \
+                              BIT64(DOUT_LED_SYSTEM_ON)        | \
+                              BIT64(DOUT_LED_S2_SOLO_SYS)      | \
+                              BIT64(DOUT_LED_TROLLEY_CONNECTED)| \
+                              BIT64(DOUT_LED_IS_PC_ON)         | \
+                              BIT64(DOUT_LED_S2_SYS_ON)        | \
+                              BIT64(DOUT_LED_APP_HOST_ON))
 
 /* ==================== Internal state ==================== */
 
@@ -348,15 +350,7 @@ static void panelLedsUpdate(void)
 	bool solo     = bspDinGet(DIN_SOLO_SYSTEM_CONFIG);
 
 	/* 24V power LED follows the DIN feedback contact (PC6) */
-	bspDoutSetBit(DOUT_LED_PWR_24_ON, bspDinGet(DIN_LED_PWR_24_ON));
-
-	bspDoutSetBit(DOUT_LED_S2_SYS_ON, s2);
-	bspDoutSetBit(DOUT_LED_S2_SOLO_SYS, s2 || solo);
-	bspDoutSetBit(DOUT_LED_GRID_PWR_IN, grid_ok);
-	bspDoutSetBit(DOUT_LED_UPS_IN, !grid_ok);
-	bspDoutSetBit(DOUT_LED_TROLLEY_CONNECTED, trolley);
-	bspDoutSetBit(DOUT_LED_IS_PC_ON, is_pc);
-	bspDoutSetBit(DOUT_LED_APP_HOST_ON, app_host);
+	bool pwr_24 = bspDinGet(DIN_LED_PWR_24_ON);
 
 	/* led_system_on blinks in normal/charging, solid in others */
 	bool sys_led;
@@ -365,7 +359,22 @@ static void panelLedsUpdate(void)
 	} else {
 		sys_led = true;
 	}
-	bspDoutSetBit(DOUT_LED_SYSTEM_ON, sys_led && !me_err);
+
+	/* Derive the full panel-LED "on" set, then two-phase commit:
+	 * clear all panel LEDs, set the ones that should be lit. */
+	uint64_t on =
+		(pwr_24             ? BIT64(DOUT_LED_PWR_24_ON)    : 0U) |
+		(s2                 ? BIT64(DOUT_LED_S2_SYS_ON)    : 0U) |
+		(s2 || solo         ? BIT64(DOUT_LED_S2_SOLO_SYS)  : 0U) |
+		(grid_ok            ? BIT64(DOUT_LED_GRID_PWR_IN)  : 0U) |
+		(!grid_ok           ? BIT64(DOUT_LED_UPS_IN)       : 0U) |
+		(trolley            ? BIT64(DOUT_LED_TROLLEY_CONNECTED) : 0U) |
+		(is_pc              ? BIT64(DOUT_LED_IS_PC_ON)     : 0U) |
+		(app_host           ? BIT64(DOUT_LED_APP_HOST_ON)  : 0U) |
+		(sys_led && !me_err ? BIT64(DOUT_LED_SYSTEM_ON)    : 0U);
+
+	bspDoutSetBitmap(PANEL_LED_MASK, false);   /* clear all panel LEDs */
+	bspDoutSetBitmap(on, true);                /* set the ones that should be lit */
 }
 
 static void fanSet(bool on, fanDuty_t duty_percent)
@@ -405,7 +414,7 @@ static void stateEnter(stateMachineState_t s)
 	switch (s) {
 
 	case STATEMACHINE_STATE_INIT:
-		bspDoutSetBit(DOUT_TROLLEY_ENABLE_DRV, false);
+		bspDoutSetBitmap(TROLLEY_EN_MASK, false);
 		bspAoutSetState(AOUT_PWR_ON_OFF, false);
 		relaysAllOff();
 		panelLedsOff();
@@ -415,7 +424,7 @@ static void stateEnter(stateMachineState_t s)
 		break;
 
 	case STATEMACHINE_STATE_SYS_ON:
-		bspDoutSetBit(DOUT_TROLLEY_ENABLE_DRV, true);
+		bspDoutSetBitmap(TROLLEY_EN_MASK, true);
 		panelLedsUpdate();
 		bspLedSwitchOn(0);
 		break;
@@ -461,9 +470,9 @@ static void stateEnter(stateMachineState_t s)
 		break;
 
 	case STATEMACHINE_STATE_OFF:
-		bspDoutSetBit(DOUT_TROLLEY_ENABLE_DRV, false);
+		bspDoutSetBitmap(TROLLEY_EN_MASK, false);
 		bspAoutSetState(AOUT_PWR_ON_OFF, false);
-		bspDoutSetBitmap(RELAY_MASK_K3 | BIT(DOUT_K4_DRV), false);
+		bspDoutSetBitmap(RELAY_MASK_K3 | BIT64(DOUT_K4_DRV), false);
 		panelLedsOff();
 		fanSet(false, FAN_DUTY_OFF);
 		bspLedSwitchOff(0);
@@ -651,13 +660,13 @@ static void stateRunCharging(void)
 static void stateRunShutdown(void)
 {
 	if (g_state_ticks < SM_TIMING_RELAY_STEP) {
-		bspDoutSetBit(DOUT_K4_DRV, false);
+		bspDoutSetBitmap(BIT64(DOUT_K4_DRV), false);
 	} else if (g_state_ticks < SM_TIMING_RELAY_STEP * 2) {
-		bspDoutSetBit(DOUT_K3_DRV, false);
+		bspDoutSetBitmap(BIT64(DOUT_K3_DRV), false);
 	} else if (g_state_ticks < SM_TIMING_RELAY_STEP * 3) {
 		bspDoutSetBitmap(RELAY_MASK_K5_TO_K13, false);
 		bspAoutSetState(AOUT_PWR_ON_OFF, false);
-		bspDoutSetBit(DOUT_TROLLEY_ENABLE_DRV, false);
+		bspDoutSetBitmap(TROLLEY_EN_MASK, false);
 		fanSet(false, FAN_DUTY_OFF);
 	} else if (g_state_ticks < SM_TIMING_RELAY_STEP * 4) {
 		panelLedsOff();

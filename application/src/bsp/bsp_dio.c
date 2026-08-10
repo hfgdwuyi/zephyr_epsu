@@ -63,9 +63,15 @@ const uint8_t dinMax = DIN_MAX;
  */
 /* volatile: din_state written by workqueue (bspDinUpdate), read by sm_thread;
  * prevents compiler caching across threads. dout_state is written by
- * sm_thread + max6703a workqueue, so it is atomic_t for safe RMW. */
+ * sm_thread + max6703a workqueue, so it is atomic_t for safe RMW.
+ *
+ * dout_state spans two 32-bit atomic words: DOUT_MAX = 33 pins (indices
+ * 0..32) exceeds one 32-bit word. Bits < 32 live in word 0; bit 32
+ * (DOUT_MAINS_CONNECTED_MCU) in word 1. atomic_t on this 32-bit target is
+ * itself 32-bit, so two words provide the full 64-bit bitmap through the
+ * existing 32-bit atomic bit API. */
 static volatile uint32_t din_state;
-static atomic_t dout_state;
+static atomic_t dout_state[2];
 
 static bspDinSettings_t din_settings[DIN_MAX];
 
@@ -147,51 +153,67 @@ static void bspDoutInit(void)
 	}
 }
 
-/* Set/clear a DOUT flag in the bitmap (called by state machine).
- * Atomic RMW so concurrent writes (state machine + max6703a workqueue)
- * cannot lose a bit update. */
-void bspDoutSetBit(uint8_t pin, bool state)
+/* Set/clear a DOUT flag in the bitmap — internal per-bit helper.
+ * Dispatches bit < 32 to word 0, bit >= 32 to word 1. Atomic RMW so
+ * concurrent writers (state machine + max6703a workqueue) cannot lose a
+ * bit update. */
+static void bspDoutSetBit(uint8_t pin, bool state)
 {
 	if (pin < DOUT_MAX) {
-		atomic_set_bit_to(&dout_state, pin, state);
+		atomic_set_bit_to(&dout_state[pin / 32], pin % 32, state);
 	}
 }
 
-bool bspDoutGetBit(uint8_t pin)
+static bool bspDoutGetBit(uint8_t pin)
 {
 	if (pin >= DOUT_MAX) {
 		return false;
 	}
-	return atomic_test_bit(&dout_state, pin);
+	return atomic_test_bit(&dout_state[pin / 32], pin % 32);
 }
 
-/* Set/clear every DOUT bit selected by the mask. Robust to
- * non-contiguous pin groups. */
-void bspDoutSetBitmap(uint32_t mask, bool state)
+/* Set/clear every DOUT bit selected by the 64-bit mask. Robust to
+ * non-contiguous pin groups. This is the sole public write entry. */
+void bspDoutSetBitmap(uint64_t mask, bool state)
 {
 	for (uint8_t i = 0; i < DOUT_MAX; i++) {
-		if (mask & BIT(i)) {
+		if (mask & BIT64(i)) {
 			bspDoutSetBit(i, state);
 		}
 	}
 }
 
-uint32_t bspDoutGetBitmap(void)
+/* Read the whole DOUT bitmap as the per-bit logical view — the public
+ * read counterpart of bspDoutSetBitmap. */
+uint64_t bspDoutGetBitmap(void)
 {
-	return atomic_get(&dout_state);
+	uint64_t bitmap = 0;
+
+	for (uint8_t i = 0; i < DOUT_MAX; i++) {
+		if (bspDoutGetBit(i)) {
+			bitmap |= BIT64(i);
+		}
+	}
+	return bitmap;
 }
 
 /* Apply the output bitmap to the GPIO pins. Call periodically
- * from the scheduler (e.g. every 1 ms). */
+ * from the scheduler (e.g. every 1 ms). Uses one atomic snapshot per
+ * 32-bit word (two reads for the 64-bit bitmap) — do NOT route through
+ * bspDoutGetBitmap(): a bit-by-bit read could tear across the commit and
+ * glitch a group transition. A torn cross-word read only defers the group
+ * transition by one 1ms commit, harmless for relay/LED loads. */
 void bspDoutUpdate(void)
 {
-	atomic_val_t bitmap = atomic_get(&dout_state);
+	atomic_val_t lo = atomic_get(&dout_state[0]);
+	atomic_val_t hi = atomic_get(&dout_state[1]);
 
 	for (uint8_t i = 0; i < DOUT_MAX; i++) {
 		if (!gpio_is_ready_dt(&dout_specs[i])) {
 			continue;
 		}
-		const bool want = (bitmap & BIT(i)) != 0U;
+		const atomic_val_t word = (i < 32) ? lo : hi;
+		const bool want = ((word >> (i % 32)) & 1U) != 0U;
 		gpio_pin_set_dt(&dout_specs[i], want ? 1 : 0);
 	}
 }

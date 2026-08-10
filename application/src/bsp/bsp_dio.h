@@ -136,15 +136,16 @@ static inline bool bspDinGet(uint8_t pin)
 }
 
 /* ---- DOUT: bitmap-based control ----
- * State machine drives the DOUT bitmap via bspDoutSetBit(pin, state) and
- * bspDoutSetBitmap(mask, state); bspDoutUpdate() (called from the
- * scheduler) applies the bitmap to the GPIO pins once per period.
- * bspDoutUpdate() stays for immediate writes (init, safety shutdown). */
+ * The public interface is the DOUT bitmap only: bspDoutSetBitmap() is the
+ * sole write entry (single pins via a BIT64(pin) mask) and bspDoutGetBitmap()
+ * the read entry. The bitmap is 64-bit because DOUT_MAX = 33 pins (indices
+ * 0..32) exceeds one 32-bit word. bspDoutUpdate() (called from the scheduler
+ * every 1 ms) applies the bitmap to the GPIO pins once per period. The
+ * per-bit helpers bspDoutSetBit/bspDoutGetBit are internal implementation
+ * details. */
 
-void bspDoutSetBit(uint8_t pin, bool state);
-bool bspDoutGetBit(uint8_t pin);
-void bspDoutSetBitmap(uint32_t mask, bool state);
-uint32_t bspDoutGetBitmap(void);
+void bspDoutSetBitmap(uint64_t mask, bool state);
+uint64_t bspDoutGetBitmap(void);
 void bspDoutUpdate(void);
 
 #ifdef __cplusplus

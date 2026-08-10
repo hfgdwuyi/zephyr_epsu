@@ -13,7 +13,7 @@
 void max6703aInit(void)
 {
 	/* WDI pin starts low; the first max6703aFeed() raises it. */
-	bspDoutSetBit(DOUT_WDI, false);
+	bspDoutSetBitmap(BIT64(DOUT_WDI), false);
 }
 
 /* Toggle the external MAX6703A WDI bit in the DOUT bitmap; the 1ms
@@ -21,5 +21,5 @@ void max6703aInit(void)
  * the 1.6 s watchdog timeout. */
 void max6703aFeed(void)
 {
-	bspDoutSetBit(DOUT_WDI, !bspDoutGetBit(DOUT_WDI));
+	bspDoutSetBitmap(BIT64(DOUT_WDI), !(bspDoutGetBitmap() & BIT64(DOUT_WDI)));
 }
