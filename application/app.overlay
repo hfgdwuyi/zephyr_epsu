@@ -194,6 +194,11 @@
         dac_channel_id = <2>;
         dac_resolution = <12>;
 
+        /* AC zero-crossing input from external TL3310 comparator
+         * (PC14, toggling square wave at 2x mains frequency).
+         * Owned by the acmeter module for period/frequency + RMS windowing. */
+        zero-en-gpios = <&gpioc 14 GPIO_ACTIVE_HIGH>;
+
         io-channels =
             <&adc3 13>,   /*  0: adc_12v   — PH2     ADC3_INP13 */
             <&adc1 2>,    /*  1: adc_pdc7  — PF11    ADC1_INP2  */

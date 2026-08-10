@@ -76,54 +76,69 @@ void bspAinInit(void)
     }
 }
 
+/*
+ * Blocking single-channel read into the ainData[] snapshot.
+ * Returns 0 on success, negative errno on failure (previous value kept).
+ */
+static int ainReadChannel(size_t idx)
+{
+    const struct adc_dt_spec *spec = &ain_specs[idx];
+
+    if (!adc_is_ready_dt(spec) || spec->dev == NULL) {
+        printk("AIN[%u]: not ready dev=%s\n",
+               (unsigned)idx, spec->dev ? spec->dev->name : "(null)");
+        return -ENODEV;
+    }
+
+    /* This simple implementation supports channel_id < 32 (BIT mask) */
+    if (spec->channel_id >= 32U) {
+        printk("AIN[%u]: invalid channel_id=%u (dev=%s)\n",
+               (unsigned)idx, (unsigned)spec->channel_id,
+               spec->dev ? spec->dev->name : "(null)");
+        return -EINVAL;
+    }
+
+    int16_t sample = 0;
+
+    struct adc_sequence seq = {
+        .channels = BIT(spec->channel_id),
+        .buffer = &sample,
+        .buffer_size = sizeof(sample),
+        .resolution = 12,
+    };
+
+    /* Optional: let DT refine sequence if supported */
+    int ret = adc_sequence_init_dt(spec, &seq);
+    if (ret != 0 && ret != -ENOTSUP) {
+        /* keep going with minimal sequence */
+    }
+
+    ret = adc_read(spec->dev, &seq);
+    if (ret == 0) {
+        ainData[idx] = (uint16_t)sample;
+        return 0;
+    }
+
+    printk("AIN[%u]: read failed name=%s dev=%s ch=%u ret=%d\n",
+           (unsigned)idx,
+           (idx < ARRAY_SIZE(ainName) && ainName[idx]) ? ainName[idx] : "(unnamed)",
+           spec->dev ? spec->dev->name : "(null)",
+           (unsigned)spec->channel_id,
+           ret);
+    /* Keep previous value in ainData[idx] */
+    return ret;
+}
+
 /* Call this periodically (e.g., 20ms/50ms/100ms/1000ms) to refresh all channels */
 void bspAinPoll(void)
 {
-    /* 1) sample all channels */
+    /* 1) sample all channels except AIN_ADC_VIN — the ac_meter module owns
+     * that channel exclusively via bspAinReadRaw() at a high rate. */
     for (size_t i = 0; i < BSP_AIN_NUMBER; i++) {
-        const struct adc_dt_spec *spec = &ain_specs[i];
-
-        if (!adc_is_ready_dt(spec) || spec->dev == NULL) {
-            printk("AIN[%u]: not ready dev=%s\n",
-                   (unsigned)i, spec->dev ? spec->dev->name : "(null)");
+        if (i == AIN_ADC_VIN) {
             continue;
         }
-
-        /* This simple implementation supports channel_id < 32 (BIT mask) */
-        if (spec->channel_id >= 32U) {
-            printk("AIN[%u]: invalid channel_id=%u (dev=%s)\n",
-                   (unsigned)i, (unsigned)spec->channel_id,
-                   spec->dev ? spec->dev->name : "(null)");
-            continue;
-        }
-
-        int16_t sample = 0;
-
-        struct adc_sequence seq = {
-            .channels = BIT(spec->channel_id),
-            .buffer = &sample,
-            .buffer_size = sizeof(sample),
-            .resolution = 12,
-        };
-
-        /* Optional: let DT refine sequence if supported */
-        int ret = adc_sequence_init_dt(spec, &seq);
-        if (ret != 0 && ret != -ENOTSUP) {
-            /* keep going with minimal sequence */
-        }
-
-        ret = adc_read(spec->dev, &seq);
-        if (ret == 0) {
-            ainData[i] = (uint16_t)sample;
-        } else {
-            printk("AIN[%u]: read failed name=%s dev=%s ch=%u ret=%d\n",
-                   (unsigned)i,
-                   (i < ARRAY_SIZE(ainName) && ainName[i]) ? ainName[i] : "(unnamed)",
-                   spec->dev ? spec->dev->name : "(null)",
-                   (unsigned)spec->channel_id,
-                   ret);
-            /* Keep previous value in ainData[i] */
-        }
+        (void)ainReadChannel(i);
     }
 
     /* 2) log all sampled values every poll (DBG level for production) */
@@ -134,6 +149,19 @@ void bspAinPoll(void)
                 (i < ARRAY_SIZE(ainName) && ainName[i]) ? ainName[i] : "(unnamed)",
                 (unsigned)ainData[i]);
     }
+}
+
+/* One-shot blocking read of a single channel (bypasses the poll snapshot).
+ * Returns the raw 12-bit count (0–4095), or 0 on failure. */
+uint32_t bspAinReadRaw(uint8_t channel)
+{
+    if (channel >= BSP_AIN_NUMBER) {
+        return 0;
+    }
+    if (ainReadChannel(channel) != 0) {
+        return 0;
+    }
+    return ainData[channel];
 }
 
 uint32_t bspAinGetRawValue(uint8_t channel)

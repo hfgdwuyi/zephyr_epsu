@@ -44,6 +44,14 @@ void     bspAinPoll(void);
 /* Raw ADC value (12-bit, 0–4095) */
 uint32_t bspAinGetRawValue(uint8_t channel);
 
+/*
+ * One-shot blocking read of a single AIN channel, bypassing the poll
+ * snapshot. Returns the raw 12-bit count (0–4095), or 0 on failure.
+ * Used by the ac_meter module to sample AIN_ADC_VIN at a high rate —
+ * that channel is excluded from bspAinPoll() so this is its sole reader.
+ */
+uint32_t bspAinReadRaw(uint8_t channel);
+
 const char *bspAinGetName(uint8_t channel);
 
 #ifdef __cplusplus

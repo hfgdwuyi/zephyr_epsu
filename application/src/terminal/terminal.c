@@ -22,20 +22,74 @@
 /* Application */
 #include "terminal.h"
 #include "sensor.h"
+#include "ac_meter.h"
 
-/* Voltage channels to monitor (PDC rails + monitor rails + mains). Temps are
- * handled separately via sensorTempGet1/2. */
+/* Voltage channels to monitor (PDC rails + monitor rails). Mains AC is
+ * handled separately via the ac_meter module (true windowed RMS). */
 static const uint8_t term_mv_chan[] = {
 	AIN_ADC_PDC0, AIN_ADC_PDC1, AIN_ADC_PDC2, AIN_ADC_PDC3,
 	AIN_ADC_PDC4, AIN_ADC_PDC5, AIN_ADC_PDC6, AIN_ADC_PDC7,
 	AIN_ADC_PDC0_ALT,
-	AIN_ADC_12V, AIN_ADC_5V0, AIN_ADC_3V3, AIN_ADC_VIN,
+	AIN_ADC_12V, AIN_ADC_5V0, AIN_ADC_3V3,
 };
 
 static uint32_t last_mv[ARRAY_SIZE(term_mv_chan)];  /* last printed rail values */
 static int16_t  last_t1;
 static int16_t  last_t2;
 static bool     inited;
+
+/* last printed AC mains state (ac_meter) */
+static uint32_t last_ac_rms;
+static int16_t  last_ac_freq;
+static bool     last_ac_present;
+static bool     ac_inited;
+
+static void printAc(void)
+{
+	uint32_t rms = acMeterGetVinRmsMv();
+	int16_t  f   = acMeterGetVinFreq();
+	bool     p   = acMeterAcPresent();
+
+	if (!p) {
+		printk("SENSOR adc_vin: n/a (no AC)\n");
+	} else {
+		printk("SENSOR adc_vin: %u.%03u V @ %u.%u Hz\n",
+		       rms / 1000U, rms % 1000U, f / 10, f % 10);
+	}
+	last_ac_rms     = rms;
+	last_ac_freq    = f;
+	last_ac_present = p;
+}
+
+/* Print AC mains only when the presence, voltage, or frequency moved enough. */
+static void updateAc(void)
+{
+	uint32_t rms = acMeterGetVinRmsMv();
+	int16_t  f   = acMeterGetVinFreq();
+	bool     p   = acMeterAcPresent();
+
+	if (!ac_inited) {
+		ac_inited = true;
+		printAc();
+		return;
+	}
+
+	bool print = false;
+	if (p != last_ac_present) {
+		print = true;
+	} else if (p) {
+		uint32_t d  = (rms > last_ac_rms) ? (rms - last_ac_rms) : (last_ac_rms - rms);
+		int32_t  df = (int32_t)f - last_ac_freq;
+		if (df < 0) df = -df;
+		if (d >= TERMINAL_MV_DELTA || df >= TERMINAL_FREQ_DELTA) {
+			print = true;
+		}
+	}
+
+	if (print) {
+		printAc();
+	}
+}
 
 static void printTemp(const char *name, int16_t t)
 {
@@ -94,4 +148,7 @@ void terminalUpdate(void)
 			last_mv[i] = mv;
 		}
 	}
+
+	/* AC mains (ac_meter) — presence / RMS / frequency */
+	updateAc();
 }

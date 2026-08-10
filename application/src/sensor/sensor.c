@@ -9,8 +9,9 @@
  *   Vadc = Vref × Rntc / (Rf + Rntc)  ⇒  Rntc = Rf × Vadc / (Vref - Vadc)
  *   where Vref=3.3V, Rf=4700Ω, Vadc = raw × 3.3 / 4095
  *
- * Voltage: external-circuit scaling for the PDC dividers (47k:4.7k) and the
- *   mains AC sense network.  bsp_ain only exposes raw ADC counts.
+ * Voltage: external-circuit scaling for the PDC dividers (47k:4.7k).
+ *   Mains AC voltage is measured by the ac_meter module (ac_meter.c), which
+ *   owns AIN_ADC_VIN.  bsp_ain only exposes raw ADC counts.
  *
  * Thread model:
  *   The scheduler owns a dedicated sensor thread and calls sensorUpdate()
@@ -242,25 +243,9 @@ static uint32_t divMvFromRaw(uint32_t raw)
 	return (vAdc * (SENSOR_DIV_RHIGH + SENSOR_DIV_RLOW)) / SENSOR_DIV_RLOW;
 }
 
-/*
- * Mains AC voltage at AIN_ADC_VIN (PC2_C, ADC3_INP0 — direct channel).
- * Vadc = 1.65 + (0.4 x 1.414 x Vin x 50.2 / (750x4 + 500 + 75)) x 3.9 / 6.49
- *        denominator = 3000 + 575 = 3575
- *   => Vadc = 1.65 + Vin x (0.4 x 1.414 x 50.2 / 3575 x 3.9 / 6.49)
- *   => Vadc = 1.65 + Vin x 0.004773
- *   => Vin  = (Vadc - 1.65) / 0.004773
- * ADC output range: 0.568 V .. 2.732 V.
- * Returns 0 if Vadc < 1.65 V.
- */
-static uint32_t vinMvFromRaw(uint32_t raw)
-{
-	int32_t vAdc = (int32_t)mvFromRaw(raw);
-	int32_t delta = vAdc - 1650;
-	if (delta <= 0) {
-		return 0;
-	}
-	return (uint32_t)(delta * 20953U / 100U);
-}
+/* NOTE: mains AC voltage (AIN_ADC_VIN) is no longer converted here — the
+ * ac_meter module owns that channel and publishes a true windowed RMS value.
+ * AIN_ADC_VIN is excluded from bspAinPoll(); see ac_meter.c. */
 
 /* ==================== Multi-rate sampling thread ==================== */
 
@@ -293,8 +278,6 @@ static const sensorChanCfg_t sensor_cfg[] = {
 	{ AIN_ADC_PDC6,     1,  2, false, divMvFromRaw },
 	{ AIN_ADC_PDC7,     1,  2, false, divMvFromRaw },
 	{ AIN_ADC_PDC0_ALT, 1,  2, false, divMvFromRaw },
-	/* mains AC: 100 ms */
-	{ AIN_ADC_VIN,      2,  2, false, vinMvFromRaw },
 	/* monitor rails: 500 ms */
 	{ AIN_ADC_12V,     10,  2, false, mvFromRaw },
 	{ AIN_ADC_5V0,     10,  2, false, mvFromRaw },

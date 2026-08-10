@@ -19,7 +19,8 @@
  *
  *   Temperature — NTC thermistor (Vishay NTCALUG02A472FA: R25=4700Ω,
  *                 B(25/85)=3984K) via lookup table + linear interpolation.
- *   Voltage     — PDC divider (47k:4.7k) and mains AC sense network.
+ *   Voltage     — PDC divider (47k:4.7k). Mains AC (AIN_ADC_VIN) is measured
+ *                 by the ac_meter module (windowed RMS), not here.
  *
  * Depends on: bsp_ain.h (ADC/channel definitions)
  */

@@ -34,6 +34,7 @@
 #include "state_machine.h"
 #include "sensor.h"
 #include "terminal.h"
+#include "ac_meter.h"
 #include "max6703a.h"
 
 /* ========== Heartbeats + WDT supervisor ========== */
@@ -213,6 +214,22 @@ static void termThreadFn(void *p1, void *p2, void *p3)
 	}
 }
 
+/* ========== 1 ms: AC mains meter (adc_vin + zero_en) ========== */
+
+#define AC_METER_STACK_SZ  1024
+#define AC_METER_PRIO      4
+
+static struct k_thread ac_meter_thread;
+K_THREAD_STACK_DEFINE(ac_meter_stack, AC_METER_STACK_SZ);
+
+static void acMeterThreadFn(void *p1, void *p2, void *p3)
+{
+	while (1) {
+		acMeterUpdate();
+		k_sleep(K_USEC(AC_METER_BASE_PERIOD_US));
+	}
+}
+
 /* ========== Start all periodic tasks ========== */
 
 void schedulerStart(void)
@@ -241,6 +258,13 @@ void schedulerStart(void)
 			K_THREAD_STACK_SIZEOF(term_stack),
 			termThreadFn, NULL, NULL, NULL,
 			TERM_PRIO, 0, K_NO_WAIT);
+
+	/* AC mains meter thread — samples adc_vin at ~1 kHz, RMS over one
+	 * mains period sized by the zero_en edge timing. */
+	k_thread_create(&ac_meter_thread, ac_meter_stack,
+			K_THREAD_STACK_SIZEOF(ac_meter_stack),
+			acMeterThreadFn, NULL, NULL, NULL,
+			AC_METER_PRIO, 0, K_NO_WAIT);
 
 	/* Periodic work items — each self-reschedules */
 	k_work_schedule(&din_work,    K_MSEC(1));

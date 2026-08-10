@@ -6,5 +6,6 @@ target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/../terminal
     ${CMAKE_CURRENT_LIST_DIR}/../external
     ${CMAKE_CURRENT_LIST_DIR}/../sensor
+    ${CMAKE_CURRENT_LIST_DIR}/../ac_meter
     ${CMAKE_CURRENT_LIST_DIR}/../state_machine
 )

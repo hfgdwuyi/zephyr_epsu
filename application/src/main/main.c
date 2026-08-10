@@ -28,6 +28,7 @@
 /* Application */
 #include "scheduler.h"
 #include "state_machine.h"
+#include "ac_meter.h"
 #include "max6703a.h"
 
 /* ---- Constants ---- */
@@ -141,6 +142,7 @@ int main(void)
 	stateMachineInit();
 	bspWtdgInit();
 	max6703aInit();
+	acMeterInit();
 
 	/* LED heartbeat */
 	heartbeatStart();

@@ -23,6 +23,7 @@ extern "C" {
 /* Print only when a physical value has moved meaningfully */
 #define TERMINAL_TEMP_DELTA  30     /* 3.0 °C, in ×10 units */
 #define TERMINAL_MV_DELTA   3000    /* 3.0 V, in mV */
+#define TERMINAL_FREQ_DELTA   5     /* 0.5 Hz, in ×10 units (AC mains) */
 
 /* Process one terminal tick: print sensor values that changed meaningfully. */
 void terminalUpdate(void);
