@@ -229,3 +229,76 @@
             <&pwm_fan2 4 PWM_USEC(40) PWM_POLARITY_NORMAL>;
     };
 };
+
+/* ---- 24C04 I2C EEPROM（512×8）@ I2C1 + PB7 = WP ----
+ * I2C1 引脚 = NUCLEO 板级默认 PB8(SCL)/PB9(SDA)（Arduino header）。
+ * WP 由 at2x 驱动管理（写前解除、写毕置回，上电=写保护）。极性取 24C04 惯例：
+ * WP 高=写保护 → GPIO_ACTIVE_HIGH（logical 1→物理高）。
+ * 注意：开发板 PB7 同时是 LPUART1 RX —— 若 LPUART1 保持使能，两驱动会争用该脚
+ * （at2x 初始化优先级 80 会把 PB7 配成 GPIO 输出）。开发板测试 EEPROM 时建议
+ * 先禁用 &lpuart1（或按板载跳线断开 LPUART1）。
+ * A2 地址引脚未接 → 基址 0x50。 */
+&i2c1 {
+    clock-frequency = <I2C_BITRATE_FAST>;
+    identity_eeprom: eeprom@50 {
+        compatible = "atmel,at24";
+        reg = <0x50>;
+        size = <512>;
+        pagesize = <16>;
+        address-width = <8>;
+        timeout = <5>;
+        wp-gpios = <&gpiob 7 GPIO_ACTIVE_HIGH>;
+    };
+};
+
+/* ---- 外部 64Mbit QSPI NOR = IS25LP064（ISSI，SFDP/JEDEC，4K 扇区）----
+ * 引脚 per pin_config.xlsx: PF8=io0 PF9=io1 PF7=io2 PF6=io3 PF10=clk
+ * NCS 未在 xlsx 列出 → 暂用 PG6（本封装可用、两板均空闲），待原理图确认。
+ * 开发板无此器件 → JEDEC probe 失败 not-ready 可接受，不阻塞启动。 */
+&quadspi {
+    pinctrl-0 = <&quadspi_clk_pf10
+                 &quadspi_bk1_io0_pf8
+                 &quadspi_bk1_io1_pf9
+                 &quadspi_bk1_io2_pf7
+                 &quadspi_bk1_io3_pf6
+                 &quadspi_bk1_ncs_pg6>;
+    pinctrl-names = "default";
+    status = "okay";
+
+    is25lp064: qspi-nor-flash@0 {
+        compatible = "st,stm32-qspi-nor";
+        reg = <0>;
+        #address-cells = <1>;
+        #size-cells = <1>;
+        size = <DT_SIZE_M(64)>;            /* 64 Mbit = 8 MB */
+        qspi-max-frequency = <50000000>;   /* IS25LP064 SFDP 上限 133MHz，保守 50MHz */
+        spi-bus-width = <4>;
+        status = "okay";
+
+        partitions {
+            compatible = "fixed-partitions";
+            #address-cells = <1>;
+            #size-cells = <1>;
+
+            /* 固件设计分区布局（后续 OTA/从站分发用）：
+             * slot1 1M @0，从站暂存 4M @0x100000，
+             * storage 1M @0x500000，reserved 2M @0x600000 */
+            slot1_partition: partition@0 {
+                label = "image-1";
+                reg = <0x000000 DT_SIZE_M(1)>;
+            };
+            slave_fw_staging: partition@100000 {
+                label = "slave-fw";
+                reg = <0x100000 DT_SIZE_M(4)>;
+            };
+            storage_partition: partition@500000 {
+                label = "storage";
+                reg = <0x500000 DT_SIZE_M(1)>;
+            };
+            reserved_partition: partition@600000 {
+                label = "reserved";
+                reg = <0x600000 DT_SIZE_M(2)>;
+            };
+        };
+    };
+};
