@@ -38,7 +38,10 @@ static void bspDinInit(void);
 
 /* ==================== DOUT: devicetree → gpio_dt_spec array ==================== */
 
-#define DOUT_GPIO_SPEC(node_id) GPIO_DT_SPEC_GET(node_id, gpios),
+/* Index each spec by the child's reg (= DOUT index), so overlay child order
+ * no longer matters — the array is keyed by reg. A duplicate reg is a compile
+ * error (repeated designated-initializer index), which catches index typos. */
+#define DOUT_GPIO_SPEC(node_id) [DT_REG_ADDR(node_id)] = GPIO_DT_SPEC_GET(node_id, gpios),
 static const struct gpio_dt_spec dout_specs[] = {
 	DT_FOREACH_CHILD(DT_NODELABEL(dout_config), DOUT_GPIO_SPEC)
 };
@@ -48,7 +51,7 @@ const uint8_t doutMax = DOUT_MAX;
 
 /* ==================== DIN: devicetree → gpio_dt_spec array ==================== */
 
-#define DIN_GPIO_SPEC(node_id) GPIO_DT_SPEC_GET(node_id, gpios),
+#define DIN_GPIO_SPEC(node_id) [DT_REG_ADDR(node_id)] = GPIO_DT_SPEC_GET(node_id, gpios),
 static const struct gpio_dt_spec din_specs[] = {
 	DT_FOREACH_CHILD(DT_NODELABEL(din_config), DIN_GPIO_SPEC)
 };

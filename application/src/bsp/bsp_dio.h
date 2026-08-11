@@ -10,6 +10,7 @@
 #ifndef BSP_DIO_H
 #define BSP_DIO_H
 
+#include <zephyr/devicetree.h>
 #include <zephyr/sys/util.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -18,86 +19,97 @@
 extern "C" {
 #endif
 
-/* ==================== DOUT index — pin_config.xlsx ==================== */
+/* ==================== DOUT index — pin_config.xlsx ====================
+ * The DOUT index of a pin IS the `reg` of its child of dout_config in
+ * application/app.overlay — that file is the single source of truth.
+ * Inserting a pin means editing app.overlay only; these macros (and the
+ * bsp_dio.c spec array, keyed by reg) follow automatically.
+ *
+ * Contract: reg values must stay dense 0..N-1 (DOUT_MAX = N). The 64-bit
+ * DOUT bitmap splits at bit 32 (bsp_dio.c word = i/32) and dout_specs[i]
+ * == reg i, so a gap or reordering would silently shift pins. */
 
-enum {
-	/* Trolley enable */
-	DOUT_TROLLEY_ENABLE_DRV    = 0,   /* PH1  */
+#define DOUT_IDX(label) DT_REG_ADDR(DT_NODELABEL(label))
 
-	/* External watchdog (MAX6703A WDI) */
-	DOUT_WDI                   = 1,   /* PH9  */
+/* Trolley enable */
+#define DOUT_TROLLEY_ENABLE_DRV    DOUT_IDX(trolley_enable_drv)   /* PH1  */
 
-	/* Power good / K13 enable */
-	DOUT_PG_13V5               = 2,   /* PA12 */
-	DOUT_K13_EN                = 3,   /* PB6  */
+/* External watchdog (MAX6703A WDI) */
+#define DOUT_WDI                   DOUT_IDX(wdi)                  /* PH9  */
 
-	/* Debug LEDs */
-	DOUT_DBG_LED0              = 4,   /* PC8  */
-	DOUT_DBG_LED1              = 5,   /* PC9  */
-	DOUT_DBG_LED2              = 6,   /* PC10 */
+/* Power good / K13 enable */
+#define DOUT_PG_13V5               DOUT_IDX(pg_13v5)              /* PA12 */
+#define DOUT_K13_EN                DOUT_IDX(k13_en)               /* PB6  */
 
-	/* Panel LED indicators
-	 * Note: PD8 (led_pac230v_on) / PD9 (led_s1_sys_on) removed — USART3 */
-	DOUT_LED_PWR_24_ON         = 7,   /* PD0  */
-	DOUT_LED_CP_224V_ON        = 8,   /* PD1  */
-	DOUT_LED_GRID_PWR_IN       = 9,   /* PD2  */
-	DOUT_LED_UPS_IN            = 10,  /* PD3  */
-	DOUT_LED_SYSTEM_ON         = 11,  /* PD4  */
-	DOUT_LED_S2_SOLO_SYS       = 12,  /* PD5  */
-	DOUT_LED_TROLLEY_CONNECTED = 13,  /* PD6  */
-	DOUT_LED_IS_PC_ON          = 14,  /* PD7  */
-	DOUT_LED_S2_SYS_ON         = 15,  /* PD10 */
-	DOUT_LED_APP_HOST_ON       = 16,  /* PD12 */
+/* Debug LEDs */
+#define DOUT_DBG_LED0              DOUT_IDX(dbg_led0)             /* PC8  */
+#define DOUT_DBG_LED1              DOUT_IDX(dbg_led1)             /* PC9  */
+#define DOUT_DBG_LED2              DOUT_IDX(dbg_led2)             /* PC10 */
 
-	/* Relay / power drivers (K2..K13) */
-	DOUT_K5_DRV                = 17,  /* PI4  */
-	DOUT_K6_DRV                = 18,  /* PI5  */
-	DOUT_K3_DRV                = 19,  /* PI6  */
-	DOUT_K2_DRV                = 20,  /* PI7  */
-	DOUT_K4_DRV                = 21,  /* PI8  */
-	DOUT_K7_DRV                = 22,  /* PI9  */
-	DOUT_K10_EN                = 23,  /* PI10 */
-	DOUT_K11_EN                = 24,  /* PI11 */
-	DOUT_K12_EN                = 25,  /* PI12 */
-	DOUT_K8_1_EN               = 26,  /* PI13 */
-	DOUT_K8_2_EN               = 27,  /* PI14 */
-	DOUT_K9_EN                 = 28,  /* PI15 */
+/* Panel LED indicators
+ * Note: PD8 (led_pac230v_on) / PD9 (led_s1_sys_on) removed — USART3 */
+#define DOUT_LED_PWR_24_ON         DOUT_IDX(led_pwr_24_on)        /* PD0  */
+#define DOUT_LED_CP_224V_ON        DOUT_IDX(led_cp_224v_on)       /* PD1  */
+#define DOUT_LED_GRID_PWR_IN       DOUT_IDX(led_grid_pwr_in)      /* PD2  */
+#define DOUT_LED_UPS_IN            DOUT_IDX(led_ups_in)           /* PD3  */
+#define DOUT_LED_SYSTEM_ON         DOUT_IDX(led_system_on)        /* PD4  */
+#define DOUT_LED_S2_SOLO_SYS       DOUT_IDX(led_s2_solo_sys)      /* PD5  */
+#define DOUT_LED_TROLLEY_CONNECTED DOUT_IDX(led_trolley_connected) /* PD6  */
+#define DOUT_LED_IS_PC_ON          DOUT_IDX(led_is_pc_on)         /* PD7  */
+#define DOUT_LED_S2_SYS_ON         DOUT_IDX(led_s2_sys_on)        /* PD10 */
+#define DOUT_LED_APP_HOST_ON       DOUT_IDX(led_app_host_on)      /* PD12 */
 
-	/* Status output drivers */
-	DOUT_DRV_IS_PC_SITE_ON     = 29,  /* PJ11 */
-	DOUT_DRV_APP_HOST_SITE_ON  = 30,  /* PJ12 */
-	DOUT_MAINS_CONNECTED_IS_PC = 31,  /* PJ13 */
-	DOUT_MAINS_CONNECTED_MCU   = 32,  /* PJ14 */
-};
+/* Relay / power drivers (K2..K13) */
+#define DOUT_K5_DRV                DOUT_IDX(k5_drv)               /* PI4  */
+#define DOUT_K6_DRV                DOUT_IDX(k6_drv)               /* PI5  */
+#define DOUT_K3_DRV                DOUT_IDX(k3_drv)               /* PI6  */
+#define DOUT_K2_DRV                DOUT_IDX(k2_drv)               /* PI7  */
+#define DOUT_K4_DRV                DOUT_IDX(k4_drv)               /* PI8  */
+#define DOUT_K7_DRV                DOUT_IDX(k7_drv)               /* PI9  */
+#define DOUT_K10_EN                DOUT_IDX(k10_en)               /* PI10 */
+#define DOUT_K11_EN                DOUT_IDX(k11_en)               /* PI11 */
+#define DOUT_K12_EN                DOUT_IDX(k12_en)               /* PI12 */
+#define DOUT_K8_1_EN               DOUT_IDX(k8_1_en)              /* PI13 */
+#define DOUT_K8_2_EN               DOUT_IDX(k8_2_en)              /* PI14 */
+#define DOUT_K9_EN                 DOUT_IDX(k9_en)                /* PI15 */
 
-/* ==================== DIN index — pin_config.xlsx ==================== */
+/* Status output drivers */
+#define DOUT_DRV_IS_PC_SITE_ON     DOUT_IDX(drv_is_pc_site_on)    /* PJ11 */
+#define DOUT_DRV_APP_HOST_SITE_ON  DOUT_IDX(drv_app_host_site_on) /* PJ12 */
+#define DOUT_MAINS_CONNECTED_IS_PC DOUT_IDX(mains_connected_is_pc) /* PJ13 */
+#define DOUT_MAINS_CONNECTED_MCU   DOUT_IDX(mains_connected_mcu)  /* PJ14 */
 
-enum {
-	DIN_GRID_MAIN_RELAY_STATUS  = 0,   /* PH5  — high=valid, low=invalid */
-	DIN_ME_BOX_ERROR            = 1,   /* PH6  — high=normal, low=fault */
-	DIN_FAULT0                  = 2,   /* PA8  */
-	DIN_FAULT1                  = 3,   /* PA9  */
-	DIN_FAULT2                  = 4,   /* PA10 */
-	DIN_FAULT3                  = 5,   /* PA11 */
-	DIN_TEMP_ALERT              = 6,   /* PB12 */
-	DIN_LED_PWR_24_ON           = 7,   /* PC6  */
-	DIN_FAULT4                  = 8,   /* PC11 */
-	DIN_FAULT5                  = 9,   /* PC12 */
-	DIN_FAULT6                  = 10,  /* PC13 */
-	DIN_TRL_MU_CONNECTED_MCU    = 11,  /* PD13 */
-	DIN_TRL_MU_CONNECTED_IS_PC  = 12,  /* PD14 */
-	DIN_SYSTEM_ON_OFF           = 13,  /* PJ0  */
-	DIN_SYSTEM_RESET            = 14,  /* PJ1  */
-	DIN_S1_SYSTEM_CONFIG        = 15,  /* PJ2  */
-	DIN_S2_SYSTEM_CONFIG        = 16,  /* PJ3  */
-	DIN_SOLO_SYSTEM_CONFIG      = 17,  /* PJ4  */
-	DIN_TROLLEY_CONNECTED       = 18,  /* PJ5  — high=connected */
-	DIN_APP_HOST_ON             = 19,  /* PJ7  */
-	DIN_SMART_WHS_INDICATE      = 20,  /* PJ8  */
-	DIN_DRAWER_INDICATE         = 21,  /* PJ9  */
-	DIN_SMART_CTRL_WHS_SEARCH   = 22,  /* PJ10 */
-	DIN_IS_PC_ON                = 23,  /* PJ15 */
-};
+/* ==================== DIN index — pin_config.xlsx ====================
+ * Same scheme as DOUT: each DIN_xxx derives from the `reg` of its child of
+ * din_config in application/app.overlay. Note some names differ from the
+ * node label (e.g. DIN_LED_PWR_24_ON ↔ led_pwr_24_fb). */
+
+#define DIN_IDX(label) DT_REG_ADDR(DT_NODELABEL(label))
+
+#define DIN_GRID_MAIN_RELAY_STATUS  DIN_IDX(grid_main_relay_status) /* PH5  — high=valid, low=invalid */
+#define DIN_ME_BOX_ERROR            DIN_IDX(me_box_error)           /* PH6  — high=normal, low=fault */
+#define DIN_FAULT0                  DIN_IDX(fault0)                 /* PA8  */
+#define DIN_FAULT1                  DIN_IDX(fault1)                 /* PA9  */
+#define DIN_FAULT2                  DIN_IDX(fault2)                 /* PA10 */
+#define DIN_FAULT3                  DIN_IDX(fault3)                 /* PA11 */
+#define DIN_TEMP_ALERT              DIN_IDX(temp_alert)             /* PB12 */
+#define DIN_LED_PWR_24_ON           DIN_IDX(led_pwr_24_fb)          /* PC6  */
+#define DIN_FAULT4                  DIN_IDX(fault4)                 /* PC11 */
+#define DIN_FAULT5                  DIN_IDX(fault5)                 /* PC12 */
+#define DIN_FAULT6                  DIN_IDX(fault6)                 /* PC13 */
+#define DIN_TRL_MU_CONNECTED_MCU    DIN_IDX(trl_mu_connected_mcu)   /* PD13 */
+#define DIN_TRL_MU_CONNECTED_IS_PC  DIN_IDX(trl_mu_connected_is_pc) /* PD14 */
+#define DIN_SYSTEM_ON_OFF           DIN_IDX(system_on_off)          /* PJ0  */
+#define DIN_SYSTEM_RESET            DIN_IDX(system_reset)           /* PJ1  */
+#define DIN_S1_SYSTEM_CONFIG        DIN_IDX(s1_system_config)       /* PJ2  */
+#define DIN_S2_SYSTEM_CONFIG        DIN_IDX(s2_system_config)       /* PJ3  */
+#define DIN_SOLO_SYSTEM_CONFIG      DIN_IDX(solo_system_config)     /* PJ4  */
+#define DIN_TROLLEY_CONNECTED       DIN_IDX(trolley_connected)      /* PJ5  — high=connected */
+#define DIN_APP_HOST_ON             DIN_IDX(app_host_on)            /* PJ7  */
+#define DIN_SMART_WHS_INDICATE      DIN_IDX(smart_whs_indicate)     /* PJ8  */
+#define DIN_DRAWER_INDICATE         DIN_IDX(drawer_indicate)        /* PJ9  */
+#define DIN_SMART_CTRL_WHS_SEARCH   DIN_IDX(smart_ctrl_whs_search)  /* PJ10 */
+#define DIN_IS_PC_ON                DIN_IDX(is_pc_on)               /* PJ15 */
 
 /* ==================== Fan PWM index (via bsp_pwm) ==================== */
 

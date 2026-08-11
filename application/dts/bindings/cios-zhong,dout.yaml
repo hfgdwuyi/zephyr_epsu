@@ -9,6 +9,10 @@ compatible: "cios-zhong,dout"
 child-binding:
     description: Single DOUT pin (relay / LED indicator / status driver)
     properties:
+        reg:
+            type: array
+            description: DOUT index (must stay dense 0..N-1 — the DOUT bitmap splits at bit 32)
+            required: true
         gpios:
             type: phandle-array
             required: true

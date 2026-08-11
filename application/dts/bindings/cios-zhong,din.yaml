@@ -9,6 +9,10 @@ compatible: "cios-zhong,din"
 child-binding:
     description: Single DIN pin (switch / status / fault input)
     properties:
+        reg:
+            type: array
+            description: DIN index (must stay dense 0..N-1)
+            required: true
         gpios:
             type: phandle-array
             required: true
