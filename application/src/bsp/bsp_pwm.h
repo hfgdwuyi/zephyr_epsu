@@ -26,6 +26,9 @@ void bspPwmSetCarrierFreq(uint8_t pwmNum, uint32_t frequency);
 /* duty cycle in percent [0..100] */
 void bspPwmSetDutyCycle(uint8_t pwmNum, uint32_t value);
 
+/* Current duty cycle (%) — status query for host tools */
+uint32_t bspPwmGetDutyCycle(uint8_t pwmNum);
+
 #ifdef __cplusplus
 }
 #endif

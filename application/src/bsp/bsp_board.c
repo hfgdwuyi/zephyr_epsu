@@ -51,7 +51,7 @@ void bspBoardInit(void)
 	bspDinApplyDebounce();  /* set debounce for mechanical switches */
 	/* DIN sampling / DOUT commit run as 1 ms tasks in scheduler */
 
-	bspLedInit();          /* NUCLEO on-board LEDs */
+	bspLedInit();          
 	bspAinInit();
 	bspAoutInit();
 	bspPwmInit();

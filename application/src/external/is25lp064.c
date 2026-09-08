@@ -35,8 +35,8 @@ static const struct is25lp064_part_info {
 	off_t  offset;   /* offset within flash */
 	size_t size;     /* bytes */
 } part_info[IS25LP064_PART_COUNT] = {
-	[IS25LP064_PART_SLOT1]     = { IS25LP064_PART_OFF(slot1_partition),
-				      IS25LP064_PART_SIZE(slot1_partition) },
+	[IS25LP064_PART_SLOT1]     = { IS25LP064_PART_OFF(qspi_slot1_partition),
+				      IS25LP064_PART_SIZE(qspi_slot1_partition) },
 	[IS25LP064_PART_SLAVE_FW] = { IS25LP064_PART_OFF(slave_fw_staging),
 				      IS25LP064_PART_SIZE(slave_fw_staging) },
 	[IS25LP064_PART_STORAGE]  = { IS25LP064_PART_OFF(storage_partition),

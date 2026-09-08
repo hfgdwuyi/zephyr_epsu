@@ -41,11 +41,6 @@ extern "C" {
 #define DOUT_PG_13V5               DOUT_IDX(pg_13v5)              /* PA12 */
 #define DOUT_K13_EN                DOUT_IDX(k13_en)               /* PB6  */
 
-/* Debug LEDs */
-#define DOUT_DBG_LED0              DOUT_IDX(dbg_led0)             /* PC8  */
-#define DOUT_DBG_LED1              DOUT_IDX(dbg_led1)             /* PC9  */
-#define DOUT_DBG_LED2              DOUT_IDX(dbg_led2)             /* PC10 */
-
 /* Panel LED indicators
  * Note: PD8 (led_pac230v_on) / PD9 (led_s1_sys_on) removed — USART3 */
 #define DOUT_LED_PWR_24_ON         DOUT_IDX(led_pwr_24_on)        /* PD0  */
@@ -58,6 +53,8 @@ extern "C" {
 #define DOUT_LED_IS_PC_ON          DOUT_IDX(led_is_pc_on)         /* PD7  */
 #define DOUT_LED_S2_SYS_ON         DOUT_IDX(led_s2_sys_on)        /* PD10 */
 #define DOUT_LED_APP_HOST_ON       DOUT_IDX(led_app_host_on)      /* PD12 */
+
+/* PC8-10 三色状态灯已移交 bsp_led 管理（bsp_led.h），不再占用 DOUT 位图 */
 
 /* Relay / power drivers (K2..K13) */
 #define DOUT_K5_DRV                DOUT_IDX(k5_drv)               /* PI4  */
@@ -150,8 +147,8 @@ static inline bool bspDinGet(uint8_t pin)
 /* ---- DOUT: bitmap-based control ----
  * The public interface is the DOUT bitmap only: bspDoutSetBitmap() is the
  * sole write entry (single pins via a BIT64(pin) mask) and bspDoutGetBitmap()
- * the read entry. The bitmap is 64-bit because DOUT_MAX = 33 pins (indices
- * 0..32) exceeds one 32-bit word. bspDoutUpdate() (called from the scheduler
+ * the read entry. The bitmap is 64-bit because DOUT_MAX = 36 pins (indices
+ * 0..35) exceeds one 32-bit word. bspDoutUpdate() (called from the scheduler
  * every 1 ms) applies the bitmap to the GPIO pins once per period. The
  * per-bit helpers bspDoutSetBit/bspDoutGetBit are internal implementation
  * details. */

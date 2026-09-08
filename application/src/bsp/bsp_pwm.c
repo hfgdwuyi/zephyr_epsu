@@ -116,3 +116,12 @@ void bspPwmSetDutyCycle(uint8_t pwmNum, uint32_t value)
     const uint32_t pulse  = (uint32_t)(((uint64_t)period * value) / DUTY_MAX);
     (void)pwm_set_dt(&pwm_out[pwmNum].spec, period, pulse);
 }
+
+/* Current duty cycle (%) — status query for host tools */
+uint32_t bspPwmGetDutyCycle(uint8_t pwmNum)
+{
+    if (!pwmIdxValid(pwmNum)) {
+        return 0U;
+    }
+    return pwm_out[pwmNum].last_duty;
+}

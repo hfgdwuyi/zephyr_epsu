@@ -49,6 +49,13 @@ static const struct gpio_dt_spec dout_specs[] = {
 #define DOUT_MAX ARRAY_SIZE(dout_specs)
 const uint8_t doutMax = DOUT_MAX;
 
+/* 受保护常高 DOUT（调试用）：这几个 DOUT 位只允许置 1，任何清 0
+ * 请求（状态机/上位机）都会被忽略，保证调试期间引脚持续输出高。
+ * 量产时置空此掩码即可恢复正常控制。 */
+#define DOUT_FORCE_HIGH_MASK (BIT64(DOUT_K8_1_EN) | BIT64(DOUT_K8_2_EN) | \
+			      BIT64(DOUT_K9_EN)   | BIT64(DOUT_K10_EN) | \
+			      BIT64(DOUT_K11_EN)  | BIT64(DOUT_K12_EN))
+
 /* ==================== DIN: devicetree → gpio_dt_spec array ==================== */
 
 #define DIN_GPIO_SPEC(node_id) [DT_REG_ADDR(node_id)] = GPIO_DT_SPEC_GET(node_id, gpios),
@@ -68,11 +75,11 @@ const uint8_t dinMax = DIN_MAX;
  * prevents compiler caching across threads. dout_state is written by
  * sm_thread + max6703a workqueue, so it is atomic_t for safe RMW.
  *
- * dout_state spans two 32-bit atomic words: DOUT_MAX = 33 pins (indices
- * 0..32) exceeds one 32-bit word. Bits < 32 live in word 0; bit 32
- * (DOUT_MAINS_CONNECTED_MCU) in word 1. atomic_t on this 32-bit target is
- * itself 32-bit, so two words provide the full 64-bit bitmap through the
- * existing 32-bit atomic bit API. */
+ * dout_state spans two 32-bit atomic words: DOUT_MAX = 36 pins (indices
+ * 0..35) exceeds one 32-bit word. Bits < 32 live in word 0; bits >= 32
+ * (DOUT_MAINS_CONNECTED_MCU + DOUT_LED_PJ0/1/2) live in word 1. atomic_t on
+ * this 32-bit target is itself 32-bit, so two words provide the full 64-bit
+ * bitmap through the existing 32-bit atomic bit API. */
 static volatile uint32_t din_state;
 static atomic_t dout_state[2];
 
@@ -148,12 +155,21 @@ void bspDinSetDebouncing(uint8_t pin, bspDinSettings_t settings)
 static void bspDoutInit(void)
 {
 	for (uint8_t i = 0; i < DOUT_MAX; i++) {
+		/* 空洞(如原 PC8-10 的 4-6)无 GPIO spec → port 为 NULL，跳过 */
+		if (dout_specs[i].port == NULL) {
+			continue;
+		}
 		if (!gpio_is_ready_dt(&dout_specs[i])) {
 			continue;
 		}
 		gpio_pin_configure_dt(&dout_specs[i], GPIO_OUTPUT_INACTIVE);
 		gpio_pin_set_dt(&dout_specs[i], 0);
 	}
+
+	/* 上电强制输出高（调试）：置位受保护 K 引脚 bitmap；
+	 * 之后任何清 0 请求被 bspDoutSetBitmap 拦截，持续保持高。 */
+	bspDoutSetBitmap(DOUT_FORCE_HIGH_MASK, true);
+	bspDoutUpdate();
 }
 
 /* Set/clear a DOUT flag in the bitmap — internal per-bit helper.
@@ -175,10 +191,18 @@ static bool bspDoutGetBit(uint8_t pin)
 	return atomic_test_bit(&dout_state[pin / 32], pin % 32);
 }
 
+/* 受保护常高 DOUT（调试用）：这几个 DOUT 位只允许置 1，任何清 0
+ * 请求（状态机/上位机）都会被忽略，保证调试期间引脚持续输出高。
+ * 量产时置空此掩码即可恢复正常控制。 */
 /* Set/clear every DOUT bit selected by the 64-bit mask. Robust to
  * non-contiguous pin groups. This is the sole public write entry. */
 void bspDoutSetBitmap(uint64_t mask, bool state)
 {
+	/* 保护位只允许置 1：清 0 请求被忽略（调试强制常高） */
+	if (!state) {
+		mask &= ~DOUT_FORCE_HIGH_MASK;
+	}
+
 	for (uint8_t i = 0; i < DOUT_MAX; i++) {
 		if (mask & BIT64(i)) {
 			bspDoutSetBit(i, state);
@@ -211,7 +235,14 @@ void bspDoutUpdate(void)
 	atomic_val_t lo = atomic_get(&dout_state[0]);
 	atomic_val_t hi = atomic_get(&dout_state[1]);
 
+	/* 强制常高引脚（调试）：每次刷新把受保护 DOUT 位强制为 1
+	 * （双保险；正常情况下 bspDoutSetBitmap 已拦截清 0）。量产移除。 */
+	lo |= (atomic_val_t)(DOUT_FORCE_HIGH_MASK & 0xFFFFFFFFULL);
+
 	for (uint8_t i = 0; i < DOUT_MAX; i++) {
+		if (dout_specs[i].port == NULL) {   /* 空洞无 GPIO spec */
+			continue;
+		}
 		if (!gpio_is_ready_dt(&dout_specs[i])) {
 			continue;
 		}

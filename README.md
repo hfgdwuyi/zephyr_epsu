@@ -16,6 +16,8 @@ Single-image firmware — no MCUboot, no Ethernet, no HTTP server.
 
 ```
 application/
+├── boards/                    # Custom product board target (see below)
+│   └── arm/cioszhong_psu/     # CiosZhong ePSU controller (STM32H745, M7)
 ├── src/
 │   ├── main.c                    # Zephyr-native scheduler entry point
 │   ├── state_machine/
@@ -33,10 +35,28 @@ lib/bsp/                           # Reusable board support package
 ├── bsp_aout.c/h                   # DAC output
 ├── bsp_board.c/h                  # Board init (LED, AIN, AOUT, PWM)
 ├── bsp_dio.c/h                    # 32 DOUT + 16 DIN with macro enums
-├── bsp_led.c/h                    # NUCLEO on-board LEDs (PB0 green, PE1 yellow)
-├── bsp_pwm.c/h                    # Fan PWM (TIM2_CH4 PJ15, TIM8_CH3 PI15)
+├── bsp_led.c/h                    # On-board LEDs (PB0 green, PE1 yellow)
+├── bsp_pwm.c/h                    # Fan PWM (TIM4_CH4 PD15, TIM8_CH2 PJ6)
 └── bsp_wtdg.c/h                   # MCU internal window WDT
 ```
+
+### Custom Board Target (`application/boards/arm/cioszhong_psu`)
+
+Product-specific board definition derived from NUCLEO-H745ZI-Q, adapted to
+the ePSU hardware (per `pin_config.xlsx`):
+
+| Item | Value |
+|------|-------|
+| Target | `cioszhong_psu/stm32h745xx/m7` |
+| HSE | **25 MHz** external clock on PH0 (`osc_25m`), bypass mode (PH1 is GPIO → no crystal) |
+| PLL1 | M=5, N=192, P=2 → **SYSCLK 480 MHz** (VCO 960 MHz), Q=120 MHz, R=480 MHz |
+| CAN1 | FDCAN1 on PH13 (TX) / PH14 (RX) |
+| CAN2 | FDCAN2 on PB13 (TX) / PB5 (RX) |
+| I2C1 | PB8 (SCL) / PB9 (SDA) — 24C04 EEPROM, WP on PB7 |
+| Console | USART3 PB10(TX)/PB11(RX), 115200 |
+
+`BOARD_ROOT` is registered automatically in `application/CMakeLists.txt`, so
+no `-DBOARD_ROOT` flag is needed.
 
 ### Layer Separation
 
@@ -47,7 +67,7 @@ lib/bsp/                           # Reusable board support package
 
 ## Pin Configuration
 
-### Digital Outputs (32 channels, per pin_config.xlsx)
+### Digital Outputs (36 channels, per pin_config.xlsx)
 
 | Macro | Pin | Signal |
 |-------|-----|--------|
@@ -84,8 +104,11 @@ lib/bsp/                           # Reusable board support package
 | `DOUT_MAINS_CONNECTED_APPHOST` | PJ13 | Mains → app host |
 | `DOUT_MAINS_CONNECTED_IS_PC` | PJ14 | Mains → PC |
 | `DOUT_WDI` | PH9 | MAX6703A WDI feed |
+| `DOUT_LED_PJ0` | PJ0 | 新硬件版状态 LED 0（原 system_on_off，由心跳任务跑马灯驱动） |
+| `DOUT_LED_PJ1` | PJ1 | 新硬件版状态 LED 1（原 system_reset） |
+| `DOUT_LED_PJ2` | PJ2 | 新硬件版状态 LED 2（原 s1_system_config） |
 
-### Digital Inputs (16 channels, per pin_config.xlsx)
+### Digital Inputs (21 channels, per pin_config.xlsx)
 
 | Macro | Pin | Signal |
 |-------|-----|--------|
@@ -95,9 +118,6 @@ lib/bsp/                           # Reusable board support package
 | `DIN_TEMP_ALERT` | PB12 | Temperature alert |
 | `DIN_LED_PWR_24_ON` | PC6 | 24V power LED monitor |
 | `DIN_LED_CP_24V_ON` | PC7 | 24V CP LED monitor |
-| `DIN_SYSTEM_ON_OFF` | PJ0 | System on/off button |
-| `DIN_SYSTEM_RESET` | PJ1 | System reset button |
-| `DIN_S1_SYSTEM_CONFIG` | PJ2 | System 1 config switch |
 | `DIN_S2_SYSTEM_CONFIG` | PJ3 | System 2 config switch |
 | `DIN_SOLO_SYSTEM_CONFIG` | PJ4 | Solo config switch |
 | `DIN_TROLLEY_CONNECTED_J` | PJ5 | Trolley connected (J) |
@@ -137,8 +157,8 @@ lib/bsp/                           # Reusable board support package
 
 | USART | Pins | Baud | Usage |
 |-------|------|------|-------|
-| USART3 | PD8/PD9 | 115200 | Console (printk via ST-LINK VCP) |
-| USART1 | PB14/PB15 | 115200 | Application communication |
+| USART3 | PB10/PB11 | 115200 | Console (printk) + 上位机命令口（见 uart_cmd） |
+| USART1 | PB14/PB15 | 115200 | 备用（当前未使用） |
 
 ## State Machine
 
@@ -150,10 +170,15 @@ PILOT_CONTACT ──(K3 enable, 200ms, PC6 feedback)──▶ SWITCH_ON
 SWITCH_ON ──(K3 close, 500ms, PH5 grid OK)──▶ NORMAL_OP
 NORMAL_OP ──┬──(S2 config)──▶ S2_MODE
             ├──(charging req)──▶ CHARGING
-            ├──(shutdown btn)──▶ SHUTDOWN ──(4-step relay seq)──▶ OFF
+            ├──(shutdown req)──▶ SHUTDOWN ──(4-step relay seq)──▶ OFF
             └──(mains lost / over-temp)──▶ FAULT
-FAULT ──(reset btn / 3s timeout)──▶ RESET ──(2s)──▶ INIT
+FAULT ──(mains OK auto-recover / reset req)──▶ RESET ──(2s)──▶ INIT
 ```
+
+> 注（新硬件改版）：原 PJ0/PJ1/PJ2 上的开关机/复位按键/S1 配置输入已改为
+> LED 输出（由心跳任务跑马灯驱动）。关机改由 `stateMachineRequestShutdown()`
+> 触发，复位改由 `stateMachineRequestReset()` 触发；S1 配置输入移除后，
+> 配置拨码仅剩 S2/SOLO，两者均未置位时默认 S1 单机模式。
 
 ### Relay Sequencing (SHUTDOWN example)
 
@@ -212,24 +237,39 @@ Vishay NTCALUG02A472FA: R25=4700Ω ±1%, B(25/85)=3984K.
 ### Prerequisites
 
 ```bash
-# H745 专用构建 venv（独立，不受 nRF/全局 python 影响）
-export VENV_WEST=~/project/02_zephyr/zephyr_h745_venv/bin/west
+# H745 专用构建 venv（项目自带 .venv，已装 west 1.5.0，已验证可构建）
+export VENV_WEST=/Users/mac/project/03_siemens/ciosZhong_ePSU/.venv/bin/west
 export ZEPHYR_BASE=~/project/02_zephyr/zephyrproject/zephyr
 export ZEPHYR_SDK_INSTALL_DIR=~/project/02_zephyr/zephyr-sdk-1.0.1
 source $ZEPHYR_BASE/zephyr-env.sh
 ```
 
-> 若 venv 不存在或依赖过期，重建：
+> 若 `.venv` 不存在或依赖过期，重建（注意：原文档的
+> `~/project/02_zephyr/zephyr_h745_venv` 在本机不存在，实际用的是项目内 `.venv`）：
 > ```bash
-> /opt/homebrew/opt/python@3.14/bin/python3.14 -m venv ~/project/02_zephyr/zephyr_h745_venv
-> ~/project/02_zephyr/zephyr_h745_venv/bin/pip install -r \
+> /opt/homebrew/opt/python@3.14/bin/python3.14 -m venv .venv
+> .venv/bin/pip install -r \
 >   ~/project/02_zephyr/zephyrproject/zephyr/scripts/requirements-base.txt
 > ```
 
 ### Build
 
+产品板（25 MHz HSE，自定义 board target）：
+
 ```bash
 cd ~/project/02_zephyr/zephyrproject
+$VENV_WEST build \
+  -d ~/project/03_siemens/ciosZhong_ePSU/build \
+  ~/project/03_siemens/ciosZhong_ePSU/application \
+  -b cioszhong_psu/stm32h745xx/m7
+```
+
+> 自定义 board 在 `application/boards/arm/cioszhong_psu/`，`BOARD_ROOT`
+> 已由 `application/CMakeLists.txt` 自动注册，无需额外参数。
+
+NUCLEO 开发板（ST-Link 8 MHz 时钟）仍可构建：
+
+```bash
 $VENV_WEST build \
   -d ~/project/03_siemens/ciosZhong_ePSU/build \
   ~/project/03_siemens/ciosZhong_ePSU/application \

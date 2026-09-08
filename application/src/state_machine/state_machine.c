@@ -18,6 +18,7 @@
 #include <string.h>
 
 /* Zephyr */
+#include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 
 /* BSP */
@@ -29,14 +30,19 @@
 /* Application */
 #include "sensor.h"
 #include "state_machine.h"
+#include "uart_cmd.h"
 
 /* ==================== Timing constants (ms) ==================== */
 
 typedef enum {
 	SM_TIMING_STARTUP_DELAY      = 100,
 	SM_TIMING_K3_WAIT            = 200,
+	SM_TIMING_K3_TIMEOUT         = 1000,   /* pwr_on_off feedback absent → K3 timeout */
 	SM_TIMING_K3_STABLE          = 500,
+	SM_TIMING_SWITCHON_TIMEOUT   = 2000,   /* grid relay feedback absent → switchOn fail */
 	SM_TIMING_RELAY_STEP         = 50,
+	SM_TIMING_S2_STABLE          = 50,
+	SM_TIMING_CHARGING_STABLE    = 100,
 	SM_TIMING_FAULT_RECOVER      = 3000,
 	SM_TIMING_RESET_HOLD         = 2000,
 	SM_TIMING_CHECKS_PERIOD      = 50,
@@ -87,10 +93,9 @@ typedef enum {
 
 #define TROLLEY_EN_MASK      BIT64(DOUT_TROLLEY_ENABLE_DRV)
 
-#define PANEL_LED_MASK       (BIT64(DOUT_DBG_LED0)             | \
-                              BIT64(DOUT_DBG_LED1)             | \
-                              BIT64(DOUT_DBG_LED2)             | \
-                              BIT64(DOUT_LED_PWR_24_ON)        | \
+/* 面板指示灯 mask（不含 PC8-10：那三颗是红/黄/绿状态灯，
+ * 由 led_indicator 单独管理，防止状态机清灯逻辑误清心跳绿/告警红黄） */
+#define PANEL_LED_MASK       (BIT64(DOUT_LED_PWR_24_ON)        | \
                               BIT64(DOUT_LED_CP_224V_ON)       | \
                               BIT64(DOUT_LED_GRID_PWR_IN)      | \
                               BIT64(DOUT_LED_UPS_IN)           | \
@@ -109,8 +114,15 @@ static volatile stateMachineState_t  g_state         = STATEMACHINE_STATE_INIT;
 static stateMachineConfig_t g_config        = STATEMACHINE_CFG_S1;
 static volatile stateMachineError_t  g_error         = STATEMACHINE_ERR_NONE;
 static volatile uint32_t     g_faults        = 0;
-static uint32_t     g_state_ticks   = 0;
+static int64_t     g_entry_ms      = 0;   /* wall-clock ms at state entry (k_uptime_get) */
 static bool         g_stateEntered = false;
+static bool         g_fan_ramped    = false;   /* one-shot fan spin-up ramp in NORMAL_OP */
+
+/* DIN bitmap snapshot, captured once per tick at the top of stateMachineTick().
+ * Every DIN read in this file tests against this snapshot so all reads within
+ * one tick observe the same input state — mirroring the DOUT side's single
+ * bitmap write (bspDoutSetBitmap). Refreshed again in stateMachineInit(). */
+static uint32_t     s_din           = 0;
 
 /* ==================== DIN hold (edge + duration) detectors ====================
  * Detect a signal staying at a target level for a minimum duration.
@@ -184,6 +196,14 @@ static void transitionTo(stateMachineState_t s);
 static bool dinHoldTick(dinHold_t *h, bool level, bool target, uint32_t hold);
 static void dinHoldInit(dinHold_t *h);
 
+/* Wall-clock ms elapsed since the current state was entered. Anchoring all
+ * SM_TIMING_* thresholds to k_uptime_get() (rather than a tick counter) keeps
+ * them correct regardless of scheduling jitter or a long-running tick. */
+static uint32_t elapsedInState(void)
+{
+	return (uint32_t)(k_uptime_get() - (int64_t)g_entry_ms);
+}
+
 /* ==================== Public API ==================== */
 
 void stateMachineInit(void)
@@ -191,8 +211,10 @@ void stateMachineInit(void)
 	g_state          = STATEMACHINE_STATE_INIT;
 	g_error          = STATEMACHINE_ERR_NONE;
 	g_faults         = 0;
-	g_state_ticks    = 0;
-	g_stateEntered  = false;
+	g_entry_ms       = k_uptime_get();
+	g_stateEntered   = false;
+	g_fan_ramped     = false;
+	s_din            = bspDinGetBitmap();   /* snapshot before first config read */
 	g_config         = readConfigSwitches();
 
 	sensorTempInit();
@@ -207,7 +229,7 @@ void stateMachineInit(void)
 
 void stateMachineTick(void)
 {
-	g_state_ticks++;
+	s_din = bspDinGetBitmap();   /* one input snapshot for the entire tick */
 
 	if (!g_stateEntered) {
 		stateEnter(g_state);
@@ -216,7 +238,7 @@ void stateMachineTick(void)
 
 	/* DIN hold detection: on_off toggle/reset, external reset.
 	 * Runs every tick; actions depend on the current state. */
-	bool onoff = bspDinGet(DIN_SYSTEM_ON_OFF);
+	bool onoff = (s_din & BIT(DIN_SYSTEM_ON_OFF)) != 0U;
 
 	if (dinHoldTick(&s_onoff_rising, onoff, true, SM_TIMING_ONOFF_TOGGLE_MS)) {
 		/* on_off 0->1 held 0.55s: toggle system on/off */
@@ -235,7 +257,7 @@ void stateMachineTick(void)
 	 * or a reset press must not auto-restart the system. */
 	if (g_state != STATEMACHINE_STATE_OFF) {
 		if (dinHoldTick(&s_onoff_falling, onoff, false, SM_TIMING_ONOFF_RESET_MS) ||
-		    dinHoldTick(&s_reset_rising, bspDinGet(DIN_SYSTEM_RESET), true, SM_TIMING_RESET_MS)) {
+		    dinHoldTick(&s_reset_rising, (s_din & BIT(DIN_SYSTEM_RESET)) != 0U, true, SM_TIMING_RESET_MS)) {
 			/* on_off 1->0 held 5s, or external reset 0->1 held 1s */
 			g_error = STATEMACHINE_ERR_NONE;
 			stateMachineRequestReset();
@@ -256,6 +278,8 @@ void stateMachineTick(void)
 	case STATEMACHINE_STATE_OFF:           stateRunOff();           break;
 	default:
 		g_state = STATEMACHINE_STATE_FAULT;
+		g_stateEntered = false;
+		g_entry_ms = k_uptime_get();
 		break;
 	}
 }
@@ -283,28 +307,34 @@ void stateMachineRequestShutdown(void)
 	if (g_state == STATEMACHINE_STATE_NORMAL_OP ||
 	    g_state == STATEMACHINE_STATE_S2_MODE ||
 	    g_state == STATEMACHINE_STATE_CHARGING) {
-		printk("STATEMACHINE: shutdown requested\n");
+		if (!uartCmdDfuActive()) {
+			printk("STATEMACHINE: shutdown requested\n");
+		}
 		g_state = STATEMACHINE_STATE_SHUTDOWN;
 		g_stateEntered = false;
-		g_state_ticks = 0;
+		g_entry_ms = k_uptime_get();
 	}
 }
 
 void stateMachineRequestReset(void)
 {
-	printk("STATEMACHINE: reset requested\n");
+	if (!uartCmdDfuActive()) {
+		printk("STATEMACHINE: reset requested\n");
+	}
 	g_state = STATEMACHINE_STATE_RESET;
 	g_stateEntered = false;
-	g_state_ticks = 0;
+	g_entry_ms = k_uptime_get();
 }
 
 void stateMachineRequestCharging(void)
 {
 	if (g_state == STATEMACHINE_STATE_NORMAL_OP) {
-		printk("STATEMACHINE: charging requested\n");
+		if (!uartCmdDfuActive()) {
+			printk("STATEMACHINE: charging requested\n");
+		}
 		g_state = STATEMACHINE_STATE_CHARGING;
 		g_stateEntered = false;
-		g_state_ticks = 0;
+		g_entry_ms = k_uptime_get();
 	}
 }
 
@@ -316,14 +346,22 @@ static void setError(stateMachineError_t err)
 	g_faults |= (uint32_t)err;
 	g_state = STATEMACHINE_STATE_FAULT;
 	g_stateEntered = false;
-	g_state_ticks = 0;
+	g_entry_ms = k_uptime_get();
+
+	/* 故障日志：打印错误码、名称、当前状态与累计故障位。
+	 * DFU 升级期间抑制，避免与串口 ACK 抢 USART1。 */
+	if (!uartCmdDfuActive()) {
+		printk("STATEMACHINE: FAULT err=0x%02X (%s) state=%d faults=0x%02X\n",
+		       (unsigned)err, stateMachineGetErrorStr(err),
+		       (int)g_state, (unsigned)g_faults);
+	}
 }
 
 static void transitionTo(stateMachineState_t s)
 {
 	g_state = s;
 	g_stateEntered = false;
-	g_state_ticks = 0;
+	g_entry_ms = k_uptime_get();
 }
 
 /* ==================== Panel LED control ==================== */
@@ -341,21 +379,21 @@ static void panelLedsUpdate(void)
 		return;
 	}
 
-	bool grid_ok  = bspDinGet(DIN_GRID_MAIN_RELAY_STATUS);  /* PH5: high=valid */
-	bool me_err   = !bspDinGet(DIN_ME_BOX_ERROR);            /* PH6: high=normal -> low=fault */
-	bool trolley  = bspDinGet(DIN_TROLLEY_CONNECTED);        /* PJ5: high=connected */
-	bool is_pc    = bspDinGet(DIN_IS_PC_ON);
-	bool app_host = bspDinGet(DIN_APP_HOST_ON);
-	bool s2       = bspDinGet(DIN_S2_SYSTEM_CONFIG);
-	bool solo     = bspDinGet(DIN_SOLO_SYSTEM_CONFIG);
+	bool grid_ok  = (s_din & BIT(DIN_GRID_MAIN_RELAY_STATUS)) != 0U;  /* PH5: high=valid */
+	bool me_err   = (s_din & BIT(DIN_ME_BOX_ERROR)) == 0U;            /* PH6: high=normal -> low=fault */
+	bool trolley  = (s_din & BIT(DIN_TROLLEY_CONNECTED)) != 0U;       /* PJ5: high=connected */
+	bool is_pc    = (s_din & BIT(DIN_IS_PC_ON)) != 0U;
+	bool app_host = (s_din & BIT(DIN_APP_HOST_ON)) != 0U;
+	bool s2       = (s_din & BIT(DIN_S2_SYSTEM_CONFIG)) != 0U;
+	bool solo     = (s_din & BIT(DIN_SOLO_SYSTEM_CONFIG)) != 0U;
 
 	/* 24V power LED follows the DIN feedback contact (PC6) */
-	bool pwr_24 = bspDinGet(DIN_LED_PWR_24_ON);
+	bool pwr_24 = (s_din & BIT(DIN_LED_PWR_24_ON)) != 0U;
 
 	/* led_system_on blinks in normal/charging, solid in others */
 	bool sys_led;
 	if (g_state == STATEMACHINE_STATE_NORMAL_OP || g_state == STATEMACHINE_STATE_CHARGING) {
-		sys_led = ((g_state_ticks % SM_TIMING_LED_BLINK_NORMAL) < (SM_TIMING_LED_BLINK_NORMAL / 2));
+		sys_led = ((elapsedInState() % SM_TIMING_LED_BLINK_NORMAL) < (SM_TIMING_LED_BLINK_NORMAL / 2));
 	} else {
 		sys_led = true;
 	}
@@ -409,7 +447,10 @@ static void relaysAllOff(void)
 
 static void stateEnter(stateMachineState_t s)
 {
-	printk("STATEMACHINE: -> state %d (t=%ums)\n", (int)s, (unsigned)g_state_ticks);
+	if (!uartCmdDfuActive()) {
+		printk("STATEMACHINE: -> state %d (t=%ums)\n", (int)s,
+		       (unsigned)elapsedInState());
+	}
 
 	switch (s) {
 
@@ -441,6 +482,7 @@ static void stateEnter(stateMachineState_t s)
 		bspDoutSetBitmap(RELAY_MASK_K2_TO_K13, true);
 		panelLedsUpdate();
 		fanSet(true, FAN_DUTY_NORMAL);   /* 50% initial, ramp up over time */
+		g_fan_ramped = false;
 		break;
 
 	case STATEMACHINE_STATE_S2_MODE:
@@ -488,7 +530,9 @@ static void stateEnter(stateMachineState_t s)
 
 static void stateRunInit(void)
 {
-	if (g_state_ticks < SM_TIMING_STARTUP_DELAY) {
+	uint32_t el = elapsedInState();
+
+	if (el < SM_TIMING_STARTUP_DELAY) {
 		return;
 	}
 
@@ -503,7 +547,9 @@ static void stateRunInit(void)
 
 static void stateRunSysOn(void)
 {
-	if (g_state_ticks < SM_TIMING_CONFIG_DEBOUNCE) {
+	uint32_t el = elapsedInState();
+
+	if (el < SM_TIMING_CONFIG_DEBOUNCE) {
 		return;
 	}
 
@@ -519,13 +565,15 @@ static void stateRunSysOn(void)
 
 static void stateRunPilotContact(void)
 {
-	if (g_state_ticks < SM_TIMING_K3_WAIT) {
+	uint32_t el = elapsedInState();
+
+	if (el < SM_TIMING_K3_WAIT) {
 		return;
 	}
 
 	/* Verify pwr_on_off feedback: DIN_LED_PWR_24_ON (PC6) */
-	if (!bspDinGet(DIN_LED_PWR_24_ON)) {
-		if (g_state_ticks > 1000) {
+	if ((s_din & BIT(DIN_LED_PWR_24_ON)) == 0U) {
+		if (el > SM_TIMING_K3_TIMEOUT) {
 			setError(STATEMACHINE_ERR_K3_TIMEOUT);
 		}
 		return;
@@ -536,12 +584,14 @@ static void stateRunPilotContact(void)
 
 static void stateRunSwitchOn(void)
 {
-	if (g_state_ticks < SM_TIMING_K3_STABLE) {
+	uint32_t el = elapsedInState();
+
+	if (el < SM_TIMING_K3_STABLE) {
 		return;
 	}
 
-	if (!bspDinGet(DIN_GRID_MAIN_RELAY_STATUS)) {
-		if (g_state_ticks > 2000) {
+	if ((s_din & BIT(DIN_GRID_MAIN_RELAY_STATUS)) == 0U) {
+		if (el > SM_TIMING_SWITCHON_TIMEOUT) {
 			setError(STATEMACHINE_ERR_SWITCHON_FAIL);
 		}
 		return;
@@ -552,7 +602,9 @@ static void stateRunSwitchOn(void)
 
 static void stateRunNormalOp(void)
 {
-	if ((g_state_ticks % SM_TIMING_CONFIG_DEBOUNCE) == 0) {
+	uint32_t el = elapsedInState();
+
+	if ((el % SM_TIMING_CONFIG_DEBOUNCE) == 0) {
 		stateMachineConfig_t cfg = readConfigSwitches();
 		if (cfg != g_config) {
 			g_config = cfg;
@@ -563,7 +615,7 @@ static void stateRunNormalOp(void)
 		}
 	}
 
-	if ((g_state_ticks % SM_TIMING_CHECKS_PERIOD) == 0) {
+	if ((el % SM_TIMING_CHECKS_PERIOD) == 0) {
 		if (!checkMainsPresent()) {
 			setError(STATEMACHINE_ERR_MAINS_LOSS);
 			return;
@@ -573,7 +625,7 @@ static void stateRunNormalOp(void)
 
 	/* Periodic panel LED refresh + temperature checks.
 	 * Temperatures are sampled by the sensor thread; here we only query. */
-	if ((g_state_ticks % SM_TIMING_CHECKS_PERIOD) == 0) {
+	if ((el % SM_TIMING_CHECKS_PERIOD) == 0) {
 		panelLedsUpdate();
 
 		/* Sensor fault: report immediately rather than treating as cold,
@@ -593,24 +645,28 @@ static void stateRunNormalOp(void)
 
 		/* Adjust fan speed based on temperature */
 		int16_t hi = sensorTempGetMax();
-		if (hi > 0 && g_state_ticks > SM_TIMING_FAN_SPIN_UP) {
+		if (hi > 0 && el > SM_TIMING_FAN_SPIN_UP) {
 			fanSet(true, fanDutyFromTemp(hi));
 		}
 	}
 
-	/* Ramp fan to full speed after spin-up (only if no temp data yet) */
-	if (g_state_ticks == SM_TIMING_FAN_SPIN_UP && sensorTempGetMax() <= 0) {
+	/* Ramp fan to full speed after spin-up (only if no temp data yet).
+	 * Range check (>=) instead of == so a missed tick cannot skip it. */
+	if (!g_fan_ramped && el >= SM_TIMING_FAN_SPIN_UP && sensorTempGetMax() <= 0) {
 		fanSet(true, FAN_DUTY_WARN);
+		g_fan_ramped = true;
 	}
 }
 
 static void stateRunS2Mode(void)
 {
-	if (g_state_ticks < 50) {
+	uint32_t el = elapsedInState();
+
+	if (el < SM_TIMING_S2_STABLE) {
 		return;
 	}
 
-	if ((g_state_ticks % SM_TIMING_CHECKS_PERIOD) == 0) {
+	if ((el % SM_TIMING_CHECKS_PERIOD) == 0) {
 		stateMachineConfig_t cfg = readConfigSwitches();
 		if (cfg != STATEMACHINE_CFG_S2) {
 			g_config = cfg;
@@ -628,11 +684,13 @@ static void stateRunS2Mode(void)
 
 static void stateRunCharging(void)
 {
-	if (g_state_ticks < 100) {
+	uint32_t el = elapsedInState();
+
+	if (el < SM_TIMING_CHARGING_STABLE) {
 		return;
 	}
 
-	if ((g_state_ticks % SM_TIMING_CHECKS_PERIOD) == 0) {
+	if ((el % SM_TIMING_CHECKS_PERIOD) == 0) {
 		stateMachineConfig_t cfg = readConfigSwitches();
 		if (cfg != g_config) {
 			g_config = cfg;
@@ -659,16 +717,18 @@ static void stateRunCharging(void)
 
 static void stateRunShutdown(void)
 {
-	if (g_state_ticks < SM_TIMING_RELAY_STEP) {
+	uint32_t el = elapsedInState();
+
+	if (el < SM_TIMING_RELAY_STEP) {
 		bspDoutSetBitmap(BIT64(DOUT_K4_DRV), false);
-	} else if (g_state_ticks < SM_TIMING_RELAY_STEP * 2) {
+	} else if (el < SM_TIMING_RELAY_STEP * 2) {
 		bspDoutSetBitmap(BIT64(DOUT_K3_DRV), false);
-	} else if (g_state_ticks < SM_TIMING_RELAY_STEP * 3) {
+	} else if (el < SM_TIMING_RELAY_STEP * 3) {
 		bspDoutSetBitmap(RELAY_MASK_K5_TO_K13, false);
 		bspAoutSetState(AOUT_PWR_ON_OFF, false);
 		bspDoutSetBitmap(TROLLEY_EN_MASK, false);
 		fanSet(false, FAN_DUTY_OFF);
-	} else if (g_state_ticks < SM_TIMING_RELAY_STEP * 4) {
+	} else if (el < SM_TIMING_RELAY_STEP * 4) {
 		panelLedsOff();
 		bspLedSwitchOff(0);
 		bspLedSwitchOff(1);
@@ -679,8 +739,10 @@ static void stateRunShutdown(void)
 
 static void stateRunFault(void)
 {
+	uint32_t el = elapsedInState();
+
 	/* Error LED blink */
-	if ((g_state_ticks % SM_TIMING_LED_BLINK_FAULT) < (SM_TIMING_LED_BLINK_FAULT / 2)) {
+	if ((el % SM_TIMING_LED_BLINK_FAULT) < (SM_TIMING_LED_BLINK_FAULT / 2)) {
 		bspLedSwitchOn(1);
 	} else {
 		bspLedSwitchOff(1);
@@ -693,9 +755,12 @@ static void stateRunFault(void)
 	 * Persistent faults (over-temp, switch-on failure, sensor fault) are
 	 * not auto-recovered — they require an external reset, avoiding the
 	 * fault→recover→re-fault oscillation. */
-	if (g_state_ticks > SM_TIMING_FAULT_RECOVER) {
+	if (el > SM_TIMING_FAULT_RECOVER) {
 		if (g_faults & (uint32_t)STATEMACHINE_ERR_MAINS_LOSS) {
 			if (checkMainsPresent()) {
+				if (!uartCmdDfuActive()) {
+					printk("STATEMACHINE: mains restored, auto-recover\n");
+				}
 				g_faults &= ~(uint32_t)STATEMACHINE_ERR_MAINS_LOSS;
 				g_error = STATEMACHINE_ERR_RESET_RECOVERY;
 				transitionTo(STATEMACHINE_STATE_RESET);
@@ -707,10 +772,14 @@ static void stateRunFault(void)
 
 static void stateRunReset(void)
 {
-	if (g_state_ticks < SM_TIMING_RESET_HOLD) {
+	if (elapsedInState() < SM_TIMING_RESET_HOLD) {
 		return;
 	}
 
+	if (!uartCmdDfuActive()) {
+		printk("STATEMACHINE: reset complete, faults cleared (was 0x%02X)\n",
+		       (unsigned)g_faults);
+	}
 	g_faults = 0;
 	g_error = STATEMACHINE_ERR_NONE;
 	transitionTo(STATEMACHINE_STATE_INIT);
@@ -726,11 +795,11 @@ static void stateRunOff(void)
 
 static stateMachineConfig_t readConfigSwitches(void)
 {
-	if (bspDinGet(DIN_S1_SYSTEM_CONFIG)) {
+	if ((s_din & BIT(DIN_S1_SYSTEM_CONFIG)) != 0U) {
 		return STATEMACHINE_CFG_S1;
-	} else if (bspDinGet(DIN_S2_SYSTEM_CONFIG)) {
+	} else if ((s_din & BIT(DIN_S2_SYSTEM_CONFIG)) != 0U) {
 		return STATEMACHINE_CFG_S2;
-	} else if (bspDinGet(DIN_SOLO_SYSTEM_CONFIG)) {
+	} else if ((s_din & BIT(DIN_SOLO_SYSTEM_CONFIG)) != 0U) {
 		return STATEMACHINE_CFG_SOLO;
 	}
 	return STATEMACHINE_CFG_S1;
@@ -738,8 +807,8 @@ static stateMachineConfig_t readConfigSwitches(void)
 
 static bool checkMainsPresent(void)
 {
-	bool trolley = bspDinGet(DIN_TROLLEY_CONNECTED);
-	bool me_error = !bspDinGet(DIN_ME_BOX_ERROR);   /* PH6: high=normal -> low=fault */
+	bool trolley = (s_din & BIT(DIN_TROLLEY_CONNECTED)) != 0U;
+	bool me_error = (s_din & BIT(DIN_ME_BOX_ERROR)) == 0U;   /* PH6: high=normal -> low=fault */
 
 	return trolley && !me_error;
 }

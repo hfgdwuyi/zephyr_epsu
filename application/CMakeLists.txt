@@ -1,5 +1,14 @@
 cmake_minimum_required(VERSION 3.20.0)
 
+# Custom board target (cioszhong_psu) lives in <app>/boards — register the
+# application directory as a board root so
+#   west build -b cioszhong_psu/stm32h745xx/m7
+# finds it without passing -DBOARD_ROOT manually. A user-provided
+# -DBOARD_ROOT on the command line still takes precedence.
+if(NOT DEFINED BOARD_ROOT)
+	set(BOARD_ROOT ${CMAKE_CURRENT_SOURCE_DIR} CACHE STRING "Board root for custom boards")
+endif()
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(CiosZhong_psu)
 

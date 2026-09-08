@@ -28,6 +28,9 @@ void bspAoutInit(void);
 /* Immediate write; value is in millivolts (mV) */
 void bspAoutWrite(uint8_t channel, int16_t writeValue);
 
+/* Last written DAC voltage (mV) — status query for host tools */
+int16_t bspAoutGetMv(uint8_t channel);
+
 /* State-bit driven control (like DOUT): the state machine sets whether
  * a channel is active via bspAoutSetState(); bspAoutPoll() (called from
  * the scheduler) drives the DAC accordingly each period. */

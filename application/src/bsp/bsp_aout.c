@@ -47,6 +47,7 @@ static const struct device *const dac_dev = DEVICE_DT_GET(BSP_DAC_NODE);
 #endif
 
 static bool aout_ready;
+static int16_t last_dac_mv;   /* 最近一次 bspAoutWrite 的电压值 (mV) — 状态查询用 */
 
 static const struct dac_channel_cfg dac_ch_cfg = {
     .channel_id = BSP_DAC_CHANNEL_ID,
@@ -100,6 +101,17 @@ void bspAoutWrite(uint8_t channel, int16_t val)
 
     const uint32_t code = (uint32_t)(((uint64_t)mv * (uint64_t)BSP_AOUT_MAX_CODE) / BSP_AOUT_VREF_MV);
     (void)dac_write_value(dac_dev, BSP_DAC_CHANNEL_ID, code);
+
+    /* 记录最近一次写入值（供上位机状态查询） */
+    last_dac_mv = (int16_t)mv;
+}
+
+int16_t bspAoutGetMv(uint8_t channel)
+{
+    if (channel >= AOUT_CH_COUNT) {
+        return 0;
+    }
+    return last_dac_mv;
 }
 
 /* ---- pwr_on_off: DAC1_OUT2 (PA5), 0-1.5 V @ 0.25 Hz square wave ----
