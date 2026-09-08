@@ -1,0 +1,75 @@
+/*
+ * cioszhong_psu.dtsi — CiosZhong ePSU controller board (STM32H745, M7 core)
+ *
+ * Product-specific board definition for the ePSU power supply controller.
+ * Based on the Zephyr NUCLEO-H745ZI-Q board files, adapted to the product
+ * hardware (see pin_config.xlsx):
+ *
+ *   - HSE: PH0 = OSC_25M (25 MHz external clock, bypass mode).
+ *           PH1 is used as GPIO (DOUT trolley_enable) -> no crystal on
+ *           PH0/PH1, so hse-bypass is correct.
+ *   - FDCAN1: PH13 (CAN1_TX) / PH14 (CAN1_RX)
+ *   - FDCAN2: PB13 (CAN2_TX) / PB5  (CAN2_RX)
+ *   - I2C1:   PB8 (SCL) / PB9 (SDA), WP on PB7
+ *   - Console: USART3 PD8/PD9 (unchanged from NUCLEO)
+ *   - On-board LEDs kept for bsp_led (green PB0 / yellow PE1)
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <st/h7/stm32h745zitx-pinctrl.dtsi>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+
+/ {
+	leds: leds {
+		compatible = "gpio-leds";
+
+		/* LED 低电平点亮 → GPIO_ACTIVE_LOW，gpio_pin_set_dt/toggle_dt
+		 * 会自动反转极性：SwitchOn=物理低=亮。 */
+		green_led: led_1 {
+			gpios = <&gpioc 10 GPIO_ACTIVE_LOW>;
+			label = "Status LED green (PC10)";
+		};
+
+		yellow_led: led_2 {
+			gpios = <&gpioc 8 GPIO_ACTIVE_LOW>;
+			label = "Status LED yellow (PC8)";
+		};
+
+		red_led: led_3 {
+			gpios = <&gpioc 9 GPIO_ACTIVE_LOW>;
+			label = "Status LED red (PC9)";
+		};
+	};
+};
+
+/*
+ * FDCAN1 RX/TX on PH14/PH13 (AF9) per product pin_config.xlsx.
+ * The hal_stm32 H745 pinctrl dtsi does not ship these nodes, so define
+ * them here (same pinmux as H743, same silicon).
+ */
+&pinctrl {
+	fdcan1_rx_ph14: fdcan1_rx_ph14 {
+		pinmux = <STM32_PINMUX('H', 14, AF9)>;
+	};
+
+	fdcan1_tx_ph13: fdcan1_tx_ph13 {
+		pinmux = <STM32_PINMUX('H', 13, AF9)>;
+	};
+};
+
+&rcc {
+	d1cpre = <1>;
+	hpre = <2>;
+	d1ppre = <2>;
+	d2ppre1 = <2>;
+	d2ppre2 = <2>;
+	d3ppre = <2>;
+};
+
+&pwr {
+	/* The product board uses an LDO power scheme (no SMPS inductor), so
+	 * VCORE must be configured for LDO — smps-direct would misconfigure
+	 * the internal supply and the core fails right after reset. */
+	power-supply = "ldo";
+};

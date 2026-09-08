@@ -34,6 +34,7 @@
 #include "state_machine.h"
 #include "sensor.h"
 #include "terminal.h"
+#include "uart_cmd.h"
 #include "ac_meter.h"
 #include "max6703a.h"
 
@@ -152,28 +153,12 @@ static void wdiWorkFn(struct k_work *w)
 
 static K_WORK_DELAYABLE_DEFINE(wdi_work, wdiWorkFn);
 
-/* ========== 3000 ms: status log ========== */
+/* ========== 3000 ms: status log ==========
+ * 实时状态打印已按需求移除（不再每 3 秒刷屏）。
+ * 需要诊断时通过上位机命令 `info` 查询（见 uart_cmd.c）。 */
 
 static void statusWorkFn(struct k_work *w)
 {
-	static const char *const names[] = {
-		[STATEMACHINE_STATE_INIT]          = "INIT",
-		[STATEMACHINE_STATE_SYS_ON]        = "SYS_ON",
-		[STATEMACHINE_STATE_PILOT_CONTACT] = "PILOT",
-		[STATEMACHINE_STATE_SWITCH_ON]     = "SW_ON",
-		[STATEMACHINE_STATE_NORMAL_OP]     = "NORMAL",
-		[STATEMACHINE_STATE_S2_MODE]       = "S2",
-		[STATEMACHINE_STATE_CHARGING]      = "CHARGE",
-		[STATEMACHINE_STATE_SHUTDOWN]      = "SHTDWN",
-		[STATEMACHINE_STATE_FAULT]         = "FAULT",
-		[STATEMACHINE_STATE_RESET]         = "RESET",
-		[STATEMACHINE_STATE_OFF]           = "OFF",
-	};
-	stateMachineState_t s = stateMachineGetState();
-	printk("PSU [%s] err=%s\n",
-		(s < ARRAY_SIZE(names)) ? names[s] : "?",
-		stateMachineGetErrorStr(stateMachineGetError()));
-
 	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(3000));
 }
 
@@ -198,7 +183,7 @@ static void sensorThreadFn(void *p1, void *p2, void *p3)
 	}
 }
 
-/* ========== 500 ms: terminal thread ========== */
+/* ========== 500 ms: terminal print thread ========== */
 
 #define TERM_STACK_SZ  1024
 #define TERM_PRIO      5
@@ -211,6 +196,28 @@ static void termThreadFn(void *p1, void *p2, void *p3)
 	while (1) {
 		terminalUpdate();
 		k_sleep(K_MSEC(TERMINAL_BASE_PERIOD_MS));
+	}
+}
+
+/* ========== 10 ms: UART host command polling ==========
+ * uartCmdPoll() must run at a high cadence: at 115200 baud a DFU data
+ * line (~1 KB) arrives every ~90 ms. A 500 ms cadence lets the RX ring
+ * buffer overflow and corrupt lines mid-transfer, so host commands are
+ * serviced here on a dedicated 10 ms thread, decoupled from the slow
+ * terminal print thread. */
+
+#define CMD_STACK_SZ  1024
+#define CMD_PRIO      5
+#define CMD_POLL_MS   10
+
+static struct k_thread cmd_thread;
+K_THREAD_STACK_DEFINE(cmd_stack, CMD_STACK_SZ);
+
+static void cmdThreadFn(void *p1, void *p2, void *p3)
+{
+	while (1) {
+		uartCmdPoll();
+		k_sleep(K_MSEC(CMD_POLL_MS));
 	}
 }
 
@@ -258,6 +265,12 @@ void schedulerStart(void)
 			K_THREAD_STACK_SIZEOF(term_stack),
 			termThreadFn, NULL, NULL, NULL,
 			TERM_PRIO, 0, K_NO_WAIT);
+
+	/* UART host command thread — 10 ms cadence (see cmdThreadFn above) */
+	k_thread_create(&cmd_thread, cmd_stack,
+			K_THREAD_STACK_SIZEOF(cmd_stack),
+			cmdThreadFn, NULL, NULL, NULL,
+			CMD_PRIO, 0, K_NO_WAIT);
 
 	/* AC mains meter thread — samples adc_vin at ~1 kHz, RMS over one
 	 * mains period sized by the zero_en edge timing. */

@@ -1,0 +1,143 @@
+/*
+ * cioszhong_psu_stm32h745xx_m7.dts — CiosZhong ePSU controller, CM7 core
+ *
+ * Clock configuration:
+ *   HSE = 25 MHz external clock on PH0 (OSC_25M, bypass mode).
+ *   PLL1: div-m = 5, mul-n = 192, div-p = 2
+ *     VCO_in  = 25/5 = 5 MHz     (H7 PLL input range 1-16 MHz)
+ *     VCO     = 5*192 = 960 MHz  (within 192-960 MHz)
+ *     PLL1P   = 960/2 = 480 MHz  = SYSCLK (unchanged from NUCLEO config)
+ *     PLL1Q   = 960/8 = 120 MHz  (unchanged)
+ *     PLL1R   = 960/2 = 480 MHz  (unchanged)
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+#include <st/h7/stm32h745Xi_m7.dtsi>
+#include "cioszhong_psu.dtsi"
+
+/ {
+	model = "Siemens CiosZhong ePSU controller board";
+	compatible = "siemens,cioszhong-psu";
+
+	/* HW resources belonging to CM7 */
+	chosen {
+		zephyr,console = &usart1;
+		zephyr,shell-uart = &usart1;
+		zephyr,dtcm = &dtcm;
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,canbus = &fdcan1;
+	};
+
+	aliases {
+		led0 = &green_led;
+	};
+};
+
+/*
+ * TEMP BRING-UP: use the internal HSI (64 MHz) so the firmware no longer
+ * depends on the external 25 MHz clock source on PH0. Set back to HSE
+ * once the board is verified. (See git history for the HSE 25 MHz config.)
+ */
+&clk_hsi {
+	status = "okay";
+};
+
+&clk_hse {
+	status = "disabled";
+};
+
+&pll {
+	div-m = <8>;    /* HSI 64 MHz / 8 = 8 MHz VCO-in */
+	mul-n = <120>;  /* VCO = 960 MHz */
+	div-p = <2>;    /* SYSCLK = 480 MHz */
+	div-q = <8>;    /* PLL1Q = 120 MHz */
+	div-r = <2>;    /* PLL1R = 480 MHz */
+	clocks = <&clk_hsi>;
+	status = "okay";
+};
+
+&rcc {
+	clocks = <&pll>;
+	clock-frequency = <DT_FREQ_M(480)>;
+};
+
+/* USART1 on PB14(TX)/PB15(RX) is the product debug/host UART.
+ * USART3 is not used on this board (PB10/PB11 are ethernet signals). */
+&usart1 {
+	pinctrl-0 = <&usart1_tx_pb14 &usart1_rx_pb15>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};
+
+&usart3 {
+	status = "disabled";
+};
+
+/* I2C1 on PB8/PB9 (EEPROM 24C04 @0x50, WP on PB7) */
+&i2c1 {
+	pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb9>;
+	pinctrl-names = "default";
+	status = "okay";
+	clock-frequency = <I2C_BITRATE_FAST>;
+};
+
+/*
+ * CAN per product pin_config.xlsx:
+ *   CAN1: PH13 (can1_tx) / PH14 (can1_rx)   -> FDCAN1
+ *   CAN2: PB13 (can2_tx) / PB5  (can2_rx)   -> FDCAN2
+ * HSE-derived clock is used by default (no explicit clocks property).
+ */
+&fdcan1 {
+	pinctrl-0 = <&fdcan1_rx_ph14 &fdcan1_tx_ph13>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&fdcan2 {
+	pinctrl-0 = <&fdcan2_rx_pb5 &fdcan2_tx_pb13>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+/* ==================== MCUboot dual-slot flash layout ====================
+ * Mirrors the WORKING Ethernet-upgrade reference project (ciosZhong_ePSU
+ * @ zephyrproject/build_epsu, nucleo_h745zi_q): flash0 is declared as ONE
+ * contiguous 2 MB device covering bank1 (0x08000000) + bank2 (0x08100000).
+ * A separate flash1 device is NEVER created. Reg offsets are relative to
+ * 0x08000000:
+ *   boot    128KB @ 0x00000000  (MCUboot)
+ *   slot0   512KB @ 0x00020000  (primary app image)
+ *   slot1   512KB @ 0x00100000  (secondary / DFU staging image, on bank2)
+ * Upgrade mode: SWAP_USING_OFFSET — no scratch partition required.
+ * Defined here so both the MCUboot bootloader build and the app build
+ * agree on the layout. */
+&flash0 {
+	reg = <0x08000000 DT_SIZE_M(2)>;
+	ranges = <0 0x08000000 DT_SIZE_M(2)>;
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x00000000 DT_SIZE_K(128)>;
+			read-only;
+		};
+
+		slot0_partition: partition@20000 {
+			label = "image-0";
+			reg = <0x00020000 DT_SIZE_K(512)>;
+		};
+
+		slot1_partition: partition@100000 {
+			label = "image-1";
+			reg = <0x00100000 DT_SIZE_K(512)>;
+		};
+	};
+};

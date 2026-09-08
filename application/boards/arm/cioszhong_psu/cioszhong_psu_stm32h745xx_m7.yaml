@@ -1,0 +1,20 @@
+identifier: cioszhong_psu/stm32h745xx/m7
+name: CiosZhong ePSU Controller (M7)
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+ram: 512
+flash: 1024
+supported:
+  - uart
+  - gpio
+  - i2c
+  - pwm
+  - can
+  - adc
+  - dac
+  - watchdog
+  - spi
+vendor: siemens

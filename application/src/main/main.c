@@ -10,6 +10,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/sys/printk.h>
+#include <zephyr/dfu/mcuboot.h>
 
 /* CANopen */
 #define DEF_HW_PART
@@ -22,6 +23,7 @@
 
 /* BSP */
 #include "bsp_board.h"
+#include "bsp_dio.h"   /* DOUT_DBG_LED0/1/2 (PC8-10 debug LEDs) */
 #include "bsp_led.h"
 #include "bsp_wtdg.h"
 
@@ -87,12 +89,22 @@ static void canopenInit(void)
 	printk("CANopen: nodeId=%d operational\n", getNodeId());
 }
 
-/* ---- Heartbeat LED thread ---- */
+/* ---- Heartbeat LED thread ----
+ * 绿(PC10=OK)心跳；黄(PC8=WARN)/红(PC9=FAULT)由状态机控制。 */
 
 static void heartbeatThreadFn(void *p1, void *p2, void *p3)
 {
 	while (1) {
-		bspLedToggle(SYSTEM_OK_LED_NUM);
+		bspLedToggle(SYSTEM_OK_LED_NUM);   /* 绿 PC10 0.5s 心跳 */
+
+		/* Feed MAX6703A external watchdog (WDI toggle, 1s period < 1.6s
+		 * timeout) so the chip is not reset while bring-up runs. */
+		bspDoutSetBitmap(BIT64(DOUT_WDI), !(bspDoutGetBitmap() & BIT64(DOUT_WDI)));
+
+		/* BRING-UP mode: the scheduler (dout_work) is not running, so flush
+		 * the DOUT bitmap to GPIO here manually. */
+		bspDoutUpdate();
+
 		k_sleep(K_MSEC(500));
 	}
 }
@@ -135,8 +147,15 @@ static void flushmbxStart(void)
 
 int main(void)
 {
-	printk("\n===== CiosZhong PSU v%s =====\n",
-	       CONFIG_CIOS_ZHONG_FW_VERSION);
+	printk("CiosZhong PSU: app v%s / boot v%s\n",
+	       CONFIG_CIOS_ZHONG_FW_VERSION, CONFIG_CIOS_ZHONG_BOOT_VERSION);
+
+	/* MCUboot 升级确认：若本次是从 slot1 test-swap 启动的新固件，
+	 * 立即标记 image-ok，固化新版本，防止下次复位被 revert 回旧版。 */
+	if (!boot_is_img_confirmed()) {
+		boot_write_img_confirmed();
+		printk("MCUboot: image confirmed\n");
+	}
 
 	bspBoardInit();
 	stateMachineInit();
@@ -144,7 +163,7 @@ int main(void)
 	max6703aInit();
 	acMeterInit();
 
-	/* LED heartbeat */
+	/* LED heartbeat (also feeds MAX6703A WDI in bring-up mode) */
 	heartbeatStart();
 
 	/* ---- CANopen (disabled — no external transceiver on NUCLEO) ----

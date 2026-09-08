@@ -1,0 +1,9 @@
+# CiosZhong ePSU controller board configuration
+
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_CIOSZHONG_PSU
+
+# No board-level Kconfig defaults yet.
+
+endif # BOARD_CIOSZHONG_PSU

@@ -1,0 +1,6 @@
+board:
+  name: cioszhong_psu
+  full_name: CiosZhong ePSU Controller
+  vendor: siemens
+  socs:
+    - name: stm32h745xx

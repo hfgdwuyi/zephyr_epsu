@@ -21,6 +21,7 @@
 
 /* Application */
 #include "terminal.h"
+#include "uart_cmd.h"
 #include "sensor.h"
 #include "ac_meter.h"
 
@@ -104,6 +105,15 @@ static void printTemp(const char *name, int16_t t)
 
 void terminalUpdate(void)
 {
+	/* 上位机命令服务（USART1）由 scheduler 的 10 ms cmd 线程轮询，
+	 * 此处不再调用 uartCmdPoll()（500ms 周期太慢，DFU 时 RX 会溢出）。 */
+
+	/* DFU 上传期间静默：SENSOR printk 与升级 ACK 共用 USART1，
+	 * 打印会抢占总线导致主机收不到完整的 "ok" 应答。 */
+	if (uartCmdDfuActive()) {
+		return;
+	}
+
 	int16_t t1 = sensorTempGet1();
 	int16_t t2 = sensorTempGet2();
 

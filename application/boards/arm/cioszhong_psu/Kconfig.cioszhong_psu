@@ -1,0 +1,6 @@
+# CiosZhong ePSU controller board configuration
+
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_CIOSZHONG_PSU
+	select SOC_STM32H745XX_M7

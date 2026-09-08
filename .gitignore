@@ -37,3 +37,9 @@ Thumbs.db
 
 # Cache
 .cache/__pycache__/
+
+# Tool caches
+.opencode/
+.pylibs/
+**/.cache/
+.cache/
