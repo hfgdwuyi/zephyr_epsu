@@ -26,8 +26,7 @@ echo "Flashing $HEX ..."
 for i in 1 2 3 4 5 6; do
     echo "=== attempt $i ==="
     if openocd -f board/st_nucleo_h745zi.cfg \
-        -c "reset_config srst_only" \
-        -c "adapter speed 950" \
+                -c "adapter speed 950" \
         -c "init" -c "reset halt" -c "halt" \
         -c "program $HEX verify reset exit" \
         2>&1 | tee /tmp/flash_openocd.log | grep -q "Verified OK"; then

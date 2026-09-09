@@ -30,8 +30,7 @@ WANT=${1:-all}   # all | boot | app
 flash_once() {   # $1=bin  $2=addr  $3=name
     echo "== 烧录 $3 ($1) @ $2 =="
     openocd -f board/st_nucleo_h745zi.cfg \
-        -c "reset_config srst_only" \
-        -c "adapter speed 950" \
+                -c "adapter speed 950" \
         -c "init" -c "reset halt" -c "halt" \
         -c "program $1 $2 verify reset exit" \
         2>&1 | tee /tmp/flash_$3.log | grep -q "Verified OK"

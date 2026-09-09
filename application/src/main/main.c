@@ -23,7 +23,6 @@
 
 /* BSP */
 #include "bsp_board.h"
-#include "bsp_dio.h"   /* DOUT_DBG_LED0/1/2 (PC8-10 debug LEDs) */
 #include "bsp_led.h"
 #include "bsp_wtdg.h"
 
@@ -89,23 +88,14 @@ static void canopenInit(void)
 	printk("CANopen: nodeId=%d operational\n", getNodeId());
 }
 
-/* ---- Heartbeat LED thread ----
- * 绿(PC10=OK)心跳；黄(PC8=WARN)/红(PC9=FAULT)由状态机控制。 */
+/* ---- Heartbeat LED thread ---- */
 
 static void heartbeatThreadFn(void *p1, void *p2, void *p3)
 {
 	while (1) {
-		bspLedToggle(SYSTEM_OK_LED_NUM);   /* 绿 PC10 0.5s 心跳 */
+		bspLedToggle(SYSTEM_OK_LED_NUM);  
 
-		/* Feed MAX6703A external watchdog (WDI toggle, 1s period < 1.6s
-		 * timeout) so the chip is not reset while bring-up runs. */
-		bspDoutSetBitmap(BIT64(DOUT_WDI), !(bspDoutGetBitmap() & BIT64(DOUT_WDI)));
-
-		/* BRING-UP mode: the scheduler (dout_work) is not running, so flush
-		 * the DOUT bitmap to GPIO here manually. */
-		bspDoutUpdate();
-
-		k_sleep(K_MSEC(500));
+		k_sleep(K_MSEC(200));
 	}
 }
 

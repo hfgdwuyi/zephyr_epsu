@@ -374,14 +374,14 @@ static void cmdGetDin(void)
  *
  * MCUboot SWAP_USING_OFFSET 布局：slot1 的第一个扇区保留给 swap 算法做
  * 移动缓冲，升级镜像必须从 slot1 的第二个扇区开始存放（即偏移
- * DFU_SECONDARY_IMG_OFFSET = 一个 flash 扇区大小）。mirror 头在
- * slot1+DFU_SECONDARY_IMG_OFFSET 处被 MCUboot 找到才算有效升级。
+ * MCUboot OVERWRITE_ONLY：镜像从 slot1 起始(0x0)写入，MCUboot 读
+ * slot1 头判断并整体覆盖到 slot0。DFU_SECONDARY_IMG_OFFSET = 0。
  */
 #define DFU_BLOCK_MAX            512   /* bytes per data line */
 #define DFU_HEX_CHARS            (DFU_BLOCK_MAX * 2)
-/* slot1 的 flash 扇区 = 128KB (0x20000)；swap-using-offset 下升级镜像
- * 必须放在 slot1 第二个扇区起（第一扇区作 swap 移动缓冲）。 */
-#define DFU_SECONDARY_IMG_OFFSET 0x20000U
+/* MCUboot 升级策略为 OVERWRITE_ONLY：MCUboot 从 slot1 起始(0x0)读
+ * 镜像头并整体覆盖到 slot0，无 swap 第二扇区偏移要求。故写 0x0 起。 */
+#define DFU_SECONDARY_IMG_OFFSET 0x0U
 
 static struct {
 	bool     active;

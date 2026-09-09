@@ -14,9 +14,6 @@
  *   bsp_aout        — pwr_on_off DAC output
  */
 
-/* C standard library */
-#include <string.h>
-
 /* Zephyr */
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
@@ -266,11 +263,11 @@ void stateMachineTick(void)
 
 	switch (g_state) {
 	case STATEMACHINE_STATE_INIT:          stateRunInit();          break;
-	case STATEMACHINE_STATE_SYS_ON:        stateRunSysOn();        break;
-	case STATEMACHINE_STATE_PILOT_CONTACT: stateRunPilotContact(); break;
-	case STATEMACHINE_STATE_SWITCH_ON:     stateRunSwitchOn();     break;
-	case STATEMACHINE_STATE_NORMAL_OP:     stateRunNormalOp();     break;
-	case STATEMACHINE_STATE_S2_MODE:       stateRunS2Mode();       break;
+	case STATEMACHINE_STATE_SYS_ON:        stateRunSysOn();         break;
+	case STATEMACHINE_STATE_PILOT_CONTACT: stateRunPilotContact();  break;
+	case STATEMACHINE_STATE_SWITCH_ON:     stateRunSwitchOn();      break;
+	case STATEMACHINE_STATE_NORMAL_OP:     stateRunNormalOp();      break;
+	case STATEMACHINE_STATE_S2_MODE:       stateRunS2Mode();        break;
 	case STATEMACHINE_STATE_CHARGING:      stateRunCharging();      break;
 	case STATEMACHINE_STATE_SHUTDOWN:      stateRunShutdown();      break;
 	case STATEMACHINE_STATE_FAULT:         stateRunFault();         break;
@@ -460,14 +457,12 @@ static void stateEnter(stateMachineState_t s)
 		relaysAllOff();
 		panelLedsOff();
 		fanSet(false, FAN_DUTY_OFF);
-		bspLedSwitchOff(0);
 		bspLedSwitchOff(1);
 		break;
 
 	case STATEMACHINE_STATE_SYS_ON:
 		bspDoutSetBitmap(TROLLEY_EN_MASK, true);
 		panelLedsUpdate();
-		bspLedSwitchOn(0);
 		break;
 
 	case STATEMACHINE_STATE_PILOT_CONTACT:
@@ -507,7 +502,6 @@ static void stateEnter(stateMachineState_t s)
 		relaysAllOff();
 		panelLedsOff();
 		fanSet(false, FAN_DUTY_OFF);
-		bspLedSwitchOff(0);
 		bspLedSwitchOn(1);
 		break;
 
@@ -517,7 +511,6 @@ static void stateEnter(stateMachineState_t s)
 		bspDoutSetBitmap(RELAY_MASK_K3 | BIT64(DOUT_K4_DRV), false);
 		panelLedsOff();
 		fanSet(false, FAN_DUTY_OFF);
-		bspLedSwitchOff(0);
 		bspLedSwitchOff(1);
 		break;
 
@@ -730,7 +723,6 @@ static void stateRunShutdown(void)
 		fanSet(false, FAN_DUTY_OFF);
 	} else if (el < SM_TIMING_RELAY_STEP * 4) {
 		panelLedsOff();
-		bspLedSwitchOff(0);
 		bspLedSwitchOff(1);
 	} else {
 		transitionTo(STATEMACHINE_STATE_OFF);

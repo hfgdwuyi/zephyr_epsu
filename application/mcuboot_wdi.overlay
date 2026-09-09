@@ -1,0 +1,16 @@
+/*
+ * mcuboot_wdi.overlay — 给 MCUboot 定义外部看门狗 WDI GPIO (PH9)
+ *
+ * MCUboot overwrite 覆盖 slot1→slot0 期间需持续喂外部 MAX6703A(WDI=PH9)，
+ * 否则 1.6s 看门狗会复位打断覆盖 → slot0 半写 → 重启读崩。
+ * 配合自定义 mcuboot_watchdog_feed()（见工程内补丁）toggle 此引脚。
+ */
+/ {
+	wdi-gpio {
+		compatible = "gpio-leds";
+		mcuboot_wdi: mcuboot_wdi {
+			gpios = <&gpioh 9 GPIO_ACTIVE_HIGH>;
+			label = "MCUboot external watchdog WDI (PH9)";
+		};
+	};
+};
