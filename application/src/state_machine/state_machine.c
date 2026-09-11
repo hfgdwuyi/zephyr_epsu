@@ -12,7 +12,6 @@
  *      状态信息由本模块与各系统在状态迁移时直接打印到串口
  *      （STATEMACHINE: system -> … / S1: -> … / S2: -> …）
  *
- * 喂狗引脚 WDI(PH9) 由 max6703a 模块独立维护，本模块一律不触碰。
  */
 /*----------------------------------------------------------------------------*/
 /* Zephyr */
@@ -66,7 +65,7 @@ static smSystem_t systemDetect(uint32_t din)
 		return SYSTEM_S1;
 	}
 	if (!pj2 && pj3) {
-		/* S2 内部的 solo / classic 由 sm_s2.c 按 pj4 判定并打印 */
+		
 		return SYSTEM_S2;
 	}
 	return SYSTEM_NONE;
@@ -106,7 +105,6 @@ void stateMachineTick(void)
 		}
 	}
 
-	/* ---- 按系统分派 ---- */
 	switch (g_system) {
 	case SYSTEM_S1:
 		smS1Tick(din);
