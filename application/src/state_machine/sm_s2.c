@@ -28,7 +28,7 @@ static const char *s2StateName(smS2State_t st);
 
 /* ==================== 内部状态 ==================== */
 
-static smS2State_t s2_state = SM_S2_OFF_STANDBY;
+static smS2State_t s2_state = SM_S2_STANDBY;
 static int64_t     s2_entry_ms;
 static uint32_t    s2_prev_din;
 static bool        s2_prev_valid;    /* 首个 tick 不做边沿判定 */
@@ -82,7 +82,7 @@ static uint64_t s2ModeLed(void)
  * K8_1 K8_2 K9 K13 K11 K12 合
  * K10 = n/a（Excel 不控制）→ 保持断开
  */
-static void s2OutputOn(uint32_t din)
+static void s2OutputRun(uint32_t din)
 {
 	uint64_t relay = K4 | K7 | K6 |
 			 K8_1 | K8_2 | K9 | K13 | K11 | K12;
@@ -145,11 +145,11 @@ static void s2OutputReset(void)
 static void s2Output(smS2State_t st, uint32_t din)
 {
 	switch (st) {
-	case SM_S2_ON:            s2OutputOn(din);              			break;
-	case SM_S2_OFF_STANDBY:   s2OutputOff(din, true);     	break;
-	case SM_S2_OFF_NO_STANDBY:s2OutputOff(din, false);   	 break;
-	case SM_S2_RESET:         s2OutputReset();              			break;
-	default:                  break;
+	case SM_S2_RUN:          s2OutputRun(din);        break;
+	case SM_S2_STANDBY:      s2OutputOff(din, true);  break;
+	case SM_S2_OFF_NO_MAINS: s2OutputOff(din, false); break;
+	case SM_S2_RESET:        s2OutputReset();         break;
+	default:                 break;
 	}
 }
 
@@ -170,11 +170,11 @@ static void s2EnterState(smS2State_t st, uint32_t din)
 static const char *s2StateName(smS2State_t st)
 {
 	switch (st) {
-	case SM_S2_ON:             return "ON 系统开机";
-	case SM_S2_OFF_STANDBY:    return "OFF 关机·待机";
-	case SM_S2_OFF_NO_STANDBY: return "OFF 关机·非待机";
-	case SM_S2_RESET:          return "RESET 硬件复位";
-	default:                   return "?";
+	case SM_S2_RUN:          return "RUN 系统开机";
+	case SM_S2_STANDBY:      return "STANDBY 关机·待机";
+	case SM_S2_OFF_NO_MAINS: return "OFF 关机·非待机";
+	case SM_S2_RESET:        return "RESET 硬件复位";
+	default:                 return "?";
 	}
 }
 
@@ -183,7 +183,7 @@ void smS2Enter(void)
 	s2_prev_valid = false;
 	s2_prev_din   = 0;
 	s2_solo       = false;
-	s2EnterState(SM_S2_OFF_STANDBY, 0);
+	s2EnterState(SM_S2_STANDBY, 0);
 }
 
 smS2State_t smS2Tick(uint32_t din)
@@ -218,7 +218,7 @@ smS2State_t smS2Tick(uint32_t din)
 
 	if (s2_state == SM_S2_RESET) {
 		if (!reset && (k_uptime_get() - s2_entry_ms) >= S2_RESET_HOLD_MS) {
-			s2EnterState(mains ? SM_S2_OFF_STANDBY : SM_S2_OFF_NO_STANDBY, din);
+			s2EnterState(mains ? SM_S2_STANDBY : SM_S2_OFF_NO_MAINS, din);
 		}
 		s2_prev_din = din;
 		return s2_state;
@@ -226,30 +226,30 @@ smS2State_t smS2Tick(uint32_t din)
 
 	switch (s2_state) {
 
-	case SM_S2_ON:
+	case SM_S2_RUN:
 		/* 关机请求 → 按市电在场与否进待机 / 非待机
 		 * （Excel 未定义开机态市电掉电的行为 → 保持开机，同 S1 的 OR 思路） */
 		if (onoff_rise) {
-			s2EnterState(mains ? SM_S2_OFF_STANDBY
-				       : SM_S2_OFF_NO_STANDBY, din);
+			s2EnterState(mains ? SM_S2_STANDBY
+				       : SM_S2_OFF_NO_MAINS, din);
 		} else {
-			s2OutputOn(din);   /* K5/延时位随推车、IS_PC、APP_HOST 实时更新 */
+			s2OutputRun(din);   /* K5/延时位随推车、IS_PC、APP_HOST 实时更新 */
 		}
 		break;
 
-	case SM_S2_OFF_STANDBY:
+	case SM_S2_STANDBY:
 		if (!mains) {
-			s2EnterState(SM_S2_OFF_NO_STANDBY, din);   /* 市电掉电 → 非待机 */
+			s2EnterState(SM_S2_OFF_NO_MAINS, din);   /* 市电掉电 → 非待机 */
 		} else if (onoff_rise) {
-			s2EnterState(SM_S2_ON, din);               /* 按键开机 */
+			s2EnterState(SM_S2_RUN, din);               /* 按键开机 */
 		} else {
 			s2OutputOff(din, true);
 		}
 		break;
 
-	case SM_S2_OFF_NO_STANDBY:
+	case SM_S2_OFF_NO_MAINS:
 		if (mains) {
-			s2EnterState(SM_S2_OFF_STANDBY, din);      /* 市电恢复 → 待机 */
+			s2EnterState(SM_S2_STANDBY, din);      /* 市电恢复 → 待机 */
 		} else {
 			s2OutputOff(din, false);
 		}

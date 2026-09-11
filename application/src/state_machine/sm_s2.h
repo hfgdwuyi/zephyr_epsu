@@ -24,10 +24,10 @@
 #include <stdint.h>
 
 typedef enum {
-	SM_S2_ON = 0,          /* 系统开机                        */
-	SM_S2_OFF_STANDBY,     /* 关机 · 市电在场（待机）          */
-	SM_S2_OFF_NO_STANDBY,  /* 关机 · 市电掉电（非待机）        */
-	SM_S2_RESET,           /* 硬件复位                        */
+	SM_S2_RUN = 0,          /* 开机运行（Excel: s2 <mode> mode on）      */
+	SM_S2_STANDBY,          /* 关机·待机：市电在场（Excel: off in standby）*/
+	SM_S2_OFF_NO_MAINS,     /* 关机·非待机：市电掉电（off not standby）  */
+	SM_S2_RESET,            /* 硬件复位                                  */
 	SM_S2_STATE_COUNT
 } smS2State_t;
 

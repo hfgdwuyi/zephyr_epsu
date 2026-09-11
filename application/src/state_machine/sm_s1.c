@@ -5,13 +5,13 @@
  * 管脚处理：直接操作 BSP 的位图接口 bspDoutSetBitmap()，在各自子状态中
  * 指定位置调用 —— 没有中间状态表，也没有通用 apply 包装：
  *
- *   relayWrite(S1_T0_RELAY);                // 继电器电平：要的写 1，其余写 0
+ *   relayWrite(S1_STANDBY_RELAY);                // 继电器电平：要的写 1，其余写 0
  *   ledWrite(...);                          // LED 电平：同上
  *
  * 每个状态写出自己那一份完整电平，不做"整组复位再重设"：
- * 本状态仍然要合的路（例如 T2 里的 K3/K13）不会被中途拉掉，
+ * 本状态仍然要合的路（例如 RUN 状态里的 K3/K13）不会被中途拉掉，
  * 只把本状态不需要的路明确写 0。relay 与 led 写法完全一致，不区分系统归属。
- * K2~K7 是交流继电器，K8_1/K8_2/K9~K13 是 efuse。T2/T3 上电时两组
+ * K2~K7 是交流继电器，K8_1/K8_2/K9~K13 是 efuse。RUN / RUN_OR 上电时两组
  * 同时起步、各自内部依次延时 10ms（md："AC relays delay each other by
  * 10 ms; DC efuse enables delay each other by 10 ms"）—— staging 因此是
  * 两条并行的轨道，每 10ms 各直接 bspDoutSetBitmap(BIT64(pin), true) 一路。
@@ -30,13 +30,13 @@
  *   K2~K7        = 交流继电器（AC）
  *   K8_1/K8_2/K9~K13 = efuse
  */
-#define S1_T0_RELAY  (K3 | K13)                                   /* 待机回路 */
-#define S1_T1_RELAY  (K3 | K13)                                   /* 市电掉电仍保持待机回路 */
-#define S1_T2_RELAY  (K3 | K4 | K5 | K6 | K7 |                    \
+#define S1_STANDBY_RELAY  (K3 | K13)                                   /* 待机回路 */
+#define S1_OFF_NO_MAINS_RELAY  (K3 | K13)                                   /* 市电掉电仍保持待机回路 */
+#define S1_RUN_RELAY  (K3 | K4 | K5 | K6 | K7 |                    \
 		      K8_1 | K9 | K11 | K12 | K13)               /* 开机 */
-#define S1_T3_RELAY  (K2 | K6 | K7 |                              \
+#define S1_RUN_OR_RELAY  (K2 | K6 | K7 |                              \
 		      K8_1 | K9 | K10 | K11 | K12 | K13)         /* OR 模式 */
-#define S1_T4_RELAY  (K3 | K13)                                   /* 关机：+ K9/K10 动态 */
+#define S1_SHUTDOWN_RELAY  (K3 | K13)                                   /* 关机：+ K9/K10 动态 */
 
 /* 状态名（仅本文件打印用） */
 static const char *s1StateName(smS1State_t st);
@@ -49,22 +49,22 @@ static const char *s1StateName(smS1State_t st);
  *   ac  : K2~K7   交流继电器
  *   ef  : K8_1/K8_2/K9~K13  efuse
  */
-static const uint8_t s1_t2_ac[] = {
+static const uint8_t s1RunAc[] = {
 	DOUT_K3_DRV, DOUT_K4_DRV, DOUT_K5_DRV, DOUT_K6_DRV, DOUT_K7_DRV,
 };
-static const uint8_t s1_t2_ef[] = {
+static const uint8_t s1RunEf[] = {
 	DOUT_K8_1_EN, DOUT_K9_EN, DOUT_K11_EN, DOUT_K12_EN, DOUT_K13_EN,
 };
 
-static const uint8_t s1_t3_ac[] = {
+static const uint8_t s1RunOrAc[] = {
 	DOUT_K2_DRV, DOUT_K6_DRV, DOUT_K7_DRV,
 };
-static const uint8_t s1_t3_ef[] = {
+static const uint8_t s1RunOrEf[] = {
 	DOUT_K8_1_EN, DOUT_K9_EN, DOUT_K10_EN, DOUT_K11_EN, DOUT_K12_EN,
 	DOUT_K13_EN,
 };
 
-static smS1State_t s1_state = SM_S1_T0;
+static smS1State_t s1_state = SM_S1_STANDBY;
 static int64_t     s1_entry_ms;
 static uint32_t    s1_prev_din;
 static bool        s1_prev_valid;   /* 首个 tick 不做边沿判定（无历史值） */
@@ -111,52 +111,52 @@ static void relayStage(uint64_t target,
 /* ==================== 各子状态的管脚输出 ==================== */
 /* 管脚号直接写在各状态自己的函数里，改哪一路就改哪一行 */
 
-/* T0 上电待机：K3 + K13 待机回路 + 供电指示 */
-static void s1OutputT0(void)
+/* STANDBY（md T0）上电待机：K3 + K13 待机回路 + 供电指示 */
+static void s1OutputStandby(void)
 {
-	relayWrite(S1_T0_RELAY);
+	relayWrite(S1_STANDBY_RELAY);
 	ledWrite(L_GRID_IN | L_PWR24 | L_CP224 | L_TROLLEY |
 		 D_MAINS_MCU | D_MAINS_IS_PC);
 }
 
-/* T1 市电掉电 / OR 关机：继电器保持待机回路（同 T0，市电掉电也能进待机）
- * LED：md 未给出该状态的点亮要求 → 全灭（若需与 T0 一致请说明） */
-static void s1OutputT1(void)
+/* OFF_NO_MAINS（md T1）市电掉电 / OR 关机：继电器保持待机回路（同 STANDBY）
+ * LED：md 未给出该状态的点亮要求 → 全灭（若需与 STANDBY 一致请说明） */
+static void s1OutputOffNoMains(void)
 {
-	relayWrite(S1_T1_RELAY);
+	relayWrite(S1_OFF_NO_MAINS_RELAY);
 	ledWrite(0);
 }
 
-/* T2 系统开机：LED 立即置位；继电器按 10ms 逐路合上
+/* RUN（md T2）系统开机：LED 立即置位；继电器按 10ms 逐路合上
  * 目标集合：K3,K4,K5,K6,K7,K8_1,K9,K11,K12,K13 */
-static void s1OutputT2(void)
+static void s1OutputRun(void)
 {
 	ledWrite(L_GRID_IN | L_PWR24 | L_CP224 | L_TROLLEY |
 		 D_MAINS_MCU | D_MAINS_IS_PC |
 		 D_IS_PC_SITE | D_APP_HOST | D_TROLLEY_EN);
-	/* 继电器：目标 S1_T2_RELAY，本状态不要的路写 0，其余由两轨 10ms 逐路合 */
-	relayStage(S1_T2_RELAY,
-		    s1_t2_ac, ARRAY_SIZE(s1_t2_ac),
-		    s1_t2_ef, ARRAY_SIZE(s1_t2_ef));
+	/* 继电器：目标 S1_RUN_RELAY，本状态不要的路写 0，其余由两轨 10ms 逐路合 */
+	relayStage(S1_RUN_RELAY,
+		    s1RunAc, ARRAY_SIZE(s1RunAc),
+		    s1RunEf, ARRAY_SIZE(s1RunEf));
 }
 
-/* T3 开机后市电掉电（OR 模式）：K2,K6,K7,K8_1,K9,K10,K11,K12,K13 */
-static void s1OutputT3(void)
+/* RUN_OR（md T3）开机后市电掉电（OR 模式）：K2,K6,K7,K8_1,K9,K10,K11,K12,K13 */
+static void s1OutputRunOr(void)
 {
 	ledWrite(L_UPS_IN | L_PWR24 | L_CP224 | L_TROLLEY |
 		 D_IS_PC_SITE | D_APP_HOST);
-	/* 继电器：目标 S1_T3_RELAY */
-	relayStage(S1_T3_RELAY,
-		    s1_t3_ac, ARRAY_SIZE(s1_t3_ac),
-		    s1_t3_ef, ARRAY_SIZE(s1_t3_ef));
+	/* 继电器：目标 S1_RUN_OR_RELAY */
+	relayStage(S1_RUN_OR_RELAY,
+		    s1RunOrAc, ARRAY_SIZE(s1RunOrAc),
+		    s1RunOrEf, ARRAY_SIZE(s1RunOrEf));
 }
 
-/* T4 正常关机：待机回路 + K9/K10 由 IS_PC_ON / APP_HOST_ON 实时决定 */
-static void s1OutputT4(uint32_t din)
+/* SHUTDOWN（md T4）正常关机：待机回路 + K9/K10 由 IS_PC_ON / APP_HOST_ON 决定 */
+static void s1OutputShutdown(uint32_t din)
 {
 	const bool is_pc    = (din & BIT(DIN_IS_PC_ON))    != 0U;
 	const bool app_host = (din & BIT(DIN_APP_HOST_ON)) != 0U;
-	uint64_t   relay    = S1_T4_RELAY;
+	uint64_t   relay    = S1_SHUTDOWN_RELAY;
 	uint64_t   led      = L_GRID_IN | L_PWR24 | L_CP224 | L_TROLLEY |
 			      D_MAINS_MCU | D_MAINS_IS_PC;
 
@@ -184,13 +184,13 @@ static void s1OutputReset(void)
 static void s1Output(smS1State_t st, uint32_t din)
 {
 	switch (st) {
-	case SM_S1_T0:    s1OutputT0();     break;
-	case SM_S1_T1:    s1OutputT1();     break;
-	case SM_S1_T2:    s1OutputT2();     break;
-	case SM_S1_T3:    s1OutputT3();     break;
-	case SM_S1_T4:    s1OutputT4(din);  break;
-	case SM_S1_RESET: s1OutputReset();  break;
-	default:          break;
+	case SM_S1_STANDBY:      s1OutputStandby();      break;
+	case SM_S1_OFF_NO_MAINS: s1OutputOffNoMains();   break;
+	case SM_S1_RUN:          s1OutputRun();          break;
+	case SM_S1_RUN_OR:       s1OutputRunOr();        break;
+	case SM_S1_SHUTDOWN:     s1OutputShutdown(din);  break;
+	case SM_S1_RESET:        s1OutputReset();        break;
+	default:                 break;
 	}
 }
 
@@ -269,13 +269,13 @@ static void s1EnterState(smS1State_t st, uint32_t din)
 static const char *s1StateName(smS1State_t st)
 {
 	switch (st) {
-	case SM_S1_T0:    return "T0 上电待机";
-	case SM_S1_T1:    return "T1 市电掉电/OR关机";
-	case SM_S1_T2:    return "T2 系统开机";
-	case SM_S1_T3:    return "T3 开机后市电掉电";
-	case SM_S1_T4:    return "T4 正常关机";
-	case SM_S1_RESET: return "RESET 硬件复位";
-	default:          return "?";
+	case SM_S1_STANDBY:      return "STANDBY 上电待机 (T0)";
+	case SM_S1_OFF_NO_MAINS: return "OFF 市电掉电/OR关机 (T1)";
+	case SM_S1_RUN:          return "RUN 系统开机 (T2)";
+	case SM_S1_RUN_OR:       return "RUN 开机后市电掉电OR (T3)";
+	case SM_S1_SHUTDOWN:     return "SHUTDOWN 正常关机 (T4)";
+	case SM_S1_RESET:        return "RESET 硬件复位";
+	default:                 return "?";
 	}
 }
 
@@ -283,7 +283,7 @@ void smS1Enter(void)
 {
 	s1_prev_valid = false;      /* 进入后首个 tick 只记录输入，不判边沿 */
 	s1_prev_din   = 0;
-	s1EnterState(SM_S1_T0, 0);      /* 进入初始子状态 T0，由它设置管脚 */
+	s1EnterState(SM_S1_STANDBY, 0);      /* 初始子状态，由它设置管脚 */
 }
 
 smS1State_t smS1Tick(uint32_t din)
@@ -302,8 +302,8 @@ smS1State_t smS1Tick(uint32_t din)
 		s1_prev_valid = true;
 	}
 
-	/* md 前置条件：T0/T2/T4 需 市电正常 && 推车连接；
-	 *              T3    需 市电掉电 && 推车仍连接（OR 模式） */
+	/* md 前置条件：STANDBY/RUN/SHUTDOWN 需 市电正常 && 推车连接；
+	 *              RUN_OR           需 市电掉电 && 推车仍连接（OR 模式） */
 	const bool ready   = mains && trolley;
 	const bool or_mode = !mains && trolley;
 
@@ -314,60 +314,60 @@ smS1State_t smS1Tick(uint32_t din)
 		return s1_state;
 	}
 
-	/* ---- 复位态：reset 释放后（"3V3 && 0V"）市电正常回 T0，否则保持关机 ---- */
+	/* ---- 复位态：reset 释放后（"3V3 && 0V"）市电正常回 STANDBY，否则保持关机 ---- */
 	if (s1_state == SM_S1_RESET) {
 		if (!reset && (k_uptime_get() - s1_entry_ms) >= 2000) {
-			s1EnterState(ready ? SM_S1_T0 : SM_S1_T1, din);
+			s1EnterState(ready ? SM_S1_STANDBY : SM_S1_OFF_NO_MAINS, din);
 		}
 		s1_prev_din = din;
 		return s1_state;
 	}
 
-	/* ---- 顺序上电推进（T2/T3）---- */
-	if (s1_state == SM_S1_T2 || s1_state == SM_S1_T3) {
+	/* ---- 顺序上电推进（RUN / RUN_OR）---- */
+	if (s1_state == SM_S1_RUN || s1_state == SM_S1_RUN_OR) {
 		s1StageTick();
 	}
 
 	/* ---- 状态转换 ---- */
 	switch (s1_state) {
 
-	case SM_S1_T0:   /* 上电待机 */
+	case SM_S1_STANDBY:   /* 上电待机 */
 		if (!ready) {
-			s1EnterState(SM_S1_T1, din);      /* 市电掉电或推车断开 */
+			s1EnterState(SM_S1_OFF_NO_MAINS, din);      /* 市电掉电或推车断开 */
 		} else if (onoff_rise) {
-			s1EnterState(SM_S1_T2, din);      /* 按键开机 */
+			s1EnterState(SM_S1_RUN, din);      /* 按键开机 */
 		}
 		break;
 
-	case SM_S1_T1:   /* 市电掉电 / OR 关机 */
+	case SM_S1_OFF_NO_MAINS:   /* 市电掉电 / OR 关机 */
 		if (ready) {
-			s1EnterState(SM_S1_T0, din);      /* 市电恢复且推车在 → 回待机 */
+			s1EnterState(SM_S1_STANDBY, din);      /* 市电恢复且推车在 → 回待机 */
 		}
 		break;
 
-	case SM_S1_T2:   /* 系统开机 */
+	case SM_S1_RUN:   /* 系统开机 */
 		if (or_mode) {
-			s1EnterState(SM_S1_T3, din);      /* 开机后市电掉电(推车仍在) → OR */
+			s1EnterState(SM_S1_RUN_OR, din);      /* 开机后市电掉电(推车仍在) → OR */
 		} else if (!ready) {
-			s1EnterState(SM_S1_T1, din);      /* 推车断开 → T1 */
+			s1EnterState(SM_S1_OFF_NO_MAINS, din);   /* 推车断开 → 关机 */
 		} else if (onoff_rise) {
-			s1EnterState(SM_S1_T4, din);      /* 按键正常关机 */
+			s1EnterState(SM_S1_SHUTDOWN, din);      /* 按键正常关机 */
 		}
 		break;
 
-	case SM_S1_T3:   /* 开机后市电掉电（OR 模式） */
+	case SM_S1_RUN_OR:   /* 开机后市电掉电（OR 模式） */
 		if (ready) {
-			s1EnterState(SM_S1_T2, din);      /* 市电恢复回开机 */
+			s1EnterState(SM_S1_RUN, din);      /* 市电恢复回开机 */
 		} else if (!trolley) {
-			s1EnterState(SM_S1_T1, din);      /* 推车也断开 → T1 */
+			s1EnterState(SM_S1_OFF_NO_MAINS, din);   /* 推车也断开 → 关机 */
 		}
 		break;
 
-	case SM_S1_T4:   /* 正常关机 */
+	case SM_S1_SHUTDOWN:   /* 正常关机 */
 		if ((k_uptime_get() - s1_entry_ms) >= 200) {
-			s1EnterState(ready ? SM_S1_T0 : SM_S1_T1, din);
+			s1EnterState(ready ? SM_S1_STANDBY : SM_S1_OFF_NO_MAINS, din);
 		} else {
-			s1OutputT4(din);            /* K9/K10 随 IS_PC/APP_HOST 实时更新 */
+			s1OutputShutdown(din);            /* K9/K10 随 IS_PC/APP_HOST 实时更新 */
 		}
 		break;
 
