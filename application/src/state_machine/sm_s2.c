@@ -20,7 +20,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 
-#include "state_machine.h"   /* 管脚定义 + 电平写入（S1/S2 共用） */
+#include "state_machine.h"   /* 管脚定义 / 电平写入 / 输入判定（S1/S2 共用） */
 #include "sm_s2.h"
 
 /* 状态名（仅本文件打印用） */
@@ -35,39 +35,6 @@ static bool        s2_prev_valid;    /* 首个 tick 不做边沿判定 */
 static bool        s2_solo;          /* 子模式：pj4 */
 
 #define S2_RESET_HOLD_MS 2000
-
-/* ==================== 输入判定 ==================== */
-
-/* ME_BOX_ERROR 高 = 市电正常（=待机条件）；低 = 市电掉电 */
-static inline bool isMainsOk(uint32_t din)
-{
-	return (din & BIT(DIN_ME_BOX_ERROR)) != 0U;
-}
-
-static inline bool isTrolleyConnected(uint32_t din)
-{
-	return (din & BIT(DIN_TROLLEY_CONNECTED)) != 0U;
-}
-
-static inline bool isOnOffActive(uint32_t din)
-{
-	return (din & BIT(DIN_SYSTEM_ON_OFF)) != 0U;
-}
-
-static inline bool isResetActive(uint32_t din)
-{
-	return (din & BIT(DIN_SYSTEM_RESET)) != 0U;
-}
-
-static inline bool isPcOn(uint32_t din)
-{
-	return (din & BIT(DIN_IS_PC_ON)) != 0U;
-}
-
-static inline bool isAppHostOn(uint32_t din)
-{
-	return (din & BIT(DIN_APP_HOST_ON)) != 0U;
-}
 
 /* ==================== 各子状态的管脚输出 ==================== */
 

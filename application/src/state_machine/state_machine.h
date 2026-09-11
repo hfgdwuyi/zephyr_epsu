@@ -25,7 +25,7 @@
 
 #include <zephyr/sys/util.h>   /* BIT64 */
 
-#include "bsp_dio.h"           /* DOUT 索引（管脚定义用） */
+#include "bsp_dio.h"           /* DOUT/DIN 索引（管脚定义、输入判定用） */
 
 /* ==================== K 继电器 / efuse ==================== */
 
@@ -75,6 +75,40 @@
 		      L_SYS_ON | L_S2_SOLO_SYS | L_S2_SYS_ON | L_IS_PC | \
 		      L_APP_HOST | D_IS_PC_SITE | D_APP_HOST | D_MAINS_MCU | \
 		      D_MAINS_IS_PC | D_TROLLEY_EN)
+
+/* ==================== 输入判定（DIN 位图谓词，S1/S2 共用） ==================== */
+/* 都是"某个 DIN 位是否有效"的判定，布尔语义读成问句 → is 前缀 */
+
+/* ME_BOX_ERROR 高 = 市电/整机正常；低 = 市电掉电或故障 */
+static inline bool isMainsOk(uint32_t din)
+{
+	return (din & BIT(DIN_ME_BOX_ERROR)) != 0U;
+}
+
+static inline bool isTrolleyConnected(uint32_t din)
+{
+	return (din & BIT(DIN_TROLLEY_CONNECTED)) != 0U;
+}
+
+static inline bool isOnOffActive(uint32_t din)
+{
+	return (din & BIT(DIN_SYSTEM_ON_OFF)) != 0U;
+}
+
+static inline bool isResetActive(uint32_t din)
+{
+	return (din & BIT(DIN_SYSTEM_RESET)) != 0U;
+}
+
+static inline bool isPcOn(uint32_t din)
+{
+	return (din & BIT(DIN_IS_PC_ON)) != 0U;
+}
+
+static inline bool isAppHostOn(uint32_t din)
+{
+	return (din & BIT(DIN_APP_HOST_ON)) != 0U;
+}
 
 /* ==================== 写电平 ==================== */
 

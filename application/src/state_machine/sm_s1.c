@@ -22,7 +22,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 
-#include "state_machine.h"   /* 管脚定义 + 电平写入（S1/S2 共用） */
+#include "state_machine.h"   /* 管脚定义 / 电平写入 / 输入判定（S1/S2 共用） */
 #include "sm_s1.h"
 
 /* 状态名（仅本文件打印用） */
@@ -84,39 +84,6 @@ static const uint8_t *s1_stage_ef;   /* efuse 轨 */
 static size_t   s1_stage_ef_n;
 static size_t   s1_stage_ef_idx;
 static int64_t  s1_stage_ms;
-
-/* ==================== 输入判定 ==================== */
-
-/* ME_BOX_ERROR 高 = 市电/整机正常；低 = 市电掉电或故障 */
-static inline bool isMainsOk(uint32_t din)
-{
-	return (din & BIT(DIN_ME_BOX_ERROR)) != 0U;
-}
-
-static inline bool isTrolleyConnected(uint32_t din)
-{
-	return (din & BIT(DIN_TROLLEY_CONNECTED)) != 0U;
-}
-
-static inline bool isOnOffActive(uint32_t din)
-{
-	return (din & BIT(DIN_SYSTEM_ON_OFF)) != 0U;
-}
-
-static inline bool isResetActive(uint32_t din)
-{
-	return (din & BIT(DIN_SYSTEM_RESET)) != 0U;
-}
-
-static inline bool isPcOn(uint32_t din)
-{
-	return (din & BIT(DIN_IS_PC_ON)) != 0U;
-}
-
-static inline bool isAppHostOn(uint32_t din)
-{
-	return (din & BIT(DIN_APP_HOST_ON)) != 0U;
-}
 
 /* 顺序上电（定义见后）：先全断，再按 AC / efuse 两条轨道逐路合上 target */
 static void relayStage(uint64_t target,
