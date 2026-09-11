@@ -12,10 +12,6 @@
 
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 void bspPwmInit(void);
 void bspPwmStart(uint8_t pwmNum);
 void bspPwmStop(uint8_t pwmNum);
@@ -28,10 +24,6 @@ void bspPwmSetDutyCycle(uint8_t pwmNum, uint32_t value);
 
 /* Current duty cycle (%) — status query for host tools */
 uint32_t bspPwmGetDutyCycle(uint8_t pwmNum);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* BSP_PWM_H */
 

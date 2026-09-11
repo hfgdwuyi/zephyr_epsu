@@ -15,10 +15,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* ==================== DOUT index — pin_config.xlsx ====================
  * The DOUT index of a pin IS the `reg` of its child of dout_config in
  * application/app.overlay — that file is the single source of truth.
@@ -37,8 +33,9 @@ extern "C" {
 /* External watchdog (MAX6703A WDI) */
 #define DOUT_WDI                   DOUT_IDX(wdi)                  /* PH9  */
 
-/* Power good / K13 enable */
-#define DOUT_PG_13V5               DOUT_IDX(pg_13v5)              /* PA12 */
+/* Power good / K13 enable
+ * 注: PA12 (原 DOUT_PG_13V5 / reg 2) 已改为输入端，不受 DOUT 位图控制，
+ *     故此处不再提供该 DOUT 索引（reg 2 在 dout_config 中留空洞）。 */
 #define DOUT_K13_EN                DOUT_IDX(k13_en)               /* PB6  */
 
 /* Panel LED indicators
@@ -156,9 +153,5 @@ static inline bool bspDinGet(uint8_t pin)
 void bspDoutSetBitmap(uint64_t mask, bool state);
 uint64_t bspDoutGetBitmap(void);
 void bspDoutUpdate(void);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* BSP_DIO_H */

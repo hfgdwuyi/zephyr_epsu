@@ -93,11 +93,11 @@ dout=0x0000000200000000
 |---|---|---|---|
 | 0 | trolley_enable (PH1) | 18 | k6_drv (PI5) |
 | 1 | wdi (PH9) | 19 | k3_drv (PI6) |
-| 2 | pg_13v5 (PA12) | 20 | k2_drv (PI7) |
+| 2 | —（空洞：PA12 改为输入，不受控） | 20 | k2_drv (PI7) |
 | 3 | k13_en (PB6) | 21 | k4_drv (PI8) |
-| 4 | dbg_led0 (PC8) | 22 | k7_drv (PI9) |
-| 5 | dbg_led1 (PC9) | 23 | k10_en (PI10) |
-| 6 | dbg_led2 (PC10) | 24 | k11_en (PI11) |
+| 4 | —（空洞：PC8 三色灯由 bsp_led 管理） | 22 | k7_drv (PI9) |
+| 5 | —（空洞：PC9 三色灯由 bsp_led 管理） | 23 | k10_en (PI10) |
+| 6 | —（空洞：PC10 三色灯由 bsp_led 管理） | 24 | k11_en (PI11) |
 | 7 | led_pwr_24_on (PD0) | 25 | k12_en (PI12) |
 | 8 | led_cp_224v_on (PD1) | 26 | k8_1_en (PI13) |
 | 9 | led_grid_pwr_in (PD2) | 27 | k8_2_en (PI14) |

@@ -8,10 +8,6 @@
 #include <stdint.h>
 #include <zephyr/devicetree.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* Channel count derives from the io-channels array in app.overlay. */
 #define BSP_AIN_IO_CHANNELS_NODE DT_PATH(zephyr_user)
 #define BSP_AIN_NUMBER           DT_PROP_LEN(BSP_AIN_IO_CHANNELS_NODE, io_channels)
@@ -53,9 +49,5 @@ uint32_t bspAinGetRawValue(uint8_t channel);
 uint32_t bspAinReadRaw(uint8_t channel);
 
 const char *bspAinGetName(uint8_t channel);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* BSP_AIN_H */

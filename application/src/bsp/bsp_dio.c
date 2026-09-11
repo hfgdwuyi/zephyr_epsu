@@ -49,12 +49,10 @@ static const struct gpio_dt_spec dout_specs[] = {
 #define DOUT_MAX ARRAY_SIZE(dout_specs)
 const uint8_t doutMax = DOUT_MAX;
 
-/* 受保护常高 DOUT（调试用）：这几个 DOUT 位只允许置 1，任何清 0
- * 请求（状态机/上位机）都会被忽略，保证调试期间引脚持续输出高。
- * 量产时置空此掩码即可恢复正常控制。 */
-#define DOUT_FORCE_HIGH_MASK (BIT64(DOUT_K8_1_EN) | BIT64(DOUT_K8_2_EN) | \
-			      BIT64(DOUT_K9_EN)   | BIT64(DOUT_K10_EN) | \
-			      BIT64(DOUT_K11_EN)  | BIT64(DOUT_K12_EN))
+/* 受保护常高 DOUT（调试用）：掩码内的位只允许置 1、拒绝清 0。
+ * 现置空 —— 全部继电器输出交由状态机（S1: sm_s1.c）控制。
+ * 若调试需要某几路常高，把对应 BIT64(DOUT_xxx) 或进来即可。 */
+#define DOUT_FORCE_HIGH_MASK (0ULL)   /* 置空：全部输出交由状态机配置表控制 */
 
 /* ==================== DIN: devicetree → gpio_dt_spec array ==================== */
 

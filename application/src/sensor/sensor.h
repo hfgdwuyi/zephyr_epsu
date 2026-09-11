@@ -31,10 +31,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* ==================== Temperature (NTC) ==================== */
 
 /* AIN channels for NTC sensors (matches bsp_ain.h enum) */
@@ -94,9 +90,5 @@ void sensorUpdate(void);
  * typed read). Returns 0 if the channel has never been published.
  */
 uint32_t sensorGetPhys(uint8_t channel);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* SENSOR_H */

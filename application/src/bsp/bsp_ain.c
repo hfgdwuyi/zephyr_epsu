@@ -11,6 +11,12 @@
 
 LOG_MODULE_REGISTER(bsp_ain, LOG_LEVEL_INF);
 
+/* 详细启动日志开关：AIN 逐通道清单（name/dev/ch）。
+ * 0 = 关闭（默认，串口保持干净）；1 = 打开用于排查通道映射。 */
+#ifndef BSP_AIN_VERBOSE_LOG
+#define BSP_AIN_VERBOSE_LOG 0
+#endif
+
 #define AIN_ADC_SPEC_ELEM(node_id, prop, idx) ADC_DT_SPEC_GET_BY_IDX(node_id, idx)
 
 static const struct adc_dt_spec ain_specs[BSP_AIN_NUMBER] = {
@@ -66,6 +72,8 @@ void bspAinInit(void)
 
     /* Print summary */
     printk("AIN: init done (poll), inputs=%u\n", (unsigned)BSP_AIN_NUMBER);
+
+#if BSP_AIN_VERBOSE_LOG
     for (size_t i = 0; i < BSP_AIN_NUMBER; i++) {
         const struct adc_dt_spec *spec = &ain_specs[i];
         printk("AIN[%u]: name=%s dev=%s ch=%u\n",
@@ -74,6 +82,7 @@ void bspAinInit(void)
                spec->dev ? spec->dev->name : "(null)",
                (unsigned)spec->channel_id);
     }
+#endif
 }
 
 /*

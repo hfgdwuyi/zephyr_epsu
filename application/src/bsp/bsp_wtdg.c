@@ -38,7 +38,12 @@ static struct wdt_timeout_cfg wdt_config = {
 };
 
 #if DT_HAS_COMPAT_STATUS_OKAY(st_stm32_window_watchdog)
-#define WDT_MAX_WINDOW  100U
+/* WWDG 超时 1000 ms（原 100 ms）。
+ * 原因：WWDG 在 bspWtdgInit() 启动，但真正喂它的 wdt_sup_thread 要等
+ * schedulerStart() 才创建；两者之间的启动初始化（I2C/ADC/TMP75 等）
+ * 一旦超过超时窗口，芯片会在启动途中被 WWDG 复位 → 反复重启起不来。
+ * 1000 ms 为启动流程留出充足余量；运行时仍由 50 ms 心跳喂狗守护。 */
+#define WDT_MAX_WINDOW  1000U
 #elif DT_HAS_COMPAT_STATUS_OKAY(nordic_nrf_wdt)
 #define WDT_ALLOW_CALLBACK 0
 #endif
@@ -91,10 +96,8 @@ void bspWtdgInit(void)
 
 #if WDT_ALLOW_CALLBACK
     wdt_config.callback = wdt_callback;
-    printk("Attempting to test pre-reset callback\n");
 #else
     wdt_config.callback = NULL;
-    printk("Callback in RESET_SOC disabled for this platform\n");
 #endif
 
     wdt_channel_id = wdt_install_timeout(wdt, &wdt_config);

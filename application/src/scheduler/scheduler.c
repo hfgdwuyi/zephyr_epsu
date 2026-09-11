@@ -138,7 +138,9 @@ static void aoutWorkFn(struct k_work *w)
 {
 	bspAoutPoll();
 	sysHbBump();
-	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(50));
+	/* 5 ms：PA5 锯齿波 4 s 周期内 800 级台阶（~1.9 mV/级），
+	 * 保证 0.25 Hz 锯齿线性度足够平滑。 */
+	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(5));
 }
 
 static K_WORK_DELAYABLE_DEFINE(aout_work, aoutWorkFn);

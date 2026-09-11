@@ -16,10 +16,6 @@
 /* Keep TLC driver integration as-is (your project header) */
 // #include "tlc591x.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef struct
 {
     uint8_t  spi;      /* Legacy SPI bus index (implementation maps this to a DT alias) */
@@ -45,9 +41,5 @@ bool bspBoardSpiTransfer(boardSpiXfer_t *xfer);
 
 /* WDT init: legacy API. In Zephyr port it should call bspWtdgInit() */
 void bspWtdgInit(void);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* BSP_BOARD_H */

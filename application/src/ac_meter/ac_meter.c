@@ -42,6 +42,11 @@
 /* Application */
 #include "ac_meter.h"
 
+/* 初始化明细日志开关：0 = 关闭（默认）；1 = 打印 zero_en 引脚等 */
+#ifndef AC_METER_VERBOSE_LOG
+#define AC_METER_VERBOSE_LOG 0
+#endif
+
 /* ==================== zero_en (TL3310) GPIO ==================== */
 
 /* zero-en-gpios defined under the zephyr,user node in app.overlay.
@@ -230,8 +235,10 @@ void acMeterInit(void)
 	gpio_add_callback(zero_en_spec.port, &zero_en_cb);
 	gpio_pin_interrupt_configure_dt(&zero_en_spec, GPIO_INT_EDGE_BOTH);
 
+#if AC_METER_VERBOSE_LOG
 	printk("AC_METER: zero_en on %s pin %u, init done\n",
 	       zero_en_spec.port->name, zero_en_spec.pin);
+#endif
 }
 
 void acMeterUpdate(void)

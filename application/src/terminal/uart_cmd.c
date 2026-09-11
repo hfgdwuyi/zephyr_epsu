@@ -31,6 +31,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/uart.h>
+#include <zephyr/drivers/i2c.h>
 #include <zephyr/sys/printk.h>   /* snprintk */
 #include <zephyr/sys/reboot.h>
 #include <zephyr/storage/flash_map.h>
@@ -47,6 +48,7 @@
 #include "state_machine.h"
 #include "sensor.h"
 #include "ac_meter.h"
+#include "tmp75.h"
 
 /* ==================== 常量 ==================== */
 
@@ -139,13 +141,17 @@ static void cmdHelp(void)
 		  "  dout <idx> <0|1>        - set DOUT output (0..doutMax-1)\r\n"
 		  "  doutall <hex64>         - write 64-bit DOUT bitmap\r\n"
 		  "  dac <mv>                - DAC constant voltage (0..3300 mV)\r\n"
-		  "  dacwv <0|1>             - pwr_on_off square wave on/off\r\n"
+		  "  dacwv <0|1>             - PA5 triangle on/off (0-1.5V @0.25Hz)\r\n"
 		  "  pwm <ch> <duty>         - fan PWM duty (ch 0/1, 0..100%)\r\n"
 		  "  pwmoff <ch>             - stop PWM\r\n"
 		  "  getdout                 - read DOUT bitmap\r\n"
 		  "  getdac                  - read DAC mv + wave state\r\n"
 		  "  getpwm                  - read PWM duties\r\n"
-		  "  getdin                  - read DIN bitmap\r\n");
+		  "  getdin                  - read DIN bitmap\r\n"
+		  "  ain [raw]               - read all ADC channels (all by default)\r\n"
+		  "  temp                    - read TMP75 temperature (I2C1 0x48)\r\n"
+		  "  i2cscan                 - scan I2C1 bus for device addresses\r\n"
+		  "  i2cread <a> [reg] [len] - read I2C1 slave (hex addr/reg/len)\r\n");
 }
 
 static void cmdInfo(void)
@@ -154,12 +160,6 @@ static void cmdInfo(void)
 
 	snprintk(buf, sizeof(buf), "fw=%s boot=%s\r\n",
 		 CONFIG_CIOS_ZHONG_FW_VERSION, CONFIG_CIOS_ZHONG_BOOT_VERSION);
-	uartTxStr(buf);
-
-	stateMachineState_t st = stateMachineGetState();
-	snprintk(buf, sizeof(buf), "state=%d faults=0x%02X err=%s\r\n",
-		 (int)st, (unsigned)stateMachineGetFaults(),
-		 stateMachineGetErrorStr(stateMachineGetError()));
 	uartTxStr(buf);
 
 	snprintk(buf, sizeof(buf), "temp1=%d.%d temp2=%d.%d (C)\r\n",
@@ -268,11 +268,12 @@ static void cmdDacWave(const char *args)
 	if (end == args || (on != 0 && on != 1)) {
 		goto err;
 	}
-	bspAoutSetState(AOUT_PWR_ON_OFF, on != 0);
-	uartTxStr("OK\r\n");
+	/* pwr_on_off (PA5): 0-1.5 V 三角波 @ 0.25 Hz，上电默认开启 */
+	bspAoutSetTriangleEnabled(on != 0);
+	uartTxStr(on ? "OK triangle on\r\n" : "OK triangle off\r\n");
 	return;
 err:
-	uartTxStr("ERR usage: dacwv <0|1>\r\n");
+	uartTxStr("ERR usage: dacwv <0|1> (PA5 0-1.5V triangle @0.25Hz)\r\n");
 }
 
 static void cmdPwm(const char *args)
@@ -358,6 +359,198 @@ static void cmdGetDin(void)
 
 	snprintk(buf, sizeof(buf), "din=0x%08X\r\n", (unsigned)bspDinGetBitmap());
 	uartTxStr(buf);
+}
+
+/* ---- temp: 读取 TMP75 (I2C1, 0x48) 温度 ---- */
+static void cmdTemp(void)
+{
+	char buf[64];
+	int32_t milliDegC = 0;
+	int rc;
+
+	if (!tmp75IsReady()) {
+		uartTxStr("ERR tmp75 not ready\r\n");
+		return;
+	}
+
+	rc = tmp75Read(&milliDegC);
+	if (rc != 0) {
+		snprintk(buf, sizeof(buf), "ERR tmp75 read rc=%d (errs=%u)\r\n",
+			 rc, (unsigned)tmp75ErrorCount());
+		uartTxStr(buf);
+		return;
+	}
+
+	/* 拆成整数与三位小数，手工处理负号（避免浮点 printf） */
+	int32_t whole = milliDegC / 1000;
+	int32_t frac  = milliDegC % 1000;
+	if (frac < 0) {
+		frac = -frac;
+	}
+	snprintk(buf, sizeof(buf), "temp=%d.%03d C (raw_ok, errs=%u)\r\n",
+		 (int)whole, (int)frac, (unsigned)tmp75ErrorCount());
+	uartTxStr(buf);
+}
+
+/* ---- ain: 读取全部 ADC 通道 ----
+ * 默认（不带参数）一次性打印所有通道的物理电压，便于上位机直接采集，
+ * 无需逐通道控制。可选 "raw" 参数附带原始 ADC 码值用于诊断。 */
+static void cmdAin(const char *args)
+{
+	char buf[96];
+	char rawbuf[24];
+	const bool with_raw = (args != NULL) && (strstr(args, "raw") != NULL);
+
+	uartTxStr("--- AIN (all channels) ---\r\n");
+
+	for (uint8_t i = 0; i < BSP_AIN_NUMBER; i++) {
+		const uint32_t raw = bspAinGetRawValue(i);
+		const char *rawtxt;
+
+		if (with_raw) {
+			snprintk(rawbuf, sizeof(rawbuf), "  raw=%u", (unsigned)raw);
+			rawtxt = rawbuf;
+		} else {
+			rawtxt = "";
+		}
+
+		if (i == AIN_ADC_TEMP1 || i == AIN_ADC_TEMP2) {
+			/* 温度通道：sensor 缓存的是温度 ×10（不是电压） */
+			int16_t t = (int16_t)sensorGetPhys(i);
+			int16_t frac = t % 10;
+			if (frac < 0) {
+				frac = -frac;
+			}
+			snprintk(buf, sizeof(buf), "AIN[%2u] %-14s %4d.%d C%s\r\n",
+				 (unsigned)i, bspAinGetName(i), t / 10, frac, rawtxt);
+		} else if (i == AIN_ADC_VIN) {
+			/* 市电 AC 通道：Rms/频率由 ac_meter 计算，此处给 RMS */
+			if (acMeterAcPresent()) {
+				uint32_t rms = acMeterGetVinRmsMv();
+				snprintk(buf, sizeof(buf),
+					 "AIN[%2u] %-14s %5u.%03u Vrms @ %u.%u Hz%s\r\n",
+					 (unsigned)i, bspAinGetName(i),
+					 rms / 1000U, rms % 1000U,
+					 acMeterGetVinFreq() / 10, acMeterGetVinFreq() % 10,
+					 rawtxt);
+			} else {
+				snprintk(buf, sizeof(buf),
+					 "AIN[%2u] %-14s   n/a (no AC)%s\r\n",
+					 (unsigned)i, bspAinGetName(i), rawtxt);
+			}
+		} else {
+			const uint32_t mv = sensorGetPhys(i);
+			snprintk(buf, sizeof(buf), "AIN[%2u] %-14s %5u.%03u V%s\r\n",
+				 (unsigned)i, bspAinGetName(i),
+				 mv / 1000U, mv % 1000U, rawtxt);
+		}
+		uartTxStr(buf);
+	}
+}
+
+/* ---- i2cscan: 扫描 I2C1 总线上的所有从机地址 ---- */
+static void cmdI2cScan(void)
+{
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay)
+	const struct device *bus = DEVICE_DT_GET(DT_NODELABEL(i2c1));
+	char buf[64];
+	uint8_t dummy = 0;
+	int found = 0;
+
+	if (!device_is_ready(bus)) {
+		uartTxStr("ERR i2c1 not ready\r\n");
+		return;
+	}
+
+	uartTxStr("scan i2c1 (7-bit addr 0x08..0x77):\r\n");
+
+	for (uint16_t addr = 0x08; addr <= 0x77; addr++) {
+		/* 零长度写 = 只发 START+地址+STOP（标准 quick command）。
+		 * 不发送任何数据字节，因此不会误改 EEPROM/配置寄存器。 */
+		if (i2c_write(bus, &dummy, 0, (uint8_t)addr) == 0) {
+			snprintk(buf, sizeof(buf), "  ACK  0x%02X\r\n", addr);
+			uartTxStr(buf);
+			found++;
+		}
+	}
+
+	snprintk(buf, sizeof(buf), "total %d device(s)\r\n", found);
+	uartTxStr(buf);
+#else
+	uartTxStr("ERR i2c1 disabled\r\n");
+#endif
+}
+
+/* ---- i2cread <addr> [reg] [len]: 读 I2C1 从机寄存器（调试/器件识别） ----
+ *   i2cread 0x52            → 纯读 2 字节（无寄存器指针，命令式接口用）
+ *   i2cread 0x52 0x00 4     → 从寄存器 0x00 起读 4 字节（指针式接口用）
+ * 参数均为 hex；len 默认 2，最大 32。 */
+static void cmdI2cRead(const char *args)
+{
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay)
+	const struct device *bus = DEVICE_DT_GET(DT_NODELABEL(i2c1));
+	char *save = NULL, *tok;
+	char line[160];
+	uint8_t buf[32];
+	long addr, reg = -1, len = 2;
+	int rc, n = 0;
+
+	if (args == NULL) {
+		uartTxStr("ERR usage: i2cread <addr> [reg] [len]\r\n");
+		return;
+	}
+
+	tok = strtok_r((char *)args, " \t", &save);
+	if (tok == NULL) {
+		uartTxStr("ERR usage: i2cread <addr> [reg] [len]\r\n");
+		return;
+	}
+	addr = strtol(tok, NULL, 0);
+
+	tok = strtok_r(NULL, " \t", &save);
+	if (tok != NULL) {
+		reg = strtol(tok, NULL, 0);
+		tok = strtok_r(NULL, " \t", &save);
+		if (tok != NULL) {
+			len = strtol(tok, NULL, 0);
+		}
+	}
+	if (addr < 0x08 || addr > 0x77 || len < 1 || len > (long)sizeof(buf)) {
+		uartTxStr("ERR addr 0x08..0x77, len 1..32\r\n");
+		return;
+	}
+
+	if (!device_is_ready(bus)) {
+		uartTxStr("ERR i2c1 not ready\r\n");
+		return;
+	}
+
+	if (reg >= 0) {
+		rc = i2c_burst_read(bus, (uint8_t)addr, (uint8_t)reg,
+				    buf, (uint32_t)len);
+	} else {
+		rc = i2c_read(bus, buf, (uint32_t)len, (uint8_t)addr);
+	}
+
+	if (rc != 0) {
+		snprintk(line, sizeof(line), "ERR read 0x%02lX rc=%d\r\n", addr, rc);
+		uartTxStr(line);
+		return;
+	}
+
+	n = snprintk(line, sizeof(line), "0x%02lX", addr);
+	if (reg >= 0) {
+		n += snprintk(line + n, sizeof(line) - n, "[0x%02lX]", reg);
+	}
+	n += snprintk(line + n, sizeof(line) - n, ":");
+	for (long i = 0; i < len; i++) {
+		n += snprintk(line + n, sizeof(line) - n, " %02X", buf[i]);
+	}
+	snprintk(line + n, sizeof(line) - n, "\r\n");
+	uartTxStr(line);
+#else
+	uartTxStr("ERR i2c1 disabled\r\n");
+#endif
 }
 
 /* ==================== 行解析与分发 ==================== */
@@ -603,6 +796,14 @@ static void uartCmdExecute(char *cmdline)
 		cmdGetPwm();
 	} else if (strcmp(cmd, "getdin") == 0) {
 		cmdGetDin();
+	} else if (strcmp(cmd, "temp") == 0) {
+		cmdTemp();
+	} else if (strcmp(cmd, "ain") == 0) {
+		cmdAin(args);
+	} else if (strcmp(cmd, "i2cscan") == 0) {
+		cmdI2cScan();
+	} else if (strcmp(cmd, "i2cread") == 0) {
+		cmdI2cRead(args);
 	} else {
 		uartTxStr("ERR unknown command (help for list)\r\n");
 	}

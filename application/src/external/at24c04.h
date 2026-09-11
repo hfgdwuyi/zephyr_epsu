@@ -32,10 +32,6 @@
 
 struct device;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* ---- MFD asset record ---- */
 
 #define MFD_ASSET_MAGIC          0x4D464400u   /* "MFD\0" */
@@ -96,9 +92,5 @@ bool mfdAssetIsValid(void);
 
 /*! Underlying Zephyr EEPROM device, or NULL if not available. */
 const struct device *mfdAssetGetDevice(void);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* AT24C04_H */

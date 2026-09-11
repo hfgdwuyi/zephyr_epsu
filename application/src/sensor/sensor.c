@@ -243,6 +243,13 @@ static uint32_t divMvFromRaw(uint32_t raw)
 	return (vAdc * (SENSOR_DIV_RHIGH + SENSOR_DIV_RLOW)) / SENSOR_DIV_RLOW;
 }
 
+/* 2:1 divider rails (3V3 / 5V0 monitors): Vactual = Vadc × 2.
+ * 硬件上这两路各用对半分压，固件必须乘回 2 才得到真实电压。 */
+static uint32_t div2MvFromRaw(uint32_t raw)
+{
+	return mvFromRaw(raw) * 2U;
+}
+
 /* NOTE: mains AC voltage (AIN_ADC_VIN) is no longer converted here — the
  * ac_meter module owns that channel and publishes a true windowed RMS value.
  * AIN_ADC_VIN is excluded from bspAinPoll(); see ac_meter.c. */
@@ -279,9 +286,9 @@ static const sensorChanCfg_t sensor_cfg[] = {
 	{ AIN_ADC_PDC7,     1,  2, false, divMvFromRaw },
 	{ AIN_ADC_PDC0_ALT, 1,  2, false, divMvFromRaw },
 	/* monitor rails: 500 ms */
-	{ AIN_ADC_12V,     10,  2, false, mvFromRaw },
-	{ AIN_ADC_5V0,     10,  2, false, mvFromRaw },
-	{ AIN_ADC_3V3,     10,  2, false, mvFromRaw },
+	{ AIN_ADC_12V,     10,  2, false, mvFromRaw },     /* 直连：1.42V 即实际值 */
+	{ AIN_ADC_5V0,     10,  2, false, div2MvFromRaw }, /* 2:1 分压 */
+	{ AIN_ADC_3V3,     10,  2, false, div2MvFromRaw },
 	/* NTC temperature: 1 s — slow thermal time constant */
 	{ AIN_ADC_TEMP1,   20,  3, true,  tempFromRawU },
 	{ AIN_ADC_TEMP2,   20,  3, true,  tempFromRawU },

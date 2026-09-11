@@ -13,9 +13,7 @@
 #ifndef TERMINAL_H
 #define TERMINAL_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <stdbool.h>
 
 /* Terminal thread cadence — the scheduler calls terminalUpdate() every base tick. */
 #define TERMINAL_BASE_PERIOD_MS  500
@@ -28,8 +26,9 @@ extern "C" {
 /* Process one terminal tick: print sensor values that changed meaningfully. */
 void terminalUpdate(void);
 
-#ifdef __cplusplus
-}
-#endif
+/* 日志静默：串口正在被其它协议占用（当前 = 串口 DFU 升级中），
+ * 此时任何 printk / 周期性打印都会插进协议流里把应答冲掉。
+ * 其它模块要打日志前查这个接口即可，不必依赖 uart_cmd 模块。 */
+bool terminalIsQuiet(void);
 
 #endif /* TERMINAL_H */

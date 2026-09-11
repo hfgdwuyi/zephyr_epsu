@@ -36,10 +36,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* AC meter thread cadence — the scheduler calls acMeterUpdate() every tick.
  * 1 kHz → 20 samples per 50 Hz period (RMS error ~1–2% on real mains).
  * Raise to 500 us for 2 kHz without any other change. */
@@ -69,9 +65,5 @@ bool acMeterAcPresent(void);
 
 /* Reset internal state (window, counters). */
 void acMeterInit(void);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* AC_METER_H */

@@ -20,7 +20,8 @@
 		/* 0-3: enable / power */
 		trolley_enable_drv:    trolley_enable_drv@0     { reg = < 0>; gpios = <&gpioh  1 GPIO_ACTIVE_HIGH>; };   /* H1   */
 		wdi:                   wdi@1                    { reg = < 1>; gpios = <&gpioh  9 GPIO_ACTIVE_HIGH>; };   /* H9   */
-		pg_13v5:               pg_13v5@2                { reg = < 2>; gpios = <&gpioa 12 GPIO_ACTIVE_HIGH>; };   /* A12  */
+		/* 2: 原 pg_13v5 (PA12) 已改为输入端，不再受 DOUT 位图控制，
+		 * 保留空洞以维持后续 DOUT 编号不变（见 zephyr,user 的 pg-13v5-gpios）。 */
 		k13_en:                k13_en@3                 { reg = < 3>; gpios = <&gpiob  6 GPIO_ACTIVE_HIGH>; };   /* B6   */
 		/* 4-6: 原 PC8-10 三色灯已移交 bsp_led（bsp_led.h）管理，
 		 * 保留空洞以维持后续 DOUT 编号不变（上位机/终端索引稳定）。 */
@@ -172,6 +173,11 @@
          * (PC14, toggling square wave at 2x mains frequency).
          * Owned by the acmeter module for period/frequency + RMS windowing. */
         zero-en-gpios = <&gpioc 14 GPIO_ACTIVE_HIGH>;
+
+        /* PA12 — 原 DOUT reg 2 (pg_13v5)，现改为数字输入：
+         * 不再由 DOUT 位图驱动（bsp_dio 的 dout_config 中该 reg 已留空洞），
+         * 由 bsp_board 配置为 GPIO_INPUT，固件不能控制其电平。 */
+        pg-13v5-gpios = <&gpioa 12 GPIO_ACTIVE_HIGH>;
 
         io-channels =
             <&adc3 13>,   /*  0: adc_12v   — PH2     ADC3_INP13 */

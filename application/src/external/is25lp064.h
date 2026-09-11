@@ -26,10 +26,6 @@
 
 struct device;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* ---- Partitions (mirror of app.overlay fixed-partitions) ---- */
 
 enum is25lp064_partition {
@@ -85,9 +81,5 @@ size_t is25lp064PartitionSize(enum is25lp064_partition part);
 
 /*! Flash write/erase page size (bytes), or 0 if unavailable. */
 size_t is25lp064PageSize(void);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* IS25LP064_H */
