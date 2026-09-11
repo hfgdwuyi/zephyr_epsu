@@ -1,0 +1,274 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+psu_adc_monitor.py — CiosZhong PSU ADC 通道实时监视上位机（tkinter GUI）
+
+功能：
+  - 自动检测串口（/dev/cu.usbserial-* 或 /dev/ttyUSB*）
+  - 被动接收固件周期推送的 SENSOR 行，解析后实时填表
+  - 15 个 ADC 通道（含温度 / 市电）各自显示数值、单位、更新时间
+  - 底部显示原始通信内容，便于核对固件到底发了什么
+  - 可手动发命令（如 ain raw / temp / i2cscan）做诊断
+
+用法：
+  python3 psu_adc_monitor.py                 # 自动找串口
+  python3 psu_adc_monitor.py /dev/cu.usbserial-130
+
+依赖：pyserial（tkinter 为 Python 自带）
+"""
+import re
+import sys
+import threading
+import time
+import tkinter as tk
+from tkinter import ttk
+
+try:
+    import serial
+    from serial.tools import list_ports
+except ImportError:
+    print("error: 需要 pyserial（pip install pyserial）")
+    sys.exit(1)
+
+BAUD = 115200
+
+# 固件上报表（顺序固定，缺失的显示 —）
+CHANNELS = [
+    ("temp1",          "°C"),
+    ("temp2",          "°C"),
+    ("adc_12v",        "V"),
+    ("adc_pdc7",       "V"),
+    ("adc_pdc6",       "V"),
+    ("adc_pdc5",       "V"),
+    ("adc_5v0",        "V"),
+    ("adc_pdc0",       "V"),
+    ("adc_pdc4",       "V"),
+    ("adc_pdc2",       "V"),
+    ("adc_pdc3",       "V"),
+    ("adc_3v3",        "V"),
+    ("adc_pdc1",       "V"),
+    ("adc_pdc0_alt",   "V"),
+    ("adc_vin",        "V"),
+]
+
+# 引脚标注，方便对照硬件
+PIN_HINT = {
+    "temp1": "PA3", "temp2": "PA4",
+    "adc_12v": "PH2", "adc_pdc7": "PF11", "adc_pdc6": "PF12", "adc_pdc5": "PF13",
+    "adc_5v0": "PF14", "adc_pdc0": "PA6", "adc_pdc4": "PA0_C", "adc_pdc2": "PB0",
+    "adc_pdc3": "PB1", "adc_3v3": "PC0", "adc_pdc1": "PC2",
+    "adc_pdc0_alt": "PC3_C", "adc_vin": "PC2_C",
+}
+
+# SENSOR <name>: <value...>
+RE_SENSOR = re.compile(r"SENSOR\s+(\w+)\s*:\s*(.+?)\s*$")
+
+
+def find_ports():
+    return [p.device for p in list_ports.comports()]
+
+
+class MonitorApp:
+    def __init__(self, root, port=None):
+        self.root = root
+        self.ser = None
+        self.rx_thread = None
+        self.running = False
+        self.frames = 0
+        self.lines_seen = 0
+        self.last_rx = 0.0
+        self.cells = {}
+
+        root.title("CiosZhong PSU — ADC 通道监视")
+        root.geometry("560x700")
+
+        # ---------- 顶部：串口控制 ----------
+        top = ttk.Frame(root, padding=8)
+        top.pack(fill="x")
+
+        ttk.Label(top, text="串口:").pack(side="left")
+        self.port_var = tk.StringVar(value=port or "")
+        self.port_box = ttk.Combobox(top, textvariable=self.port_var, width=26)
+        self.port_box["values"] = find_ports()
+        self.port_box.pack(side="left", padx=4)
+
+        ttk.Button(top, text="刷新", width=6, command=self.refresh_ports).pack(side="left")
+        self.btn = ttk.Button(top, text="连接", width=8, command=self.toggle)
+        self.btn.pack(side="left", padx=4)
+
+        # ---------- 中部：通道表格 ----------
+        mid = ttk.LabelFrame(root, text="ADC 通道（固件每秒推送一轮）", padding=6)
+        mid.pack(fill="x", padx=8, pady=4)
+
+        hdr = ttk.Frame(mid)
+        hdr.pack(fill="x")
+        for txt, w in (("通道", 14), ("引脚", 8), ("数值", 12), ("单位", 5), ("更新", 8)):
+            ttk.Label(hdr, text=txt, width=w, font=("Helvetica", 11, "bold"),
+                      anchor="w").pack(side="left")
+
+        for name, unit in CHANNELS:
+            row = ttk.Frame(mid)
+            row.pack(fill="x", pady=1)
+            ttk.Label(row, text=name, width=14, anchor="w").pack(side="left")
+            ttk.Label(row, text=PIN_HINT.get(name, ""), width=8,
+                      anchor="w", foreground="#666").pack(side="left")
+            val = ttk.Label(row, text="—", width=12, anchor="w")
+            val.pack(side="left")
+            ttk.Label(row, text=unit, width=5, anchor="w").pack(side="left")
+            tst = ttk.Label(row, text="", width=8, anchor="w", foreground="#888")
+            tst.pack(side="left")
+            self.cells[name] = (val, tst)
+
+        # ---------- 手动命令 ----------
+        cmd = ttk.Frame(root, padding=(8, 2))
+        cmd.pack(fill="x")
+        ttk.Label(cmd, text="手动命令:").pack(side="left")
+        self.cmd_var = tk.StringVar(value="ain raw")
+        ent = ttk.Entry(cmd, textvariable=self.cmd_var, width=24)
+        ent.pack(side="left", padx=4)
+        ent.bind("<Return>", lambda e: self.send_cmd())
+        ttk.Button(cmd, text="发送", width=6, command=self.send_cmd).pack(side="left")
+        for quick in ("ain", "ain raw", "temp", "i2cscan", "info"):
+            ttk.Button(cmd, text=quick, width=7,
+                       command=lambda q=quick: self.quick(q)).pack(side="left", padx=1)
+
+        # ---------- 原始通信 ----------
+        raw_box = ttk.LabelFrame(root, text="原始串口数据", padding=4)
+        raw_box.pack(fill="both", expand=True, padx=8, pady=4)
+        self.raw = tk.Text(raw_box, height=12, wrap="none",
+                           font=("Menlo", 10), background="#101418", foreground="#c8e6c9")
+        self.raw.pack(fill="both", expand=True)
+
+        # ---------- 状态栏 ----------
+        self.status = tk.StringVar(value="未连接")
+        ttk.Label(root, textvariable=self.status, anchor="w",
+                  relief="sunken", padding=4).pack(fill="x", side="bottom")
+
+        self.refresh_ports()
+
+    # ------------------------------------------------------------------
+    def refresh_ports(self):
+        ports = find_ports()
+        self.port_box["values"] = ports
+        if ports and not self.port_var.get():
+            self.port_var.set(ports[0])
+
+    def quick(self, q):
+        self.cmd_var.set(q)
+        self.send_cmd()
+
+    def send_cmd(self):
+        if not self.ser:
+            return
+        cmd = self.cmd_var.get().strip()
+        if not cmd:
+            return
+        try:
+            self.ser.write((cmd + "\r\n").encode())
+            self.append_raw(f">>> {cmd}")
+        except Exception as exc:
+            self.append_raw(f"!!! 发送失败: {exc}")
+
+    def toggle(self):
+        if self.ser:
+            self.disconnect()
+        else:
+            self.connect()
+
+    def connect(self):
+        port = self.port_var.get().strip()
+        if not port:
+            self.status.set("请先选择串口")
+            return
+        try:
+            self.ser = serial.Serial(port, BAUD, timeout=0.2)
+        except Exception as exc:
+            self.status.set(f"打开失败: {exc}")
+            return
+        self.running = True
+        self.rx_thread = threading.Thread(target=self.rx_loop, daemon=True)
+        self.rx_thread.start()
+        self.btn.config(text="断开")
+        self.status.set(f"已连接 {port} @ {BAUD}")
+
+    def disconnect(self):
+        self.running = False
+        if self.rx_thread:
+            self.rx_thread.join(timeout=1)
+        if self.ser:
+            try:
+                self.ser.close()
+            except Exception:
+                pass
+        self.ser = None
+        self.btn.config(text="连接")
+        self.status.set("未连接")
+
+    # ------------------------------------------------------------------
+    def rx_loop(self):
+        buf = b""
+        while self.running:
+            try:
+                data = self.ser.read(256)
+            except Exception as exc:
+                self.status.set(f"读取错误: {exc}")
+                break
+            if not data:
+                continue
+            self.last_rx = time.time()
+            buf += data
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                text = line.decode(errors="replace").rstrip("\r")
+                if text.strip():
+                    self.root.after(0, self.handle_line, text)
+
+    def handle_line(self, text):
+        self.lines_seen += 1
+        self.frames = self.lines_seen // len(CHANNELS)
+        self.append_raw(text)
+
+        m = RE_SENSOR.match(text)
+        if m:
+            name, val = m.group(1), m.group(2)
+            if name in self.cells:
+                lbl, tst = self.cells[name]
+                # 数值与单位拆开显示
+                num = val
+                unit = ""
+                if val.endswith("°C"):
+                    num, unit = val[:-2].strip(), "°C"
+                elif " V @" in val:
+                    num, unit = val.split(" V @")[0].strip(), "V"
+                elif val.endswith(" V"):
+                    num, unit = val[:-2].strip(), "V"
+                elif val.startswith("n/a") or val.startswith("FAULT"):
+                    num, unit = val, ""
+                lbl.config(text=num)
+                tst.config(text=time.strftime("%H:%M:%S"))
+
+        self.status.set(
+            f"已连接 | 原始行 {self.lines_seen} | 约 {self.frames} 轮 | "
+            f"最后接收 {time.strftime('%H:%M:%S', time.localtime(self.last_rx))}")
+
+    def append_raw(self, text):
+        self.raw.insert("end", text + "\n")
+        # 只保留最近 400 行
+        if int(self.raw.index("end-1c").split(".")[0]) > 400:
+            self.raw.delete("1.0", "100.0")
+        self.raw.see("end")
+
+
+def main():
+    port = sys.argv[1] if len(sys.argv) > 1 else None
+    port = port or (find_ports()[0] if find_ports() else None)
+    root = tk.Tk()
+    app = MonitorApp(root, port)
+    if port:
+        app.connect()
+    root.protocol("WM_DELETE_WINDOW", lambda: (app.disconnect(), root.destroy()))
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,189 @@
+diff --git a/boot/bootutil/src/image_validate.c b/boot/bootutil/src/image_validate.c
+index 3e8031b7..2340731f 100644
+--- a/boot/bootutil/src/image_validate.c
++++ b/boot/bootutil/src/image_validate.c
+@@ -285,7 +285,6 @@ bootutil_img_validate(struct boot_loader_state *state,
+ 
+     rc = bootutil_tlv_iter_begin(&it, hdr, fap, IMAGE_TLV_ANY, false);
+     if (rc) {
+-        BOOT_LOG_DBG("bootutil_img_validate: TLV iteration failed %d", rc);
+         goto out;
+     }
+ 
+@@ -294,12 +293,9 @@ bootutil_img_validate(struct boot_loader_state *state,
+ #else
+     img_sz = it.tlv_end;
+ #endif
+-    BOOT_LOG_DBG("bootutil_img_validate: TLV off %" PRIu32 ", end %" PRIu32,
+-                 it.tlv_off, it.tlv_end);
+ 
+     if (img_sz > bootutil_max_image_size(state, fap)) {
+         rc = -1;
+-        BOOT_LOG_DBG("bootutil_img_validate: TLV beyond image size");
+         goto out;
+     }
+ 
+@@ -411,7 +407,7 @@ bootutil_img_validate(struct boot_loader_state *state,
+             }
+ #ifndef MCUBOOT_SIGN_PURE
+             FIH_CALL(bootutil_verify_sig, valid_signature, hash, sizeof(hash),
+-                                                           buf, len, key_id);
++                                                               buf, len, key_id);
+ #else
+             rc = flash_device_base(flash_area_get_device_id(fap), &base);
+             if (rc != 0) {
+diff --git a/boot/bootutil/src/swap_offset.c b/boot/bootutil/src/swap_offset.c
+index eda68ab9..c468c721 100644
+--- a/boot/bootutil/src/swap_offset.c
++++ b/boot/bootutil/src/swap_offset.c
+@@ -178,6 +178,13 @@ int boot_read_image_header(struct boot_loader_state *state, int slot,
+     assert(fap != NULL);
+ 
+     rc = flash_area_read(fap, off, out_hdr, sizeof *out_hdr);
++    BOOT_LOG_ERR("DEBUG swap_offset: slot=%d fa_id=%d fa_off=0x%lx off=0x%lx "
++                 "magic=0x%lx load_addr=0x%lx hdr_size=0x%x img_size=0x%x",
++                 slot, (int)fap->fa_id, (unsigned long)fap->fa_off,
++                 (unsigned long)off, (unsigned long)out_hdr->ih_magic,
++                 (unsigned long)out_hdr->ih_load_addr,
++                 (unsigned)out_hdr->ih_hdr_size,
++                 (unsigned)out_hdr->ih_img_size);
+     if (rc != 0) {
+         rc = BOOT_EFLASH;
+         goto done;
+@@ -715,6 +722,8 @@ int app_max_size(struct boot_loader_state *state)
+     size_t trailer_sz = boot_trailer_sz(BOOT_WRITE_SZ(state));
+     size_t sector_sz = boot_img_sector_size(state, BOOT_SLOT_PRIMARY, 0);
+     size_t padding_sz = sector_sz;
++    uint32_t pri_sectors = boot_img_num_sectors(state, BOOT_SLOT_PRIMARY);
++    uint32_t sec_sectors = boot_img_num_sectors(state, BOOT_SLOT_SECONDARY);
+ 
+     /* The trailer size needs to be sector-aligned */
+     trailer_sz = ALIGN_UP(trailer_sz, sector_sz);
+@@ -722,8 +731,16 @@ int app_max_size(struct boot_loader_state *state)
+     /* The slot whose size is used to compute the maximum image size must be the one containing the
+      * padding required for the swap.
+      */
+-    available_pri_sz = boot_img_num_sectors(state, BOOT_SLOT_PRIMARY) * sector_sz - trailer_sz;
+-    available_sec_sz = boot_img_num_sectors(state, BOOT_SLOT_SECONDARY) * sector_sz - trailer_sz - padding_sz;
++    available_pri_sz = pri_sectors * sector_sz - trailer_sz;
++    available_sec_sz = sec_sectors * sector_sz - trailer_sz - padding_sz;
++
++    BOOT_LOG_ERR("DEBUG app_max_size: pri_sec=%lu sec_sec=%lu sec_sz=0x%lx "
++                 "trailer=0x%lx avail_pri=0x%lx avail_sec=0x%lx ret=0x%lx",
++                 (unsigned long)pri_sectors, (unsigned long)sec_sectors,
++                 (unsigned long)sector_sz, (unsigned long)trailer_sz,
++                 (unsigned long)available_pri_sz, (unsigned long)available_sec_sz,
++                 (unsigned long)(available_pri_sz < available_sec_sz ?
++                                 available_pri_sz : available_sec_sz));
+ 
+     return (available_pri_sz < available_sec_sz ? available_pri_sz : available_sec_sz);
+ }
+diff --git a/boot/bootutil/src/tlv.c b/boot/bootutil/src/tlv.c
+index 3cf868c0..902b9d9e 100644
+--- a/boot/bootutil/src/tlv.c
++++ b/boot/bootutil/src/tlv.c
+@@ -62,7 +62,6 @@ bootutil_tlv_iter_begin(struct image_tlv_iter *it, const struct image_header *hd
+     if (LOAD_IMAGE_DATA(hdr, fap, off_, &info, sizeof(info))) {
+         return -1;
+     }
+-
+     if (info.it_magic == IMAGE_TLV_PROT_INFO_MAGIC) {
+         if (hdr->ih_protect_tlv_size != info.it_tlv_tot) {
+             return -1;
+@@ -125,9 +124,6 @@ bootutil_tlv_iter_next(struct image_tlv_iter *it, uint32_t *off, uint16_t *len,
+ 
+         rc = LOAD_IMAGE_DATA(it->hdr, it->fap, it->tlv_off, &tlv, sizeof tlv);
+         if (rc) {
+-            BOOT_LOG_DBG("bootutil_tlv_iter_next: load failed with %d for %p "
+-                         "%" PRIu32,
+-                         rc, it->fap, it->tlv_off);
+             return -1;
+         }
+ 
+diff --git a/boot/zephyr/main.c b/boot/zephyr/main.c
+index 90678743..ca22cf95 100644
+--- a/boot/zephyr/main.c
++++ b/boot/zephyr/main.c
+@@ -30,9 +30,7 @@
+ #include <soc.h>
+ #include <zephyr/linker/linker-defs.h>
+ 
+-#if defined(CONFIG_BOOT_DISABLE_CACHES)
+ #include <zephyr/cache.h>
+-#endif
+ 
+ #if defined(CONFIG_CPU_CORTEX_M)
+ #include <cmsis_core.h>
+@@ -535,6 +533,18 @@ int main(void)
+     BOOT_LOG_INF("Starting Direct-XIP bootloader");
+ #endif
+ 
++    /*
++     * Invalidate caches before any flash reads. The ROM bootloader enables
++     * caches without invalidating them first, so stale data from before
++     * flash programming may be cached. This causes MCUboot to read wrong
++     * image header fields (e.g., img_size) on the first boot after flashing.
++     *
++     * Use clean+invalidate (not just invalidate) because the D-Cache may
++     * contain dirty lines from the ROM bootloader's stack/heap operations.
++     */
++    sys_cache_instr_invd_all();
++    sys_cache_data_flush_and_invd_all();
++
+ #ifdef CONFIG_MCUBOOT_INDICATION_LED
+     /* LED init */
+     io_led_init();
+diff --git a/boot/zephyr/watchdog.c b/boot/zephyr/watchdog.c
+index 265e17bd..730ae6fc 100644
+--- a/boot/zephyr/watchdog.c
++++ b/boot/zephyr/watchdog.c
+@@ -10,6 +10,8 @@
+ #include <bootutil/bootutil_log.h>
+ #include <zephyr/device.h>
+ #include <zephyr/drivers/watchdog.h>
++#include <zephyr/drivers/gpio.h>
++#include <zephyr/devicetree.h>
+ 
+ #ifdef CONFIG_BOOT_WATCHDOG_FEED_NRFX_WDT
+ #include <nrfx_wdt.h>
+@@ -17,6 +19,12 @@
+ 
+ BOOT_LOG_MODULE_DECLARE(mcuboot);
+ 
++/* CiosZhong: 外部看门狗 MAX6703A WDI (PH9) —— 由 mcuboot_wdi.overlay 定义 */
++#if DT_NODE_EXISTS(DT_NODELABEL(mcuboot_wdi))
++static const struct gpio_dt_spec mcuboot_wdi_gpio =
++	GPIO_DT_SPEC_GET(DT_NODELABEL(mcuboot_wdi), gpios);
++#endif
++
+ /*
+  * Channel of watchdog that is setup and fed, if CONFIG_BOOT_WATCHDOG_INSTALL_TIMEOUT_AT_BOOT is
+  * not set then this will remain at the default of 0 but the driver will not have been set up
+@@ -30,6 +38,13 @@ static int watchdog_channel = 0;
+ 
+ __weak void mcuboot_watchdog_setup(void)
+ {
++    /* CiosZhong: 配置外部 MAX6703A WDI (PH9) 为输出，初始低 */
++#if DT_NODE_EXISTS(DT_NODELABEL(mcuboot_wdi))
++    if (device_is_ready(mcuboot_wdi_gpio.port)) {
++        gpio_pin_configure_dt(&mcuboot_wdi_gpio, GPIO_OUTPUT);
++        gpio_pin_set_dt(&mcuboot_wdi_gpio, 0);
++    }
++#endif
+ #if defined(CONFIG_BOOT_WATCHDOG_SETUP_AT_BOOT) && DT_NODE_HAS_STATUS(DT_ALIAS(watchdog0), okay)
+     const struct device *watchdog_device = DEVICE_DT_GET(DT_ALIAS(watchdog0));
+ 
+@@ -96,4 +111,13 @@ __weak void mcuboot_watchdog_feed(void)
+         wdt_feed(watchdog_device, watchdog_channel);
+     }
+ #endif
++
++    /* CiosZhong: 喂外部 MAX6703A (WDI PH9) —— 每次 feed toggle 一次 */
++#if DT_NODE_EXISTS(DT_NODELABEL(mcuboot_wdi))
++    static bool wdi_level;
++    if (device_is_ready(mcuboot_wdi_gpio.port)) {
++        wdi_level = !wdi_level;
++        gpio_pin_set_dt(&mcuboot_wdi_gpio, wdi_level ? 1 : 0);
++    }
++#endif
+ }
