@@ -1,7 +1,10 @@
 target_sources(app PRIVATE state_machine.c)
+target_sources(app PRIVATE sm_s1.c)
+target_sources(app PRIVATE sm_s2.c)
 
 target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
     ${CMAKE_CURRENT_LIST_DIR}/../bsp
     ${CMAKE_CURRENT_LIST_DIR}/../sensor
+    ${CMAKE_CURRENT_LIST_DIR}/../terminal
 )

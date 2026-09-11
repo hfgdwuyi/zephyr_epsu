@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CiosZhong PSU — 状态机设计（S1 + S2）</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  body { font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+         margin: 0; padding: 24px 32px; background: #f6f8fa; color: #1f2328; }
+  h1 { font-size: 24px; border-bottom: 2px solid #d0d7de; padding-bottom: 8px; }
+  h2 { font-size: 19px; margin-top: 36px; color: #0969da; }
+  h3 { font-size: 15px; color: #57606a; margin-bottom: 6px; }
+  .card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px;
+          padding: 16px 20px; margin: 14px 0; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; background: #fff; }
+  th, td { border: 1px solid #d0d7de; padding: 5px 8px; text-align: center; }
+  th { background: #f0f3f6; font-weight: 600; }
+  td.l { text-align: left; }
+  code { background: #eff1f3; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .note { background: #fff8c5; border-left: 4px solid #d4a72c; padding: 10px 14px;
+          border-radius: 4px; font-size: 13px; margin: 12px 0; }
+  .ok { background: #dafbe1; border-left: 4px solid #1a7f37; padding: 10px 14px;
+        border-radius: 4px; font-size: 13px; margin: 12px 0; }
+  .pending { background: #ddf4ff; border-left: 4px solid #0969da; padding: 10px 14px;
+             border-radius: 4px; font-size: 13px; margin: 12px 0; }
+  .on  { background: #dafbe1; font-weight: 600; }
+  .off { background: #f6f8fa; color: #57606a; }
+  .err { background: #ffebe9; }
+  .mermaid { text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>CiosZhong PSU — 状态机设计</h1>
+<p style="color:#57606a;font-size:13px">
+  <b>S1 系统</b>：按 <code>S1_MU_SYS_ctr_logic_state_machine.md</code> 实现 &nbsp;|&nbsp;
+  <b>S2 系统</b>：按 <code>statemachine config.xlsx</code> 的 s2 系列表实现（solo / classic）
+</p>
+
+<div class="ok">
+  <b>文件结构（重整后）</b><br>
+  <code>state_machine.h/c</code> — 顶层：主模式判定 + 系统分派 + 状态日志打印<br>
+  <code>sm_s1.h/c</code> — S1 系统完整实现（T0~T4 + RESET，含继电器/LED 输出）<br>
+  <code>sm_s2.h/c</code> — S2 系统完整实现（ON / OFF·待机 / OFF·非待机 / RESET）<br>
+  <code>state_machine.h</code> 内另含 <b>S1/S2 共用管脚定义</b>（K*、PAC/PDC 别名、两个管脚组、电平写入）<br>
+  <code>S1_MU_SYS_ctr_logic_state_machine.md</code> — S1 设计输入（源文档）<br>
+  <code>statemachine config.xlsx</code> — 主模式表 + S2 各状态管脚表（源文档）
+</div>
+
+<h2>1. 主模式判定</h2>
+<div class="card">
+<pre class="mermaid">
+flowchart TB
+    PWR[上电] --> JUDGE{"配置拨码<br/>pj2 / pj3 / pj4"}
+    JUDGE -->|"pj2=1, pj3=0"| F1["S1 系统<br/>（已实现）"]
+    JUDGE -->|"pj2=0, pj3=1"| F2["S2 系统<br/>classic / solo"]
+    JUDGE -->|"其余组合"| FN["invalid<br/>安全态"]
+
+    F1 --> S1["sm_s1.c<br/>T0~T4 + RESET"]
+    F2 --> S2["sm_s2.c<br/>ON / OFF·待机 / OFF·非待机 / RESET"]
+    FN --> HOLD["不驱动任何输出"]
+    S1 --> SP["state_machine.h<br/>管脚定义 + 电平写入（共用）"]
+    S2 --> SP
+</pre>
+</div>
+
+<div class="card">
+<table style="max-width:640px">
+<tr><th>pj2</th><th>pj3</th><th>pj4</th><th>mode</th><th>实现状态</th></tr>
+<tr class="off"><td>0</td><td>0</td><td>x</td><td><b>invalid</b></td><td class="l">安全态（输出断开）</td></tr>
+<tr class="on"><td><b>1</b></td><td>0</td><td>x</td><td><b>S1 system</b></td><td class="l">✅ 已实现</td></tr>
+<tr class="on"><td>0</td><td><b>1</b></td><td><b>0</b></td><td><b>S2 class system</b></td><td class="l">✅ 已实现（classic）</td></tr>
+<tr class="on"><td>0</td><td><b>1</b></td><td><b>1</b></td><td><b>S2 solo system</b></td><td class="l">✅ 已实现（solo）</td></tr>
+<tr class="off"><td>1</td><td>1</td><td>x</td><td><b>invalid</b></td><td class="l">安全态（输出断开）</td></tr>
+</table>
+</div>
+
+<h2>2. S1 系统状态机（T0~T4 + RESET）</h2>
+<div class="card">
+<pre class="mermaid">
+stateDiagram-v2
+    direction LR
+
+    [*] --> T0
+
+    state "T0 上电待机" as T0
+    state "T1 市电掉电/OR关机" as T1
+    state "T2 系统开机" as T2
+    state "T3 开机后市电掉电" as T3
+    state "T4 正常关机" as T4
+    state "RESET 硬件复位" as RESET
+
+    T0 --> T2 : SYSTEM_ON_OFF1 上升沿\n(按键 >0.5s 且 <5s)
+    T0 --> T1 : 市电掉电
+
+    T1 --> T0 : 市电恢复
+
+    T2 --> T4 : SYSTEM_ON_OFF1 上升沿\n(正常关机请求)
+    T2 --> T3 : 开机后市电掉电
+
+    T3 --> T2 : 市电恢复
+    T3 --> T1 : 掉电持续
+
+    T4 --> T0 : 关机完成(市电正常)
+    T4 --> T1 : 关机完成(市电已丢失)
+
+    T0 --> RESET : ME_BOX_ERROR && SYSTEM_RESET\n边沿触发
+    T1 --> RESET : 同上
+    T2 --> RESET : 同上
+    T3 --> RESET : 同上
+    T4 --> RESET : 同上
+
+    RESET --> T0 : 市电正常(保持 2s 后)
+    RESET --> T1 : 市电未连接
+
+    note right of T2
+        K3,K4,K5,K6,K7,K8_1,
+        K9,K11,K12,K13 依次 ON
+        (AC继电器/DC efuse 各延迟 10ms)
+    end note
+
+    note right of T3
+        K2,K6,K7,K8_1,K9,K10,
+        K11,K12,K13 ON
+        (OR 模式供电)
+    end note
+</pre>
+</div>
+
+<h2>3. S1 各状态输出（依据 md 的 Relay / Output Notes）</h2>
+<div class="card">
+<table>
+<tr><th>状态</th><th>继电器</th><th>面板 LED / 状态驱动</th></tr>
+<tr>
+  <td class="l"><b>T0</b> 上电待机</td>
+  <td class="l"><code>K3, K13</code></td>
+  <td class="l">LED_GRID_PWR_IN, LED_PWR_24_ON, LED_CP_224V_ON, LED_TROLLEY_CONNECTED,<br>MAINS_CONNECTED_MCU, MAINS_CONNECTED_IS_PC</td>
+</tr>
+<tr>
+  <td class="l"><b>T1</b> 市电掉电</td>
+  <td class="l"><code>K3, K13</code>（保持待机回路，同 T0）</td>
+  <td class="l"><span class="off">全灭</span></td>
+</tr>
+<tr>
+  <td class="l"><b>T2</b> 系统开机</td>
+  <td class="l"><code>AC: K3,K4,K5,K6,K7</code><br><code>efuse: K8_1,K9,K11,K12,K13</code><br><b>两组同时起步，各轨内部间隔 10ms</b></td>
+  <td class="l">T0 的全部 + DRV_IS_PC_SITE_ON, DRV_APP_HOST_SITE_ON,<br>TROLLEY_ENABLE_DRV</td>
+</tr>
+<tr>
+  <td class="l"><b>T3</b> 开机后掉电</td>
+  <td class="l"><code>AC: K2,K6,K7</code><br><code>efuse: K8_1,K9,K10,K11,K12,K13</code><br>（不含 K3/K4/K5）</td>
+  <td class="l">LED_UPS_IN, LED_PWR_24_ON, LED_CP_224V_ON, LED_TROLLEY_CONNECTED,<br>DRV_IS_PC_SITE_ON, DRV_APP_HOST_SITE_ON</td>
+</tr>
+<tr>
+  <td class="l"><b>T4</b> 正常关机</td>
+  <td class="l"><code>K3, K13</code> + <b>K9/K10 动态</b><br>（IS_PC_ON → K9，APP_HOST_ON → K10）</td>
+  <td class="l">同 T0</td>
+</tr>
+<tr>
+  <td class="l"><b>RESET</b></td>
+  <td class="l">全部断开</td>
+  <td class="l">全灭</td>
+</tr>
+</table>
+</div>
+
+<div class="note">
+  <b>输出模型（各状态直接写管脚电平）：</b>
+  每个子状态在自己的函数里直接调 <code>bspDoutSetBitmap()</code> 写出它那一份完整电平，
+  没有中间状态表、没有通用 apply 包装：<br>
+  <code>relay_write(S1_T0_RELAY);</code> —— 要合的路写 1、组内其余路写 0；<br>
+  <code>led_write(L_GRID_IN | ...);</code> —— 写法与 relay 完全一致。<br>
+  <b>不做整组复位</b>：本状态仍要合的路（如 T2 里的 K3/K13）不会在中途被拉掉，
+  只把本状态不需要的路明确写 0。<br>
+  T2/T3 的顺序上电由两条轨道并行推进，每 10ms 各直接
+  <code>bspDoutSetBitmap(BIT64(pin), true)</code> 一路（AC 轨 + efuse 轨）。<br>
+  WDI(PH9) 归 max6703a 模块，状态机一律不触碰；管脚只在子状态中控制，无退出清理。
+</div>
+
+<div class="note">
+  <b>需核对（md 本身不完整，已按最合理方式实现）：</b>
+  <ol style="margin:6px 0">
+    <li><b>T1 输出</b>：md 未给出 → 继电器保持待机回路 <code>K3+K13</code>（同 T0），LED 暂全灭</li>
+    <li><b>T4 去向</b>：md 写 <code>T4→T1</code>，但"正常关机"逻辑上应回待机 → 实现为 200ms 后市电正常→T0、丢失→T1</li>
+    <li><b>10ms 间隔</b>：md 描述"AC relays delay each other / DC efuse enables delay each other"
+        → 实现为两条并行轨道（AC 轨 + efuse 轨），每轨内部 10ms 递增，两组同时起步</li>
+    <li><b>RESET 进入</b>：md 为 <code>ME_BOX_ERROR && SYSTEM_RESET</code> 上升沿 → 实现需市电正常 <b>且</b> reset 上升沿；
+        RESET 退出需 reset 释放（"3V3 && 0V"），保持 2s 后回 T0/T1</li>
+  </ol>
+</div>
+
+<h2>4. T2 / T3 的顺序上电时序</h2>
+<div class="card">
+<p style="font-size:13px;color:#57606a;margin:0 0 8px">
+  <b>K2~K7 = 交流继电器</b>，<b>K8_1/K8_2/K9~K13 = efuse</b>。两组<b>同时起步</b>，
+  各自内部依次延时 10ms（两条轨道并行推进，互不等待）。
+</p>
+<pre class="mermaid">
+gantt
+    title 顺序使能：AC 轨 / efuse 轨并行，各轨内部间隔 10ms
+    dateFormat x
+    axisFormat %s ms
+
+    section T2 AC 继电器
+    K3   :a1, 0, 10
+    K4   :a2, 10, 10
+    K5   :a3, 20, 10
+    K6   :a4, 30, 10
+    K7   :a5, 40, 10
+
+    section T2 efuse
+    K8_1 :c1, 0, 10
+    K9   :c2, 10, 10
+    K11  :c3, 20, 10
+    K12  :c4, 30, 10
+    K13  :c5, 40, 10
+
+    section T3 AC 继电器
+    K2   :b1, 0, 10
+    K6   :b2, 10, 10
+    K7   :b3, 20, 10
+
+    section T3 efuse
+    K8_1 :d1, 0, 10
+    K9   :d2, 10, 10
+    K10  :d3, 20, 10
+    K11  :d4, 30, 10
+    K12  :d5, 40, 10
+    K13  :d6, 50, 10
+</pre>
+</div>
+
+<h2>5. S2 系统状态机（ON / OFF·待机 / OFF·非待机 / RESET）</h2>
+<div class="card">
+<pre class="mermaid">
+stateDiagram-v2
+    [*] --> OFF_SB
+    state "ON 系统开机" as ON
+    state "OFF 关机·待机<br/>（市电在场）" as OFF_SB
+    state "OFF 关机·非待机<br/>（市电掉电）" as OFF_NS
+    state "RESET 硬件复位" as RST
+
+    OFF_SB --> ON : SYSTEM_ON_OFF 上升沿
+    ON --> OFF_SB : SYSTEM_ON_OFF 上升沿（市电在场）
+    ON --> OFF_NS : SYSTEM_ON_OFF 上升沿（市电掉电）
+    OFF_SB --> OFF_NS : 市电掉电（ME_BOX_ERROR 低）
+    OFF_NS --> OFF_SB : 市电恢复
+    OFF_SB --> RST : ME_BOX_ERROR && SYSTEM_RESET 上升沿
+    ON --> RST : 同上
+    OFF_NS --> RST : 同上
+    RST --> OFF_SB : reset 释放 + 市电在场（保持 2s）
+    RST --> OFF_NS : reset 释放 + 市电掉电
+</pre>
+</div>
+
+<div class="card">
+<table>
+<tr><th>状态</th><th>Excel 来源</th><th>继电器 / efuse</th></tr>
+<tr>
+  <td class="l"><b>ON</b> 系统开机</td>
+  <td class="l"><code>s2 &lt;mode&gt; mode on</code></td>
+  <td class="l"><code>PAC1(K4), PAC3(K7), PAC4(K6)</code> +
+      <code>PDC1(K8_1), PDC2(K8_2), PDC3(K9), PDC4(K13), PDC6(K11), PDC7(K12)</code> 合<br>
+      <code>PAC2(K5)</code> = 推车连接时合 / 断开时断<br>
+      <code>PDC5(K10)</code> = n/a（不控制）</td>
+</tr>
+<tr>
+  <td class="l"><b>OFF · 待机</b><br>市电在场</td>
+  <td class="l"><code>s2 &lt;mode&gt; mode off in standby</code></td>
+  <td class="l">其余全断，只有两路延时关断：<br>
+      <code>PAC2(K5) ← APP_HOST_ON</code>、<code>PDC3(K9)/PDC6(K11) ← IS_PC_ON</code><br>
+      （对应表里的 "switch off until …_Alive turn off"）</td>
+</tr>
+<tr>
+  <td class="l"><b>OFF · 非待机</b><br>市电掉电</td>
+  <td class="l"><code>s2 &lt;mode&gt; mode off not standby</code></td>
+  <td class="l">与"关机·待机"的管脚部分相同（两表差异只在 PAC6）</td>
+</tr>
+<tr>
+  <td class="l"><b>RESET</b> 硬件复位</td>
+  <td class="l">—（与 S1 同规则）</td>
+  <td class="l">全部断开</td>
+</tr>
+</table>
+</div>
+
+<div class="note">
+  <b>S2 实现说明（源表不完整处，均已按最合理方式实现）：</b>
+  <ol style="margin:6px 0">
+    <li><b>PAC6</b>：六张 S2 表都有这一行，但 <code>pin_config.xlsx</code> Sheet2 未填它的引脚，
+        用户确认先留空 → 当前不控制（由于按组写电平，其实际管脚在 S2 下被写 0）</li>
+    <li><b>待机 / 非待机判定</b>：市电正常（<code>ME_BOX_ERROR</code> 高）= 待机，掉电 = 非待机</li>
+    <li><b>PAC2 延时关断</b>：四张 off 表里该单元格所在列不一致 → 连接/断开推车两个方向都做延时关断</li>
+    <li><b>LED</b>：Excel 的 S2 表只给 PAC/PDC，没有 LED 列 → 按 S1 惯例 + S2 模式指示灯
+        （<code>LED_S2_SYS_ON</code>，solo 另加 <code>LED_S2_SOLO_SYS</code>）</li>
+    <li><b>开机态市电掉电</b>：Excel 未定义 → 保持开机（同 S1 的 OR 模式思路），不自动关机</li>
+  </ol>
+</div>
+
+<h2>6. 输入信号</h2>
+<div class="card">
+<table>
+<tr><th>md 名称</th><th>代码 / 引脚</th><th>S1 中的作用</th></tr>
+<tr><td class="l">S1_SYSTEM_CONFIG</td><td>DIN_S1_SYSTEM_CONFIG / PJ2</td><td class="l">主模式选择（高 = S1）</td></tr>
+<tr><td class="l">ME_BOX_ERROR</td><td>DIN_ME_BOX_ERROR / PH6</td><td class="l">市电/整机正常？高=正常，低=掉电</td></tr>
+<tr><td class="l">TROLLEY_CONNECTED</td><td>DIN_TROLLEY_CONNECTED / PJ5</td><td class="l">推车连接状态</td></tr>
+<tr><td class="l">SYSTEM_ON_OFF1</td><td>DIN_SYSTEM_ON_OFF / PJ0</td><td class="l">开/关机按键（上升沿）</td></tr>
+<tr><td class="l">SYSTEM_RESET</td><td>DIN_SYSTEM_RESET / PJ1</td><td class="l">硬件复位（上升沿 → RESET）</td></tr>
+<tr><td class="l">IS_PC_ON</td><td>DIN_IS_PC_ON / PJ15</td><td class="l">T4 时决定 K9</td></tr>
+<tr><td class="l">APP_HOST_ON</td><td>DIN_APP_HOST_ON / PJ7</td><td class="l">T4 时决定 K10</td></tr>
+</table>
+</div>
+
+<h2>7. 状态日志</h2>
+<div class="card">
+<p style="font-size:13px;color:#57606a;margin:0 0 8px">
+  状态机<b>不接受上位机指令、也没有查询 API</b>：状态信息在迁移时直接打印到串口，
+  看日志即可知道当前处于哪个系统、哪个子状态。
+</p>
+<pre style="background:#101418;color:#c8e6c9;padding:12px;border-radius:6px;font-size:12px">
+STATEMACHINE: init (S1 + S2)
+STATEMACHINE: system -> S1          ← 系统切换（拨码变化时）
+S1: -> T0 上电待机                   ← 子状态迁移（每次迁移一条）
+S1: -> T2 系统开机
+S2: mode -> solo                    ← S2 子模式（pj4）
+S2: -> ON 系统开机
+</pre>
+<p style="font-size:12px;color:#57606a">
+  打印点：<code>state_machine.c</code>（系统切换）、<code>sm_s1.c</code> / <code>sm_s2.c</code>（子状态迁移、S2 子模式）。<br>
+  串口升级（DFU）期间这些日志自动静默（<code>terminalIsQuiet()</code>），避免插进升级协议流。
+</p>
+</div>
+
+<script>
+mermaid.initialize({ startOnLoad: true, theme: 'default', securityLevel: 'loose',
+  flowchart: { useMaxWidth: true, htmlLabels: true }, gantt: { barHeight: 16, fontSize: 12 } });
+</script>
+</body>
+</html>
