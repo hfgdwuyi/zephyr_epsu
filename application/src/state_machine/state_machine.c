@@ -65,7 +65,7 @@ static smSystem_t systemDetect(uint32_t din)
 		return SYSTEM_S1;
 	}
 	if (!pj2 && pj3) {
-		
+
 		return SYSTEM_S2;
 	}
 	return SYSTEM_NONE;

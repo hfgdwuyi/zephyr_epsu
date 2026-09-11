@@ -39,32 +39,32 @@ static bool        s2_solo;          /* 子模式：pj4 */
 /* ==================== 输入判定 ==================== */
 
 /* ME_BOX_ERROR 高 = 市电正常（=待机条件）；低 = 市电掉电 */
-static inline bool inMains(uint32_t din)
+static inline bool isMainsOk(uint32_t din)
 {
 	return (din & BIT(DIN_ME_BOX_ERROR)) != 0U;
 }
 
-static inline bool inTrolley(uint32_t din)
+static inline bool isTrolleyConnected(uint32_t din)
 {
 	return (din & BIT(DIN_TROLLEY_CONNECTED)) != 0U;
 }
 
-static inline bool inOnOff(uint32_t din)
+static inline bool isOnOffActive(uint32_t din)
 {
 	return (din & BIT(DIN_SYSTEM_ON_OFF)) != 0U;
 }
 
-static inline bool inReset(uint32_t din)
+static inline bool isResetActive(uint32_t din)
 {
 	return (din & BIT(DIN_SYSTEM_RESET)) != 0U;
 }
 
-static inline bool inIsPc(uint32_t din)
+static inline bool isPcOn(uint32_t din)
 {
 	return (din & BIT(DIN_IS_PC_ON)) != 0U;
 }
 
-static inline bool inAppHost(uint32_t din)
+static inline bool isAppHostOn(uint32_t din)
 {
 	return (din & BIT(DIN_APP_HOST_ON)) != 0U;
 }
@@ -89,16 +89,16 @@ static void s2OutputRun(uint32_t din)
 	uint64_t led   = s2ModeLed() | L_SYS_ON |
 			 L_PWR24 | L_CP224 | L_TROLLEY | D_TROLLEY_EN;
 
-	if (inTrolley(din)) {
+	if (isTrolleyConnected(din)) {
 		relay |= K5;
 	}
-	if (inMains(din)) {
+	if (isMainsOk(din)) {
 		led |= L_GRID_IN | D_MAINS_MCU | D_MAINS_IS_PC;
 	}
-	if (inIsPc(din)) {
+	if (isPcOn(din)) {
 		led |= L_IS_PC | D_IS_PC_SITE;
 	}
-	if (inAppHost(din)) {
+	if (isAppHostOn(din)) {
 		led |= L_APP_HOST | D_APP_HOST;
 	}
 
@@ -117,16 +117,16 @@ static void s2OutputOff(uint32_t din, bool standby)
 	uint64_t relay = 0;
 	uint64_t led   = s2ModeLed();
 
-	if (inAppHost(din)) {
+	if (isAppHostOn(din)) {
 		relay |= K5;
 	}
-	if (inIsPc(din)) {
+	if (isPcOn(din)) {
 		relay |= K9 | K11;
 	}
-	if (standby && inMains(din)) {
+	if (standby && isMainsOk(din)) {
 		led |= L_GRID_IN | D_MAINS_MCU | D_MAINS_IS_PC;
 	}
-	if (inTrolley(din)) {
+	if (isTrolleyConnected(din)) {
 		led |= L_TROLLEY;
 	}
 
@@ -188,11 +188,11 @@ void smS2Enter(void)
 
 smS2State_t smS2Tick(uint32_t din)
 {
-	const bool mains   = inMains(din);
-	const bool reset   = inReset(din);
+	const bool mains   = isMainsOk(din);
+	const bool reset   = isResetActive(din);
 
-	bool onoff_rise = inOnOff(din) && !inOnOff(s2_prev_din);
-	bool reset_rise = reset && !inReset(s2_prev_din);
+	bool onoff_rise = isOnOffActive(din) && !isOnOffActive(s2_prev_din);
+	bool reset_rise = reset && !isResetActive(s2_prev_din);
 
 	if (!s2_prev_valid) {
 		onoff_rise = false;
@@ -230,8 +230,11 @@ smS2State_t smS2Tick(uint32_t din)
 		/* 关机请求 → 按市电在场与否进待机 / 非待机
 		 * （Excel 未定义开机态市电掉电的行为 → 保持开机，同 S1 的 OR 思路） */
 		if (onoff_rise) {
-			s2EnterState(mains ? SM_S2_STANDBY
-				       : SM_S2_OFF_NO_MAINS, din);
+			if (mains) {
+				s2EnterState(SM_S2_STANDBY, din);
+			} else {
+				s2EnterState(SM_S2_OFF_NO_MAINS, din);
+			}
 		} else {
 			s2OutputRun(din);   /* K5/延时位随推车、IS_PC、APP_HOST 实时更新 */
 		}

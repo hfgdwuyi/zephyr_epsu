@@ -25,27 +25,32 @@
 #include "state_machine.h"   /* 管脚定义 + 电平写入（S1/S2 共用） */
 #include "sm_s1.h"
 
-/* ==================== 各子状态的继电器集合 ====================
- * 每个状态要合哪几路继电器，在这里显式写出来（与 md 的 Relay sequence 对应）：
- *   K2~K7        = 交流继电器（AC）
- *   K8_1/K8_2/K9~K13 = efuse
- */
-#define S1_STANDBY_RELAY  (K3 | K13)                                   /* 待机回路 */
-#define S1_OFF_NO_MAINS_RELAY  (K3 | K13)                                   /* 市电掉电仍保持待机回路 */
-#define S1_RUN_RELAY  (K3 | K4 | K5 | K6 | K7 |                    \
-		      K8_1 | K9 | K11 | K12 | K13)               /* 开机 */
-#define S1_RUN_OR_RELAY  (K2 | K6 | K7 |                              \
-		      K8_1 | K9 | K10 | K11 | K12 | K13)         /* OR 模式 */
-#define S1_SHUTDOWN_RELAY  (K3 | K13)                                   /* 关机：+ K9/K10 动态 */
-
 /* 状态名（仅本文件打印用） */
 static const char *s1StateName(smS1State_t st);
+
+/* ==================== 各子状态的继电器集合 ====================
+ * 每个状态要合哪几路继电器，在这里显式写出来（与 md 的 Relay sequence 对应）：
+ *   K2~K7            = 交流继电器（AC）
+ *   K8_1/K8_2/K9~K13 = efuse
+ */
+/* 待机回路（md T0） */
+#define S1_STANDBY_RELAY      (K3 | K13)
+/* 市电掉电仍保持待机回路（md T1） */
+#define S1_OFF_NO_MAINS_RELAY (K3 | K13)
+/* 开机（md T2）：AC 与 efuse 两轨同时起步、各轨内部 10ms 依次延时 */
+#define S1_RUN_RELAY          (K3 | K4 | K5 | K6 | K7 | \
+			       K8_1 | K9 | K11 | K12 | K13)
+/* OR 模式（md T3）：市电掉电、推车供电 */
+#define S1_RUN_OR_RELAY       (K2 | K6 | K7 | \
+			       K8_1 | K9 | K10 | K11 | K12 | K13)
+/* 正常关机（md T4）：待机回路 + K9/K10 由 IS_PC_ON / APP_HOST_ON 动态决定 */
+#define S1_SHUTDOWN_RELAY     (K3 | K13)
 
 /* ==================== 内部状态 ==================== */
 
 #define S1_STAGE_STEP_MS 10
 
-/* T2 / T3 的继电器上电次序 —— 两条轨道，同时起步，各自内部 10ms 依次延时
+/* RUN / RUN_OR 的继电器上电次序 —— 两条轨道，同时起步，各自内部 10ms 依次延时
  *   ac  : K2~K7   交流继电器
  *   ef  : K8_1/K8_2/K9~K13  efuse
  */
@@ -83,30 +88,40 @@ static int64_t  s1_stage_ms;
 /* ==================== 输入判定 ==================== */
 
 /* ME_BOX_ERROR 高 = 市电/整机正常；低 = 市电掉电或故障 */
-static inline bool inMainsOk(uint32_t din)
+static inline bool isMainsOk(uint32_t din)
 {
 	return (din & BIT(DIN_ME_BOX_ERROR)) != 0U;
 }
 
-static inline bool inTrolley(uint32_t din)
+static inline bool isTrolleyConnected(uint32_t din)
 {
 	return (din & BIT(DIN_TROLLEY_CONNECTED)) != 0U;
 }
 
-static inline bool inOnOff(uint32_t din)
+static inline bool isOnOffActive(uint32_t din)
 {
 	return (din & BIT(DIN_SYSTEM_ON_OFF)) != 0U;
 }
 
-static inline bool inReset(uint32_t din)
+static inline bool isResetActive(uint32_t din)
 {
 	return (din & BIT(DIN_SYSTEM_RESET)) != 0U;
 }
 
+static inline bool isPcOn(uint32_t din)
+{
+	return (din & BIT(DIN_IS_PC_ON)) != 0U;
+}
+
+static inline bool isAppHostOn(uint32_t din)
+{
+	return (din & BIT(DIN_APP_HOST_ON)) != 0U;
+}
+
 /* 顺序上电（定义见后）：先全断，再按 AC / efuse 两条轨道逐路合上 target */
 static void relayStage(uint64_t target,
-			const uint8_t *ac, size_t ac_n,
-			const uint8_t *ef, size_t ef_n);
+		       const uint8_t *ac, size_t ac_n,
+		       const uint8_t *ef, size_t ef_n);
 
 /* ==================== 各子状态的管脚输出 ==================== */
 /* 管脚号直接写在各状态自己的函数里，改哪一路就改哪一行 */
@@ -136,8 +151,8 @@ static void s1OutputRun(void)
 		 D_IS_PC_SITE | D_APP_HOST | D_TROLLEY_EN);
 	/* 继电器：目标 S1_RUN_RELAY，本状态不要的路写 0，其余由两轨 10ms 逐路合 */
 	relayStage(S1_RUN_RELAY,
-		    s1RunAc, ARRAY_SIZE(s1RunAc),
-		    s1RunEf, ARRAY_SIZE(s1RunEf));
+		   s1RunAc, ARRAY_SIZE(s1RunAc),
+		   s1RunEf, ARRAY_SIZE(s1RunEf));
 }
 
 /* RUN_OR（md T3）开机后市电掉电（OR 模式）：K2,K6,K7,K8_1,K9,K10,K11,K12,K13 */
@@ -147,24 +162,22 @@ static void s1OutputRunOr(void)
 		 D_IS_PC_SITE | D_APP_HOST);
 	/* 继电器：目标 S1_RUN_OR_RELAY */
 	relayStage(S1_RUN_OR_RELAY,
-		    s1RunOrAc, ARRAY_SIZE(s1RunOrAc),
-		    s1RunOrEf, ARRAY_SIZE(s1RunOrEf));
+		   s1RunOrAc, ARRAY_SIZE(s1RunOrAc),
+		   s1RunOrEf, ARRAY_SIZE(s1RunOrEf));
 }
 
 /* SHUTDOWN（md T4）正常关机：待机回路 + K9/K10 由 IS_PC_ON / APP_HOST_ON 决定 */
 static void s1OutputShutdown(uint32_t din)
 {
-	const bool is_pc    = (din & BIT(DIN_IS_PC_ON))    != 0U;
-	const bool app_host = (din & BIT(DIN_APP_HOST_ON)) != 0U;
-	uint64_t   relay    = S1_SHUTDOWN_RELAY;
-	uint64_t   led      = L_GRID_IN | L_PWR24 | L_CP224 | L_TROLLEY |
-			      D_MAINS_MCU | D_MAINS_IS_PC;
+	uint64_t relay = S1_SHUTDOWN_RELAY;
+	uint64_t led   = L_GRID_IN | L_PWR24 | L_CP224 | L_TROLLEY |
+			 D_MAINS_MCU | D_MAINS_IS_PC;
 
-	if (is_pc) {
+	if (isPcOn(din)) {
 		relay |= K9;
 		led   |= D_IS_PC_SITE;
 	}
-	if (app_host) {
+	if (isAppHostOn(din)) {
 		relay |= K10;
 		led   |= D_APP_HOST;
 	}
@@ -199,8 +212,8 @@ static void s1Output(smS1State_t st, uint32_t din)
 /* 开始：只把本状态不需要的继电器写 0（target 里的路保持原状，不中途拉掉），
  * 然后 AC / efuse 两轨同时起步逐路合上（首次 step 在下一次 tick 立即发生） */
 static void relayStage(uint64_t target,
-			const uint8_t *ac, size_t ac_n,
-			const uint8_t *ef, size_t ef_n)
+		       const uint8_t *ac, size_t ac_n,
+		       const uint8_t *ef, size_t ef_n)
 {
 	bspDoutSetBitmap(SM_RELAY_ALL & ~target, false);   /* 只拉低本状态不要的路 */
 
@@ -288,13 +301,13 @@ void smS1Enter(void)
 
 smS1State_t smS1Tick(uint32_t din)
 {
-	const bool mains   = inMainsOk(din);
-	const bool trolley = inTrolley(din);
-	const bool onoff   = inOnOff(din);
-	const bool reset   = inReset(din);
+	const bool mains   = isMainsOk(din);
+	const bool trolley = isTrolleyConnected(din);
+	const bool onoff   = isOnOffActive(din);
+	const bool reset   = isResetActive(din);
 
-	bool onoff_rise = onoff && !inOnOff(s1_prev_din);
-	bool reset_rise = reset && !inReset(s1_prev_din);
+	bool onoff_rise = onoff && !isOnOffActive(s1_prev_din);
+	bool reset_rise = reset && !isResetActive(s1_prev_din);
 
 	if (!s1_prev_valid) {
 		onoff_rise = false;
