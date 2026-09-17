@@ -262,45 +262,53 @@ source $ZEPHYR_BASE/zephyr-env.sh
 
 ### Build
 
-产品板（25 MHz HSE，自定义 board target）：
+推荐使用一键脚本（自动定位工具链、应用 mcuboot 补丁、按 Kconfig 版本签名并自检）：
+
+```bash
+./tools/build_fw.sh --all        # bootloader + app + 签名
+./tools/build_fw.sh              # 只重建 app + 签名（日常开发）
+```
+
+> 详细流程（新设备环境搭建 → boot/app 重建 → 烧录 → 串口升级）见
+> **[`SERIAL_DFU_GUIDE.md`](SERIAL_DFU_GUIDE.md)**。
+
+手动构建（产品板，自定义 board target）：
 
 ```bash
 cd ~/project/02_zephyr/zephyrproject
-$VENV_WEST build \
-  -d ~/project/03_siemens/ciosZhong_ePSU/build \
-  ~/project/03_siemens/ciosZhong_ePSU/application \
-  -b cioszhong_psu/stm32h745xx/m7
+export ZEPHYR_BASE=$PWD/zephyr
+export ZEPHYR_TOOLCHAIN_VARIANT=zephyr
+export ZEPHYR_SDK_INSTALL_DIR=~/project/02_zephyr/zephyr-sdk-1.0.1
+
+$VENV_WEST build -d ~/project/03_siemens/ciosZhong_ePSU/build \
+  -b cioszhong_psu/stm32h745xx/m7 \
+  ~/project/03_siemens/ciosZhong_ePSU/application
 ```
 
 > 自定义 board 在 `application/boards/arm/cioszhong_psu/`，`BOARD_ROOT`
 > 已由 `application/CMakeLists.txt` 自动注册，无需额外参数。
-
-NUCLEO 开发板（ST-Link 8 MHz 时钟）仍可构建：
-
-```bash
-$VENV_WEST build \
-  -d ~/project/03_siemens/ciosZhong_ePSU/build \
-  ~/project/03_siemens/ciosZhong_ePSU/application \
-  -b nucleo_h745zi_q/stm32h745xx/m7
-```
+> **注意：构建产物 `zephyr.bin` 未签名**，升级必须用 `zephyr.signed.bin`
+> （由 `tools/build_fw.sh` 生成）。
 
 ### Flash
 
+首次空片烧录（boot + app）：
+
 ```bash
-$VENV_WEST flash -d ~/project/03_siemens/ciosZhong_ePSU/build -r openocd
+./flash_recover_mcuboot.sh
+```
+
+之后升级只需串口（无需 ST-Link）：
+
+```bash
+python3 tools/psu_dfu.py <port> build/zephyr/zephyr.signed.bin
 ```
 
 ## Expected Serial Output
 
 ```
-===== CiosZhong Application v0.2.1 =====
-PSU_SM: init cfg=0
-PSU_SM: -> state 0 (t=0ms)
-AIN: init done (poll), inputs=14
-WTDG_Init: watchdog0 not in devicetree, skipping
-PSU_SM: -> state 1 (t=100ms)
-...
-PSU_SM: -> state 5 (t=700ms)
-PSU [NORMAL] err=OK
-PSU [NORMAL] err=OK
+===== CiosZhong PSU =====
+  App  v0.2.4
+  Boot v1.0.0 (MCUboot)
+PSU CMD: ready (help for commands)
 ```

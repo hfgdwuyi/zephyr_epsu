@@ -12,8 +12,23 @@ endif()
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(CiosZhong_psu)
 
-# Firmware version — hardcoded, single source of truth
-message(STATUS "Firmware version: 0.2.1")
+# Firmware version - read from Kconfig.project so the build log can never
+# disagree with the version compiled into the app (and signed into the image).
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/Kconfig.project" _kcfg)
+set(CIOS_ZHONG_FW_VERSION "")
+set(_grab FALSE)
+foreach(_line IN LISTS _kcfg)
+	if(_line MATCHES "^config CIOS_ZHONG_FW_VERSION")
+		set(_grab TRUE)
+	elseif(_grab AND _line MATCHES "^[ \t]*default[ \t]+\"([^\"]+)\"")
+		set(CIOS_ZHONG_FW_VERSION "${CMAKE_MATCH_1}")
+		break()
+	endif()
+endforeach()
+if(CIOS_ZHONG_FW_VERSION STREQUAL "")
+	message(FATAL_ERROR "cannot read CIOS_ZHONG_FW_VERSION from Kconfig.project")
+endif()
+message(STATUS "Firmware version: ${CIOS_ZHONG_FW_VERSION}")
 
 # Application modules
 add_subdirectory(src/main)

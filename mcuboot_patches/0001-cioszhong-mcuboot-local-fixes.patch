@@ -134,7 +134,7 @@ index 90678743..ca22cf95 100644
      /* LED init */
      io_led_init();
 diff --git a/boot/zephyr/watchdog.c b/boot/zephyr/watchdog.c
-index 265e17bd..730ae6fc 100644
+index 265e17bd..2ed01f64 100644
 --- a/boot/zephyr/watchdog.c
 +++ b/boot/zephyr/watchdog.c
 @@ -10,6 +10,8 @@
