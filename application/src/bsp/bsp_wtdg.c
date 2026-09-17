@@ -38,12 +38,16 @@ static struct wdt_timeout_cfg wdt_config = {
 };
 
 #if DT_HAS_COMPAT_STATUS_OKAY(st_stm32_window_watchdog)
-/* WWDG 超时 1000 ms（原 100 ms）。
- * 原因：WWDG 在 bspWtdgInit() 启动，但真正喂它的 wdt_sup_thread 要等
- * schedulerStart() 才创建；两者之间的启动初始化（I2C/ADC/TMP75 等）
- * 一旦超过超时窗口，芯片会在启动途中被 WWDG 复位 → 反复重启起不来。
- * 1000 ms 为启动流程留出充足余量；运行时仍由 50 ms 心跳喂狗守护。 */
-#define WDT_MAX_WINDOW  1000U
+/* WWDG 窗口上限（硬件限制）：t_max = 64 × 4096 × 2^WDGTB_max / f_PCLK3。
+ * 本板 PCLK3 = AHB / D1PPRE = (SYSCLK/HPRE)/2 = (480/2)/2 = 120 MHz，
+ * WDGTB 最大 /128 → t_max ≈ 279.6 ms（t_min ≈ 34.1 us）。
+ * 若请求超过上限，wdt_install_timeout() 会返回 -EINVAL(-22)，且因为发生在
+ * wdt_setup() 之前，WWDG 根本不会启动（等于没有内部看门狗）。
+ * 故取 250 ms（实得 ≈253 ms，在驱动的 10% 容限内）：既在硬件范围内，又给
+ * bspWtdgInit()→schedulerStart() 之间的启动初始化留出余量（其间有手动
+ * bspWtdgFeed()）；运行时由 50 ms 心跳喂狗，有 5x 余量。
+ * 跨 boot 的升级安全由外部 MAX6703A(1.6s, WDI=PH9) 保证，与本窗口无关。 */
+#define WDT_MAX_WINDOW  250U
 #elif DT_HAS_COMPAT_STATUS_OKAY(nordic_nrf_wdt)
 #define WDT_ALLOW_CALLBACK 0
 #endif

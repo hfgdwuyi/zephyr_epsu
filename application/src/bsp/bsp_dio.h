@@ -38,18 +38,19 @@
  *     故此处不再提供该 DOUT 索引（reg 2 在 dout_config 中留空洞）。 */
 #define DOUT_K13_EN                DOUT_IDX(k13_en)               /* PB6  */
 
-/* Panel LED indicators
- * Note: PD8 (led_pac230v_on) / PD9 (led_s1_sys_on) removed — USART3 */
-#define DOUT_LED_PWR_24_ON         DOUT_IDX(led_pwr_24_on)        /* PD0  */
-#define DOUT_LED_CP_224V_ON        DOUT_IDX(led_cp_224v_on)       /* PD1  */
+/* Panel LED indicators */
+#define DOUT_LED_PWR_24V_ON         DOUT_IDX(led_pwr_24_on)        /* PD0  */
+#define DOUT_LED_CP_24V_ON         DOUT_IDX(led_cp_24v_on)       /* PD1  */
 #define DOUT_LED_GRID_PWR_IN       DOUT_IDX(led_grid_pwr_in)      /* PD2  */
 #define DOUT_LED_UPS_IN            DOUT_IDX(led_ups_in)           /* PD3  */
 #define DOUT_LED_SYSTEM_ON         DOUT_IDX(led_system_on)        /* PD4  */
 #define DOUT_LED_S2_SOLO_SYS       DOUT_IDX(led_s2_solo_sys)      /* PD5  */
 #define DOUT_LED_TROLLEY_CONNECTED DOUT_IDX(led_trolley_connected) /* PD6  */
 #define DOUT_LED_IS_PC_ON          DOUT_IDX(led_is_pc_on)         /* PD7  */
+#define DOUT_LED_S1_SYS_ON         DOUT_IDX(led_s1_sys_on)        /* PD9  */
 #define DOUT_LED_S2_SYS_ON         DOUT_IDX(led_s2_sys_on)        /* PD10 */
 #define DOUT_LED_APP_HOST_ON       DOUT_IDX(led_app_host_on)      /* PD12 */
+#define DOUT_LED_PAC230V_ON        DOUT_IDX(led_pac230v_on)       /* PD8  */
 
 /* PC8-10 三色状态灯已移交 bsp_led 管理（bsp_led.h），不再占用 DOUT 位图 */
 
@@ -73,6 +74,10 @@
 #define DOUT_MAINS_CONNECTED_IS_PC DOUT_IDX(mains_connected_is_pc) /* PJ13 */
 #define DOUT_MAINS_CONNECTED_MCU   DOUT_IDX(mains_connected_mcu)  /* PJ14 */
 
+/* Trolley connected status outputs（原 DIN PD13/PD14 改为输出）*/
+#define DOUT_TRL_MU_CONNECTED_MCU   DOUT_IDX(trl_mu_connected_mcu)   /* PD13 */
+#define DOUT_TRL_MU_CONNECTED_IS_PC DOUT_IDX(trl_mu_connected_is_pc) /* PD14 */
+
 /* ==================== DIN index — pin_config.xlsx ====================
  * Same scheme as DOUT: each DIN_xxx derives from the `reg` of its child of
  * din_config in application/app.overlay. Note some names differ from the
@@ -91,8 +96,6 @@
 #define DIN_FAULT4                  DIN_IDX(fault4)                 /* PC11 */
 #define DIN_FAULT5                  DIN_IDX(fault5)                 /* PC12 */
 #define DIN_FAULT6                  DIN_IDX(fault6)                 /* PC13 */
-#define DIN_TRL_MU_CONNECTED_MCU    DIN_IDX(trl_mu_connected_mcu)   /* PD13 */
-#define DIN_TRL_MU_CONNECTED_IS_PC  DIN_IDX(trl_mu_connected_is_pc) /* PD14 */
 #define DIN_SYSTEM_ON_OFF           DIN_IDX(system_on_off)          /* PJ0  */
 #define DIN_SYSTEM_RESET            DIN_IDX(system_reset)           /* PJ1  */
 #define DIN_S1_SYSTEM_CONFIG        DIN_IDX(s1_system_config)       /* PJ2  */
@@ -144,8 +147,8 @@ static inline bool bspDinGet(uint8_t pin)
 /* ---- DOUT: bitmap-based control ----
  * The public interface is the DOUT bitmap only: bspDoutSetBitmap() is the
  * sole write entry (single pins via a BIT64(pin) mask) and bspDoutGetBitmap()
- * the read entry. The bitmap is 64-bit because DOUT_MAX = 36 pins (indices
- * 0..35) exceeds one 32-bit word. bspDoutUpdate() (called from the scheduler
+ * the read entry. The bitmap is 64-bit because DOUT_MAX = 37 pins (indices
+ * 0..36) exceeds one 32-bit word. bspDoutUpdate() (called from the scheduler
  * every 1 ms) applies the bitmap to the GPIO pins once per period. The
  * per-bit helpers bspDoutSetBit/bspDoutGetBit are internal implementation
  * details. */

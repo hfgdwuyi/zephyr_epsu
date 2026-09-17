@@ -1,20 +1,28 @@
 /*!
  * @file sm_s2.h
- * @brief S2 模式状态机 —— 依据 statemachine config.xlsx 的 s2 系列表
+ * @brief S2 模式状态机 —— 依据 S1_MU_SYS_ctr_logic.md §5/§6
  *
- * S2 有 solo / classic 两种子模式（pj4 选择），输出表两者只在 PAC6 上不同，
- * 而 PAC6 在 pin_config.xlsx 中未填（待确认）→ 当前版本不控制 PAC6，
- * 因此两种子模式的管脚输出一致，仅模式指示灯不同。
+ * S2 有 solo / classic 两种子模式（pj4 选择），状态骨架与 S1 完全同构：
+ *   T0 上电待机 / T1 市电掉电(OR)关机 / T2 系统开机 / T3 开机后市电掉电(OR)
+ *   / T4 正常关机 / 硬件复位 / 软件复位
  *
- * 状态（对应 Excel 的 s2 表）：
- *   ON            系统开机    ← "s2 <mode> mode on"
- *   OFF_STANDBY   关机·待机    ← "s2 <mode> mode off in standby"（市电在场）
- *   OFF_NO_STANDBY关机·非待机  ← "s2 <mode> mode off not standby"（市电掉电）
- *   RESET         硬件复位（与 S1 同规则：ME_BOX_ERROR && SYSTEM_RESET 边沿）
+ * 判定只看市电 ME_BOX_ERROR；**只有 T2 判断 trolley 连接**（动态开关
+ * LED_TROLLEY_CONNECTED / TROLLEY_ENABLE_DRV），其它状态都不考虑 trolley。
  *
- * 表中两列（连接推车 / 断开推车）作为状态内的输入维度处理，不单独成状态。
- * "switch off until X_Alive turn off" 的管脚 = 跟着对应输入保持合闸，
- * 直到 X 下电后才断开（K5←APP_HOST_ON，K9/K11←IS_PC_ON）。
+ * Solo / classic 的差异：模式指示灯（S2_SYS ± S2_SOLO_SYS）与 T3(OR) 的
+ * 继电器集合（Solo 多 K5/K8_2）。
+ *
+ *   T0 STANDBY      上电待机        ：K3,K13
+ *   T1 OFF_NO_MAINS 市电掉电/OR关机 ：K3,K13
+ *   T2 RUN          系统开机        ：K3,K4,K5,K6,K7,K8_1,K9,K11,K12,K13
+ *   T3 RUN_OR       开机后市电掉电  ：Solo K2,K5,K8_1,K8_2,K9,K10,K11,K12,K13
+ *                                    Chassis K2,K8_1,K9,K10,K11,K12,K13
+ *   T4 SHUTDOWN     正常关机        ：K3,K13 + IS_PC→K9, APP_HOST→K5,K11
+ *   RESET                           ：全断（硬件复位）
+ *   SW_RESET 软件复位               ：长按 ≥ 5s 松手 → 先全断（含 K3/K10）→ 再进 T0/T1
+ *
+ * 开关键（SYSTEM_ON_OFF）：0.5s ≤ 按住 < 5s = 正常开机/关机（释放时生效）；
+ * ≥ 5s 且本次按下未触发过 short = 软件复位。
  */
 /*----------------------------------------------------------------------------*/
 #ifndef SM_S2_H
@@ -24,14 +32,17 @@
 #include <stdint.h>
 
 typedef enum {
-	SM_S2_RUN = 0,          /* 开机运行（Excel: s2 <mode> mode on）      */
-	SM_S2_STANDBY,          /* 关机·待机：市电在场（Excel: off in standby）*/
-	SM_S2_OFF_NO_MAINS,     /* 关机·非待机：市电掉电（off not standby）  */
+	SM_S2_STANDBY = 0,      /* 待机（md 的 T0）                          */
+	SM_S2_OFF_NO_MAINS,     /* 市电掉电 / OR 关机（md 的 T1）            */
+	SM_S2_RUN,              /* 系统开机（md 的 T2，唯一判断 trolley）    */
+	SM_S2_RUN_OR,           /* 开机后市电掉电 OR（md 的 T3）             */
+	SM_S2_SHUTDOWN,         /* 正常关机（md 的 T4）                      */
 	SM_S2_RESET,            /* 硬件复位                                  */
+	SM_S2_SW_RESET,         /* 软件复位（先全断，再回 T0/T1）*/
 	SM_S2_STATE_COUNT
 } smS2State_t;
 
-/*! 进入 S2 系统：进入初始子状态（按市电在场与否进待机/非待机），由其设置管脚。 */
+/*! 进入 S2 系统：按市电在场与否直接进 T0/T1，由该子状态设置管脚。 */
 void smS2Enter(void);
 
 /*!

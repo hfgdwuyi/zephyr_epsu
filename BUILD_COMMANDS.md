@@ -20,7 +20,7 @@ cd /Users/mac/project/03_siemens/ciosZhong_ePSU
 # 产物: build-mcuboot/zephyr/zephyr.bin
 ```
 
-## 构建 App 固件（v0.2.0，完整模式）
+## 构建 App 固件（v0.2.1，完整模式）
 版本号在 application/Kconfig.project 的 CIOS_ZHONG_FW_VERSION。
 ```sh
 .venv/bin/west build -d build application \
@@ -33,7 +33,7 @@ cd /Users/mac/project/03_siemens/ciosZhong_ePSU
 .venv/bin/python \
   /Users/mac/project/02_zephyr/zephyrproject/bootloader/mcuboot/scripts/imgtool.py \
   sign --key /Users/mac/project/02_zephyr/zephyrproject/bootloader/mcuboot/root-rsa-2048.pem \
-  --header-size 0x400 --align 8 --version 0.2.0 --slot-size 0x80000 \
+  --header-size 0x400 --align 8 --version 0.2.1 --slot-size 0x80000 \
   build/zephyr/zephyr.bin build/zephyr/zephyr.signed.bin
 # 产物: build/zephyr/zephyr.signed.bin
 # 注意: --version 必须与 Kconfig.project 的 CIOS_ZHONG_FW_VERSION 一致

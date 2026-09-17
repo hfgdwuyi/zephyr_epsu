@@ -37,8 +37,8 @@
 
 | 命令 | 格式 | 说明 | 成功响应 |
 |---|---|---|---|
-| **dout** | `dout <idx> <0\|1>` | 控制单路 DOUT 输出；idx=0..35，1=ON 0=OFF | `OK` |
-| **doutall** | `doutall <hex64>` | 直接写入 64 位 DOUT 位图（hex，如 0x0000000000000005；先全清再置位，仅低 36 位有效） | `OK` |
+| **dout** | `dout <idx> <0\|1>` | 控制单路 DOUT 输出；idx=0..32，1=ON 0=OFF | `OK` |
+| **doutall** | `doutall <hex64>` | 直接写入 64 位 DOUT 位图（hex，如 0x0000000000000005；先全清再置位，仅低 33 位有效） | `OK` |
 | **dac** | `dac <mv>` | DAC 恒定输出电压，0..3300 mV（自动清除方波状态位） | `OK` |
 | **dacwv** | `dacwv <0\|1>` | pwr_on_off 方波状态位：1=开启（由固件 0.25Hz 方波驱动），0=停止 | `OK` |
 | **pwm** | `pwm <ch> <duty>` | 风扇 PWM 占空比：ch=0/1，duty=0..100（%）（自动启动该通道） | `OK` |
@@ -87,7 +87,7 @@ dout=0x0000000200000000
 | bit4 | 0x10 | EAKO3.39 | 故障恢复后复位 |
 | bit5 | 0x20 | ESIC.40 | 充电控制错误 |
 
-### 3.5 DOUT 索引表（0-35，与 bsp_dio.h / app.overlay 一致）
+### 3.5 DOUT 索引表（0-34，与 bsp_dio.h / app.overlay 一致）
 
 | idx | 名称 (引脚) | idx | 名称 (引脚) |
 |---|---|---|---|
@@ -106,25 +106,26 @@ dout=0x0000000200000000
 | 12 | led_s2_solo_sys (PD5) | 30 | drv_app_host_site_on (PJ12) |
 | 13 | led_trolley_connected (PD6) | 31 | mains_connected_is_pc (PJ13) |
 | 14 | led_is_pc_on (PD7) | 32 | mains_connected_mcu (PJ14) |
-| 15 | led_s2_sys_on (PD10) | 33 | led_pj0 (PJ0) |
-| 16 | led_app_host_on (PD12) | 34 | led_pj1 (PJ1) |
-| 17 | k5_drv (PI4) | 35 | led_pj2 (PJ2) |
+| 15 | led_s2_sys_on (PD10) | 33 | trl_mu_connected_mcu (PD13) |
+| 16 | led_app_host_on (PD12) | 34 | trl_mu_connected_is_pc (PD14) |
+| 17 | k5_drv (PI4) |  |  |
 
-### 3.6 DIN 索引表（0-20，与 bsp_dio.h / app.overlay din_config 一致）
+### 3.6 DIN 索引表（0-23，与 bsp_dio.h / app.overlay din_config 一致；11/12 为空洞）
 
 | idx | 名称 (引脚) | idx | 名称 (引脚) |
 |---|---|---|---|
-| 0 | grid_main_relay_status (PH5) | 11 | trl_mu_connected_mcu (PD13) |
-| 1 | me_box_error (PH6) | 12 | trl_mu_connected_is_pc (PD14) |
-| 2 | fault0 (PA8) | 13 | s2_system_config (PJ3) |
-| 3 | fault1 (PA9) | 14 | solo_system_config (PJ4) |
-| 4 | fault2 (PA10) | 15 | trolley_connected (PJ5) |
-| 5 | fault3 (PA11) | 16 | app_host_on (PJ7) |
-| 6 | temp_alert (PB12) | 17 | smart_whs_indicate (PJ8) |
-| 7 | led_pwr_24_fb (PC6) | 18 | drawer_indicate (PJ9) |
-| 8 | fault4 (PC11) | 19 | smart_ctrl_whs_search (PJ10) |
-| 9 | fault5 (PC12) | 20 | is_pc_on (PJ15) |
-| 10 | fault6 (PC13) |  |  |
+| 0 | grid_main_relay_status (PH5) | 12 | —（空洞：原 trl_mu_connected_is_pc PD14 改为 DOUT 34）|
+| 1 | me_box_error (PH6) | 13 | system_on_off (PJ0) |
+| 2 | fault0 (PA8) | 14 | system_reset (PJ1) |
+| 3 | fault1 (PA9) | 15 | s1_system_config (PJ2) |
+| 4 | fault2 (PA10) | 16 | s2_system_config (PJ3) |
+| 5 | fault3 (PA11) | 17 | solo_system_config (PJ4) |
+| 6 | temp_alert (PB12) | 18 | trolley_connected (PJ5) |
+| 7 | led_pwr_24_fb (PC6) | 19 | app_host_on (PJ7) |
+| 8 | fault4 (PC11) | 20 | smart_whs_indicate (PJ8) |
+| 9 | fault5 (PC12) | 21 | drawer_indicate (PJ9) |
+| 10 | fault6 (PC13) | 22 | smart_ctrl_whs_search (PJ10) |
+| 11 | —（空洞：原 trl_mu_connected_mcu PD13 改为 DOUT 33）| 23 | is_pc_on (PJ15) |
 
 ---
 
@@ -147,11 +148,11 @@ dout=0x0000000200000000
 <   getdac                  - read DAC mv + wave state
 <   getpwm                  - read PWM duties
 
-> dout 33 1                 （点亮 PJ0 LED）
+> dout 9 1                  （置位 bit9 = led_grid_pwr_in / PD2）
 < OK
 
 > getdout
-< dout=0x0000000200000000   （bit33=1）
+< dout=0x0000000000000200   （bit9=1）
 
 > pwm 0 50                  （风扇1 50%）
 < OK

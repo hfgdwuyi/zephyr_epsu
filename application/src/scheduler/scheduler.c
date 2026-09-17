@@ -5,7 +5,7 @@
  *  1 ms  : k_work_d   → bspDoutUpdate() (bitmap → GPIO)  [hb]
  *  1 ms  : k_thread   → stateMachineTick()               [hb]
  *  50 ms : k_work_d   → bspAinPoll()                     [hb]  (raw ADC snapshot)
- *  50 ms : k_work_d   → bspAoutPoll()                    [hb]
+ *  5 ms  : k_work_d   → indicatorUpdate()              [hb]
  *  50 ms : k_thread   → sensor: filter + convert + multi-rate publish
  *  50 ms : k_thread   → wdt supervisor: sm+sys heartbeat → bspWtdgFeed()
  *  500ms : k_work_d   → max6703aFeed()
@@ -25,7 +25,6 @@
 
 /* BSP */
 #include "bsp_ain.h"
-#include "bsp_aout.h"
 #include "bsp_dio.h"
 #include "bsp_wtdg.h"
 
@@ -37,6 +36,7 @@
 #include "uart_cmd.h"
 #include "ac_meter.h"
 #include "max6703a.h"
+#include "indicator.h"
 
 /* ========== Heartbeats + WDT supervisor ========== */
 
@@ -136,7 +136,7 @@ static K_WORK_DELAYABLE_DEFINE(dout_work, doutWorkFn);
 
 static void aoutWorkFn(struct k_work *w)
 {
-	bspAoutPoll();
+	indicatorUpdate();
 	sysHbBump();
 	/* 5 ms：PA5 锯齿波 4 s 周期内 800 级台阶（~1.9 mV/级），
 	 * 保证 0.25 Hz 锯齿线性度足够平滑。 */

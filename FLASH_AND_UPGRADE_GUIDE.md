@@ -2,7 +2,7 @@
 
 固件组合（E1 调试阶段，2026-09-08 验证通过）：
 - **Boot**: MCUboot v1.0.0  (SWAP_USING_OFFSET，无 scratch)
-- **App**:  v0.2.0        (串口 DFU + MCUboot confirm)
+- **App**:  v0.2.1        (串口 DFU + MCUboot confirm)
 
 Flash 布局（内部 flash0 = 0x08000000 起，2MB 单设备）：
 | 区 | 地址 | 内容 |
@@ -62,7 +62,7 @@ openocd -f board/st_nucleo_h745zi.cfg \
 
 ```
 ===== CiosZhong PSU =====
-  App  v0.2.0
+  App  v0.2.1
   Boot v1.0.0 (MCUboot)
 PSU CMD: ready (help for commands)
 ```
@@ -92,7 +92,7 @@ python3 tools/psu_dfu.py /dev/cu.usbserial-XXX build/zephyr/zephyr.signed.bin
 sent 79852/79852
 VERIFY slot1+0x20000 = 0x96F3B83D
 DFU done 79852/79852, rebooting...
-...重启后横幅版本号变化（如 v0.1.0 → v0.2.0）
+...重启后横幅版本号变化（如 v0.2.0 → v0.2.1）
 ```
 
 ---
@@ -132,7 +132,7 @@ export ZEPHYR_SDK_INSTALL_DIR=~/project/02_zephyr/zephyr-sdk-1.0.1
 .venv/bin/python \
   ~/project/02_zephyr/zephyrproject/bootloader/mcuboot/scripts/imgtool.py \
   sign --key ~/project/02_zephyr/zephyrproject/bootloader/mcuboot/root-rsa-2048.pem \
-  --header-size 0x400 --align 8 --version 0.2.0 --slot-size 0x80000 \
+  --header-size 0x400 --align 8 --version 0.2.1 --slot-size 0x80000 \
   build/zephyr/zephyr.bin build/zephyr/zephyr.signed.bin
 ```
 

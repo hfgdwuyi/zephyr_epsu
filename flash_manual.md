@@ -64,4 +64,4 @@ openocd -f board/st_nucleo_h745zi.cfg \
 ## 5. 烧录后观察
 
 串口助手连 **USART1：PB14(TX) / PB15(RX)，115200, 8N1**，GND 共地
-期望输出：`===== CiosZhong PSU v0.1.0 =====` + 状态日志
+期望输出：`===== CiosZhong PSU =====` + `App  v0.2.1` + 状态日志

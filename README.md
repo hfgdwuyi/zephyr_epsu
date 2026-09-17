@@ -53,7 +53,7 @@ the ePSU hardware (per `pin_config.xlsx`):
 | CAN1 | FDCAN1 on PH13 (TX) / PH14 (RX) |
 | CAN2 | FDCAN2 on PB13 (TX) / PB5 (RX) |
 | I2C1 | PB8 (SCL) / PB9 (SDA) — 24C04 EEPROM, WP on PB7 |
-| Console | USART3 PB10(TX)/PB11(RX), 115200 |
+| Console | USART1 PB14(TX)/PB15(RX), 115200（USART3 disabled；PD8/PD9 用作 GPIO）|
 
 `BOARD_ROOT` is registered automatically in `application/CMakeLists.txt`, so
 no `-DBOARD_ROOT` flag is needed.
@@ -67,48 +67,51 @@ no `-DBOARD_ROOT` flag is needed.
 
 ## Pin Configuration
 
-### Digital Outputs (36 channels, per pin_config.xlsx)
+### Digital Outputs（33 路；`doutMax`=37，reg 2/4/5/6 为空）
+
+引脚与编号以 `application/app.overlay` 的 `dout_config`（reg）为准。
 
 | Macro | Pin | Signal |
 |-------|-----|--------|
 | `DOUT_TROLLEY_ENABLE_DRV` | PH1 | Trolley enable driver |
-| `DOUT_PWR_ON_OFF` | PA5 | Power on/off |
-| `DOUT_K3_1_DRV` | PK1 | K3 relay channel 1 |
-| `DOUT_K3_2_DRV` | PK2 | K3 relay channel 2 |
-| `DOUT_K4_DRV` | PK3 | K4 relay |
-| `DOUT_K5_DRV` | PI4 | K5 relay |
-| `DOUT_K6_DRV` | PI5 | K6 relay |
-| `DOUT_K8_1_DRV` | PI6 | K8 relay channel 1 |
-| `DOUT_K8_2_DRV` | PI7 | K8 relay channel 2 |
-| `DOUT_K9_DRV` | PI9 | K9 relay |
-| `DOUT_K10_DRV` | PI10 | K10 relay |
-| `DOUT_K11_DRV` | PI11 | K11 relay |
-| `DOUT_K12_DRV` | PI12 | K12 relay |
-| `DOUT_LED_S1_SYS_ON` | PB10 | System 1 config indicator |
-| `DOUT_LED_S2_SYS_ON` | PB11 | System 2 config indicator |
-| `DOUT_DBG_LED0` | PC8 | Debug LED 0 |
-| `DOUT_DBG_LED1` | PC9 | Debug LED 1 |
-| `DOUT_DBG_LED2` | PC10 | Debug LED 2 |
-| `DOUT_LED_PAC230V_ON` | PC15 | AC 230V power indicator |
-| `DOUT_LED_GRID_PWR_IN` | PD2 | Grid power input indicator |
-| `DOUT_LED_UPS_IN` | PD3 | UPS/battery indicator |
+| `DOUT_WDI` | PH9 | MAX6703A WDI feed |
+| `DOUT_K13_EN` | PB6 | K13 relay |
+| `DOUT_LED_PWR_24_ON` | PD0 | 24V output indicator |
+| `DOUT_LED_CP_224V_ON` | PD1 | 224V output indicator |
+| `DOUT_LED_GRID_PWR_IN` | PD2 | Grid (mains) input indicator |
+| `DOUT_LED_UPS_IN` | PD3 | UPS input indicator |
 | `DOUT_LED_SYSTEM_ON` | PD4 | System running indicator |
 | `DOUT_LED_S2_SOLO_SYS` | PD5 | S2 solo system indicator |
 | `DOUT_LED_TROLLEY_CONNECTED` | PD6 | Trolley connected indicator |
-| `DOUT_LED_IS_PC_ON` | PD7 | PC on indicator |
-| `DOUT_LED_APPHOST_ON` | PD11 | App host on indicator |
-| `DOUT_TROLLEY_CONNECTED_MCU` | PI13 | Trolley status → MCU |
-| `DOUT_TROLLEY_CONNECTED_IS_PC` | PI14 | Trolley status → PC |
-| `DOUT_DRV_IS_PC_SITE_ON` | PJ11 | PC site on driver |
-| `DOUT_DRV_APP_HOST_SITE_ON` | PJ12 | App host site on driver |
-| `DOUT_MAINS_CONNECTED_APPHOST` | PJ13 | Mains → app host |
-| `DOUT_MAINS_CONNECTED_IS_PC` | PJ14 | Mains → PC |
-| `DOUT_WDI` | PH9 | MAX6703A WDI feed |
-| `DOUT_LED_PJ0` | PJ0 | 新硬件版状态 LED 0（原 system_on_off，由心跳任务跑马灯驱动） |
-| `DOUT_LED_PJ1` | PJ1 | 新硬件版状态 LED 1（原 system_reset） |
-| `DOUT_LED_PJ2` | PJ2 | 新硬件版状态 LED 2（原 s1_system_config） |
+| `DOUT_LED_IS_PC_ON` | PD7 | IS_PC on indicator |
+| `DOUT_LED_S2_SYS_ON` | PD10 | S2 system indicator |
+| `DOUT_LED_APP_HOST_ON` | PD12 | APP_HOST on indicator |
+| `DOUT_K5_DRV` | PI4 | K5 relay |
+| `DOUT_K6_DRV` | PI5 | K6 relay |
+| `DOUT_K3_DRV` | PI6 | K3 relay |
+| `DOUT_K2_DRV` | PI7 | K2 relay |
+| `DOUT_K4_DRV` | PI8 | K4 relay |
+| `DOUT_K7_DRV` | PI9 | K7 relay |
+| `DOUT_K10_EN` | PI10 | K10 relay |
+| `DOUT_K11_EN` | PI11 | K11 relay |
+| `DOUT_K12_EN` | PI12 | K12 relay |
+| `DOUT_K8_1_EN` | PI13 | K8 channel 1 |
+| `DOUT_K8_2_EN` | PI14 | K8 channel 2 |
+| `DOUT_K9_EN` | PI15 | K9 relay |
+| `DOUT_DRV_IS_PC_SITE_ON` | PJ11 | IS_PC site on driver |
+| `DOUT_DRV_APP_HOST_SITE_ON` | PJ12 | APP_HOST site on driver |
+| `DOUT_MAINS_CONNECTED_IS_PC` | PJ13 | Mains connected -> IS_PC |
+| `DOUT_MAINS_CONNECTED_MCU` | PJ14 | Mains connected -> MCU |
+| `DOUT_TRL_MU_CONNECTED_MCU` | PD13 | Trolley connected -> MCU（原 DIN，改输出） |
+| `DOUT_TRL_MU_CONNECTED_IS_PC` | PD14 | Trolley connected -> PC（原 DIN，改输出） |
+| `DOUT_LED_S1_SYS_ON` | PD9 | S1 system indicator |
+| `DOUT_LED_PAC230V_ON` | PD8 | PAC 230V output indicator |
 
-### Digital Inputs (21 channels, per pin_config.xlsx)
+> `reg` 2（原 pg_13v5，PA12）与 4~6（原 PC8-10 三色灯，已移交 `bsp_led`）为空洞，不占 DOUT 位图。
+
+> PJ0/PJ1/PJ2 不是 DOUT：它们是 DIN 输入（见下方 Digital Inputs）。
+
+### Digital Inputs (24 channels, per pin_config.xlsx)
 
 | Macro | Pin | Signal |
 |-------|-----|--------|
@@ -118,7 +121,10 @@ no `-DBOARD_ROOT` flag is needed.
 | `DIN_TEMP_ALERT` | PB12 | Temperature alert |
 | `DIN_LED_PWR_24_ON` | PC6 | 24V power LED monitor |
 | `DIN_LED_CP_24V_ON` | PC7 | 24V CP LED monitor |
-| `DIN_S2_SYSTEM_CONFIG` | PJ3 | System 2 config switch |
+| `DIN_SYSTEM_ON_OFF` | PJ0 | 系统开/关机按键（上升沿） |
+| `DIN_SYSTEM_RESET` | PJ1 | 外部系统复位按键 |
+| `DIN_S1_SYSTEM_CONFIG` | PJ2 | S1 系统配置 |
+| `DIN_S2_SYSTEM_CONFIG` | PJ3 | S2 系统配置 |
 | `DIN_SOLO_SYSTEM_CONFIG` | PJ4 | Solo config switch |
 | `DIN_TROLLEY_CONNECTED_J` | PJ5 | Trolley connected (J) |
 | `DIN_IS_PC_ON` | PJ6 | PC on status |
@@ -175,10 +181,12 @@ NORMAL_OP ──┬──(S2 config)──▶ S2_MODE
 FAULT ──(mains OK auto-recover / reset req)──▶ RESET ──(2s)──▶ INIT
 ```
 
-> 注（新硬件改版）：原 PJ0/PJ1/PJ2 上的开关机/复位按键/S1 配置输入已改为
-> LED 输出（由心跳任务跑马灯驱动）。关机改由 `stateMachineRequestShutdown()`
-> 触发，复位改由 `stateMachineRequestReset()` 触发；S1 配置输入移除后，
-> 配置拨码仅剩 S2/SOLO，两者均未置位时默认 S1 单机模式。
+> 注（硬件信号确认）：PJ0 = 系统开/关机按键、PJ1 = 外部系统复位按键、
+> PJ2 = S1 系统配置、PJ3 = S2 系统配置、PJ4 = S2 solo 配置。它们在
+> `application/app.overlay` 中均定义为 **DIN 输入**，分别由
+> `DIN_SYSTEM_ON_OFF` / `DIN_SYSTEM_RESET` / `DIN_S1_SYSTEM_CONFIG` /
+> `DIN_S2_SYSTEM_CONFIG` / `DIN_SOLO_SYSTEM_CONFIG` 读取；状态机据此判定
+> 主模式（PJ2/PJ3/PJ4）并处理按键上升沿（PJ0/PJ1）。PJ0~PJ2 并非 LED 输出。
 
 ### Relay Sequencing (SHUTDOWN example)
 
@@ -285,7 +293,7 @@ $VENV_WEST flash -d ~/project/03_siemens/ciosZhong_ePSU/build -r openocd
 ## Expected Serial Output
 
 ```
-===== CiosZhong Application v0.1.0 =====
+===== CiosZhong Application v0.2.1 =====
 PSU_SM: init cfg=0
 PSU_SM: -> state 0 (t=0ms)
 AIN: init done (poll), inputs=14

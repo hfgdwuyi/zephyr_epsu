@@ -104,8 +104,6 @@ static void bspDinApplyDebounce(void)
 	bspDinSetDebouncing(DIN_ME_BOX_ERROR,           deb_off);
 	bspDinSetDebouncing(DIN_TEMP_ALERT,             deb_off);
 	bspDinSetDebouncing(DIN_LED_PWR_24_ON,          deb_off);
-	bspDinSetDebouncing(DIN_TRL_MU_CONNECTED_MCU,   deb_off);
-	bspDinSetDebouncing(DIN_TRL_MU_CONNECTED_IS_PC, deb_off);
 	bspDinSetDebouncing(DIN_IS_PC_ON,               deb_off);
 	bspDinSetDebouncing(DIN_APP_HOST_ON,            deb_off);
 }

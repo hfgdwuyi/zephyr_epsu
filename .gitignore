@@ -42,3 +42,8 @@ Thumbs.db
 .pylibs/
 **/.cache/
 .cache/
+
+# Python bytecode
+tools/__pycache__/
+__pycache__/
+*.pyc

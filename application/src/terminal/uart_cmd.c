@@ -13,7 +13,7 @@
  *   dout <idx> <0|1>        — 控制 DOUT 输出（idx 0..doutMax-1）
  *   doutall <hex64>         — 直接写入 64 位 DOUT 位图
  *   dac <mv>                — DAC 恒定输出电压（0..3300 mV，清除方波状态位）
- *   dacwv <0|1>             — pwr_on_off 方波状态位（0=停 1=起，由 bspAoutPoll 驱动）
+ *   dacwv <0|1>             — PA5 状态指示灯呼吸模式开关（1=呼吸 0=灭）
  *   pwm <ch> <duty>         — 风扇 PWM 占空比（ch 0/1，duty 0..100）
  *   pwmoff <ch>             — 停止 PWM
  *
@@ -49,6 +49,7 @@
 #include "sensor.h"
 #include "ac_meter.h"
 #include "tmp75.h"
+#include "indicator.h"
 
 /* ==================== 常量 ==================== */
 
@@ -141,7 +142,7 @@ static void cmdHelp(void)
 		  "  dout <idx> <0|1>        - set DOUT output (0..doutMax-1)\r\n"
 		  "  doutall <hex64>         - write 64-bit DOUT bitmap\r\n"
 		  "  dac <mv>                - DAC constant voltage (0..3300 mV)\r\n"
-		  "  dacwv <0|1>             - PA5 triangle on/off (0-1.5V @0.25Hz)\r\n"
+		  "  dacwv <0|1>             - PA5 status-LED breath on/off\r\n"
 		  "  pwm <ch> <duty>         - fan PWM duty (ch 0/1, 0..100%)\r\n"
 		  "  pwmoff <ch>             - stop PWM\r\n"
 		  "  getdout                 - read DOUT bitmap\r\n"
@@ -247,8 +248,8 @@ static void cmdDac(const char *args)
 	if (end == args || mv < 0 || mv > 3300) {
 		goto err;
 	}
-	/* 恒定电压输出：先停方波状态位，再写 DAC */
-	bspAoutSetState(AOUT_PWR_ON_OFF, false);
+	/* 恒定电压输出：切到 MANUAL，indicatorUpdate 不再覆盖 */
+	indicatorSetMode(INDICATOR_MANUAL);
 	bspAoutWrite(AOUT_PWR_ON_OFF, (int16_t)mv);
 	uartTxStr("OK\r\n");
 	return;
@@ -268,12 +269,12 @@ static void cmdDacWave(const char *args)
 	if (end == args || (on != 0 && on != 1)) {
 		goto err;
 	}
-	/* pwr_on_off (PA5): 0-1.5 V 三角波 @ 0.25 Hz，上电默认开启 */
-	bspAoutSetTriangleEnabled(on != 0);
-	uartTxStr(on ? "OK triangle on\r\n" : "OK triangle off\r\n");
+	/* pwr_on_off (PA5): 状态指示灯 —— 1 = 呼吸，0 = 灭 */
+	indicatorSetMode(on ? INDICATOR_BREATH : INDICATOR_OFF);
+	uartTxStr(on ? "OK breath on\r\n" : "OK breath off\r\n");
 	return;
 err:
-	uartTxStr("ERR usage: dacwv <0|1> (PA5 0-1.5V triangle @0.25Hz)\r\n");
+	uartTxStr("ERR usage: dacwv <0|1> (PA5 status LED breath on/off)\r\n");
 }
 
 static void cmdPwm(const char *args)
@@ -337,9 +338,9 @@ static void cmdGetDac(void)
 {
 	char buf[48];
 
-	snprintk(buf, sizeof(buf), "dac=%d wv=%d\r\n",
+	snprintk(buf, sizeof(buf), "dac=%d ind=%d\r\n",
 		 (int)bspAoutGetMv(AOUT_PWR_ON_OFF),
-		 bspAoutGetState(AOUT_PWR_ON_OFF) ? 1 : 0);
+		 (int)indicatorGetMode());
 	uartTxStr(buf);
 }
 

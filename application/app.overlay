@@ -25,17 +25,22 @@
 		k13_en:                k13_en@3                 { reg = < 3>; gpios = <&gpiob  6 GPIO_ACTIVE_HIGH>; };   /* B6   */
 		/* 4-6: 原 PC8-10 三色灯已移交 bsp_led（bsp_led.h）管理，
 		 * 保留空洞以维持后续 DOUT 编号不变（上位机/终端索引稳定）。 */
-		/* 7-16: panel LED indicators (PD8/PD9 removed - USART3) */
-		led_pwr_24_on:         led_pwr_24_on@7          { reg = < 7>; gpios = <&gpiod  0 GPIO_ACTIVE_HIGH>; };   /* D0   */
-		led_cp_224v_on:        led_cp_224v_on@8         { reg = < 8>; gpios = <&gpiod  1 GPIO_ACTIVE_HIGH>; };   /* D1   */
-		led_grid_pwr_in:       led_grid_pwr_in@9        { reg = < 9>; gpios = <&gpiod  2 GPIO_ACTIVE_HIGH>; };   /* D2   */
-		led_ups_in:            led_ups_in@10            { reg = <10>; gpios = <&gpiod  3 GPIO_ACTIVE_HIGH>; };   /* D3   */
-		led_system_on:         led_system_on@11         { reg = <11>; gpios = <&gpiod  4 GPIO_ACTIVE_HIGH>; };   /* D4   */
-		led_s2_solo_sys:       led_s2_solo_sys@12       { reg = <12>; gpios = <&gpiod  5 GPIO_ACTIVE_HIGH>; };   /* D5   */
-		led_trolley_connected: led_trolley_connected@13 { reg = <13>; gpios = <&gpiod  6 GPIO_ACTIVE_HIGH>; };   /* D6   */
-		led_is_pc_on:          led_is_pc_on@14          { reg = <14>; gpios = <&gpiod  7 GPIO_ACTIVE_HIGH>; };   /* D7   */
-		led_s2_sys_on:         led_s2_sys_on@15         { reg = <15>; gpios = <&gpiod 10 GPIO_ACTIVE_HIGH>; };   /* D10  */
-		led_app_host_on:       led_app_host_on@16       { reg = <16>; gpios = <&gpiod 12 GPIO_ACTIVE_HIGH>; };   /* D12  */
+		/* 7-16 + 35/36: panel LED indicators (PD8=led_pac230v_on@36 / PD9=led_s1_sys_on@35 见下方)
+		 * 面板 LED 硬件低电平点亮 → GPIO_ACTIVE_LOW（逻辑 1 = 亮）*/
+		led_pwr_24_on:         led_pwr_24_on@7          { reg = < 7>; gpios = <&gpiod  0 GPIO_ACTIVE_LOW>; };   /* D0   */
+		led_cp_24v_on:        led_cp_24v_on@8         { reg = < 8>; gpios = <&gpiod  1 GPIO_ACTIVE_LOW>; };   /* D1   */
+		led_grid_pwr_in:       led_grid_pwr_in@9        { reg = < 9>; gpios = <&gpiod  2 GPIO_ACTIVE_LOW>; };   /* D2   */
+		led_ups_in:            led_ups_in@10            { reg = <10>; gpios = <&gpiod  3 GPIO_ACTIVE_LOW>; };   /* D3   */
+		led_system_on:         led_system_on@11         { reg = <11>; gpios = <&gpiod  4 GPIO_ACTIVE_LOW>; };   /* D4   */
+		led_s2_solo_sys:       led_s2_solo_sys@12       { reg = <12>; gpios = <&gpiod  5 GPIO_ACTIVE_LOW>; };   /* D5   */
+		led_trolley_connected: led_trolley_connected@13 { reg = <13>; gpios = <&gpiod  6 GPIO_ACTIVE_LOW>; };   /* D6   */
+		led_is_pc_on:          led_is_pc_on@14          { reg = <14>; gpios = <&gpiod  7 GPIO_ACTIVE_LOW>; };   /* D7   */
+		led_s2_sys_on:         led_s2_sys_on@15         { reg = <15>; gpios = <&gpiod 10 GPIO_ACTIVE_LOW>; };   /* D10  */
+		led_app_host_on:       led_app_host_on@16       { reg = <16>; gpios = <&gpiod 12 GPIO_ACTIVE_LOW>; };   /* D12  */
+		/* 35: S1 系统指示灯（PD9）*/
+		led_s1_sys_on:         led_s1_sys_on@35         { reg = <35>; gpios = <&gpiod  9 GPIO_ACTIVE_LOW>; };   /* D9   */
+		/* 36: PAC 230V 输出指示（PD8；USART3 已 disabled）*/
+		led_pac230v_on:        led_pac230v_on@36        { reg = <36>; gpios = <&gpiod  8 GPIO_ACTIVE_LOW>; };   /* D8   */
 		/* 17-28: relay / power drivers (K2..K13) */
 		k5_drv:                k5_drv@17                { reg = <17>; gpios = <&gpioi  4 GPIO_ACTIVE_HIGH>; };   /* I4   */
 		k6_drv:                k6_drv@18                { reg = <18>; gpios = <&gpioi  5 GPIO_ACTIVE_HIGH>; };   /* I5   */
@@ -54,6 +59,9 @@
 		drv_app_host_site_on:  drv_app_host_site_on@30  { reg = <30>; gpios = <&gpioj 12 GPIO_ACTIVE_HIGH>; };   /* J12  */
 		mains_connected_is_pc: mains_connected_is_pc@31 { reg = <31>; gpios = <&gpioj 13 GPIO_ACTIVE_HIGH>; };   /* J13  */
 		mains_connected_mcu:   mains_connected_mcu@32   { reg = <32>; gpios = <&gpioj 14 GPIO_ACTIVE_HIGH>; };   /* J14  */
+		/* 33-34: trolley connected status outputs（原 DIN PD13/PD14 改为输出）*/
+		trl_mu_connected_mcu:  trl_mu_connected_mcu@33  { reg = <33>; gpios = <&gpiod 13 GPIO_ACTIVE_HIGH>; };   /* D13  */
+		trl_mu_connected_is_pc: trl_mu_connected_is_pc@34 { reg = <34>; gpios = <&gpiod 14 GPIO_ACTIVE_HIGH>; }; /* D14  */
 	};
 
 	din_config: din_config {
@@ -64,21 +72,20 @@
 		/* 0-1: status inputs */
 		grid_main_relay_status: grid_main_relay_status@0  { reg = < 0>; gpios = <&gpioh  5 GPIO_ACTIVE_HIGH>; };   /* H5   */
 		me_box_error:           me_box_error@1            { reg = < 1>; gpios = <&gpioh  6 GPIO_ACTIVE_HIGH>; };   /* H6   */
-		/* 2-5: fault inputs (PA8-PA11) */
-		fault0:                 fault0@2                  { reg = < 2>; gpios = <&gpioa  8 GPIO_ACTIVE_HIGH>; };   /* A8   */
-		fault1:                 fault1@3                  { reg = < 3>; gpios = <&gpioa  9 GPIO_ACTIVE_HIGH>; };   /* A9   */
-		fault2:                 fault2@4                  { reg = < 4>; gpios = <&gpioa 10 GPIO_ACTIVE_HIGH>; };   /* A10  */
-		fault3:                 fault3@5                  { reg = < 5>; gpios = <&gpioa 11 GPIO_ACTIVE_HIGH>; };   /* A11  */
+		/* 2-5: fault inputs (PA8-PA11)；fault 全带上拉 */
+		fault0:                 fault0@2                  { reg = < 2>; gpios = <&gpioa  8 (GPIO_PULL_UP | GPIO_ACTIVE_HIGH)>; };   /* A8   */
+		fault1:                 fault1@3                  { reg = < 3>; gpios = <&gpioa  9 (GPIO_PULL_UP | GPIO_ACTIVE_HIGH)>; };   /* A9   */
+		fault2:                 fault2@4                  { reg = < 4>; gpios = <&gpioa 10 (GPIO_PULL_UP | GPIO_ACTIVE_HIGH)>; };   /* A10  */
+		fault3:                 fault3@5                  { reg = < 5>; gpios = <&gpioa 11 (GPIO_PULL_UP | GPIO_ACTIVE_HIGH)>; };   /* A11  */
 		/* 6-7: temperature alert + 24V feedback */
 		temp_alert:             temp_alert@6              { reg = < 6>; gpios = <&gpiob 12 GPIO_ACTIVE_HIGH>; };   /* B12  */
 		led_pwr_24_fb:          led_pwr_24_fb@7           { reg = < 7>; gpios = <&gpioc  6 GPIO_ACTIVE_HIGH>; };   /* C6   */
 		/* 8-10: fault inputs (PC11-PC13) */
-		fault4:                 fault4@8                  { reg = < 8>; gpios = <&gpioc 11 GPIO_ACTIVE_HIGH>; };   /* C11  */
-		fault5:                 fault5@9                  { reg = < 9>; gpios = <&gpioc 12 GPIO_ACTIVE_HIGH>; };   /* C12  */
-		fault6:                 fault6@10                 { reg = <10>; gpios = <&gpioc 13 GPIO_ACTIVE_HIGH>; };   /* C13  */
-		/* 11-12: trolley / status monitor */
-		trl_mu_connected_mcu:   trl_mu_connected_mcu@11   { reg = <11>; gpios = <&gpiod 13 GPIO_ACTIVE_HIGH>; };   /* D13  */
-		trl_mu_connected_is_pc: trl_mu_connected_is_pc@12 { reg = <12>; gpios = <&gpiod 14 GPIO_ACTIVE_HIGH>; };   /* D14  */
+		fault4:                 fault4@8                  { reg = < 8>; gpios = <&gpioc 11 (GPIO_PULL_UP | GPIO_ACTIVE_HIGH)>; };   /* C11  */
+		fault5:                 fault5@9                  { reg = < 9>; gpios = <&gpioc 12 (GPIO_PULL_UP | GPIO_ACTIVE_HIGH)>; };   /* C12  */
+		fault6:                 fault6@10                 { reg = <10>; gpios = <&gpioc 13 (GPIO_PULL_UP | GPIO_ACTIVE_HIGH)>; };   /* C13  */
+		/* 11-12: 空洞 —— 原 trl_mu_connected_mcu/is_pc (PD13/PD14) 已改为
+		 * DOUT 输出（见 dout_config reg 33/34），保留空洞以维持后续 DIN 编号不变。 */
 		/* 13-15: system control inputs (PJ0-PJ2) */
 		system_on_off:          system_on_off@13          { reg = <13>; gpios = <&gpioj  0 GPIO_ACTIVE_HIGH>; };   /* J0   */
 		system_reset:           system_reset@14           { reg = <14>; gpios = <&gpioj  1 GPIO_ACTIVE_HIGH>; };   /* J1   */

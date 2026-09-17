@@ -73,9 +73,10 @@ const uint8_t dinMax = DIN_MAX;
  * prevents compiler caching across threads. dout_state is written by
  * sm_thread + max6703a workqueue, so it is atomic_t for safe RMW.
  *
- * dout_state spans two 32-bit atomic words: DOUT_MAX = 36 pins (indices
- * 0..35) exceeds one 32-bit word. Bits < 32 live in word 0; bits >= 32
- * (DOUT_MAINS_CONNECTED_MCU + DOUT_LED_PJ0/1/2) live in word 1. atomic_t on
+ * dout_state spans two 32-bit atomic words: DOUT_MAX = 37 pins (indices
+ * 0..36) exceeds one 32-bit word. Bits < 32 live in word 0; bits >= 32
+ * (DOUT_MAINS_CONNECTED_MCU + the two TRL_MU_CONNECTED_* + LED_S1_SYS_ON +
+ * LED_PAC230V_ON outputs) live in word 1. atomic_t on
  * this 32-bit target is itself 32-bit, so two words provide the full 64-bit
  * bitmap through the existing 32-bit atomic bit API. */
 static volatile uint32_t din_state;

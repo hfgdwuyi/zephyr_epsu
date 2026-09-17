@@ -1,16 +1,21 @@
 /*!
  * @file sm_s1.h
- * @brief S1 模式状态机（MU SYS 控制器）—— 依据 S1_MU_SYS_ctr_logic_state_machine.md
+ * @brief S1 模式状态机（MU SYS 控制器）—— 依据 S1_MU_SYS_ctr_logic.md 的
+ *        “S1 with Trolley” 页签（§4）
  *
- * S1 系统共有 5 个工作状态 + 复位，由 SYSTEM_ON_OFF1 按键、市电(ME_BOX)、
- * 推车连接、外部复位共同驱动：
+ * S1 系统共有 5 个工作状态 + 硬件/软件复位，由 SYSTEM_ON_OFF1 按键、
+ * 市电(ME_BOX)、外部复位共同驱动（当前版本暂不判断 trolley 连接）：
  *
- *   STANDBY      待机        ：市电正常、推车连接、未开机（K3+K13 待机回路）
+ *   STANDBY      待机        ：市电正常、未开机（K3+K13 待机回路）
  *   OFF_NO_MAINS 关机·无市电  ：ME_BOX 异常 → 自动关机
  *   RUN          开机运行     ：按键开机后，AC/DC 各路依次使能（10ms 间隔）
- *   RUN_OR       开机运行·OR  ：开机过程中市电丢失 → 切 OR 模式供电
- *   SHUTDOWN     正常关机     ：按键关机，回到待机回路；K9/K10 由 IS_PC / APP_HOST 决定
- *   RESET 硬件复位        ：ME_BOX_ERROR && SYSTEM_RESET 边沿，全部重新初始化
+ *   RUN_OR       开机运行·OR  ：开机过程中市电丢失 → 切 OR 模式供电（T3）
+ *   SHUTDOWN     正常关机     ：按键关机；K9/K11 ← IS_PC_ON，K10 ← APP_HOST_ON
+ *   RESET        硬件复位     ：SYSTEM_RESET 上升沿，全部重新初始化
+ *   软件复位（非独立状态）     ：SYSTEM_ON_OFF 持续 ≥ 5s → 按 Tx 判定直接进 T0/T1
+ *
+ * 开关键时长（SYSTEM_ON_OFF1）：0.5s ≤ 按住 < 5s = 正常开机/关机；
+ * ≥ 5s = 软件复位。
  */
 /*----------------------------------------------------------------------------*/
 #ifndef SM_S1_H
@@ -26,6 +31,7 @@ typedef enum {
 	SM_S1_RUN_OR,           /* 开机运行·市电掉电（OR 模式，md 的 T3）   */
 	SM_S1_SHUTDOWN,         /* 正常关机（md 的 T4）                     */
 	SM_S1_RESET,            /* 硬件复位                                 */
+	SM_S1_SW_RESET,         /* 软件复位（先全断，再回 T0/T1）*/
 	SM_S1_STATE_COUNT
 } smS1State_t;
 

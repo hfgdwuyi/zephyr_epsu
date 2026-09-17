@@ -11,7 +11,7 @@
  *   - FDCAN1: PH13 (CAN1_TX) / PH14 (CAN1_RX)
  *   - FDCAN2: PB13 (CAN2_TX) / PB5  (CAN2_RX)
  *   - I2C1:   PB8 (SCL) / PB9 (SDA), WP on PB7
- *   - Console: USART3 PD8/PD9 (unchanged from NUCLEO)
+ *   - Console: USART1 PB14/PB15（USART3 已 disabled，PD8/PD9 用作 GPIO）
  *   - On-board LEDs kept for bsp_led (green PB0 / yellow PE1)
  *
  * SPDX-License-Identifier: Apache-2.0

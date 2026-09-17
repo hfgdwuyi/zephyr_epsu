@@ -13,7 +13,7 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(CiosZhong_psu)
 
 # Firmware version — hardcoded, single source of truth
-message(STATUS "Firmware version: 0.1.0")
+message(STATUS "Firmware version: 0.2.1")
 
 # Application modules
 add_subdirectory(src/main)
@@ -26,3 +26,6 @@ add_subdirectory(src/external)
 
 # Board support package (hardware driver wrappers)
 add_subdirectory(src/bsp ${CMAKE_CURRENT_BINARY_DIR}/bsp)
+
+# Application modules
+add_subdirectory(src/indicator)

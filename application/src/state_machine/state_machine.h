@@ -11,6 +11,9 @@
  *    0    1    1    S2 solo system
  *    1    1    x    invalid
  *
+ * 注意：主模式只在上电后判定一次并锁定（见 state_machine.c::stateMachineTick）。
+ * 运行中拨码变化不会重新判定、也不会切换系统；需重新选模式必须复位。
+ *
  * S1 系统完整实现见 sm_s1.c/h（T0~T4 + RESET）。
  * S2 系统完整实现见 sm_s2.c/h（ON / OFF·待机 / OFF·非待机 / RESET，
  * 子模式 solo/classic 由 pj4 选择）。
@@ -25,7 +28,9 @@
 
 #include <zephyr/sys/util.h>   /* BIT64 */
 
+#include "bsp_ain.h"           /* AIN_ADC_PDC0（24V 输出检测） */
 #include "bsp_dio.h"           /* DOUT/DIN 索引（管脚定义、输入判定用） */
+#include "sensor.h"            /* sensorGetPhys() */
 
 /* ==================== K 继电器 / efuse ==================== */
 
@@ -46,23 +51,32 @@
 #define K12   BIT64(DOUT_K12_EN)
 #define K13   BIT64(DOUT_K13_EN)
 
-/* ==================== 面板 LED / 状态驱动 ==================== */
+/* ==================== 面板 LED ==================== */
 
-#define L_GRID_IN      BIT64(DOUT_LED_GRID_PWR_IN)         /* 市电输入指示     */
-#define L_PWR24        BIT64(DOUT_LED_PWR_24_ON)           /* 24V 输出         */
-#define L_CP224        BIT64(DOUT_LED_CP_224V_ON)          /* 224V 输出        */
-#define L_TROLLEY      BIT64(DOUT_LED_TROLLEY_CONNECTED)   /* 推车连接         */
-#define L_UPS_IN       BIT64(DOUT_LED_UPS_IN)              /* UPS 输入         */
-#define L_SYS_ON       BIT64(DOUT_LED_SYSTEM_ON)           /* 系统开机指示     */
-#define L_S2_SOLO_SYS  BIT64(DOUT_LED_S2_SOLO_SYS)         /* S2 solo 指示     */
-#define L_S2_SYS_ON    BIT64(DOUT_LED_S2_SYS_ON)           /* S2 系统指示      */
-#define L_IS_PC        BIT64(DOUT_LED_IS_PC_ON)            /* IS_PC 指示       */
-#define L_APP_HOST     BIT64(DOUT_LED_APP_HOST_ON)         /* APP_HOST 指示    */
-#define D_IS_PC_SITE   BIT64(DOUT_DRV_IS_PC_SITE_ON)
-#define D_APP_HOST     BIT64(DOUT_DRV_APP_HOST_SITE_ON)
-#define D_MAINS_MCU    BIT64(DOUT_MAINS_CONNECTED_MCU)
-#define D_MAINS_IS_PC  BIT64(DOUT_MAINS_CONNECTED_IS_PC)
-#define D_TROLLEY_EN   BIT64(DOUT_TROLLEY_ENABLE_DRV)
+#define LED_GRID_PWR_IN       BIT64(DOUT_LED_GRID_PWR_IN)          /* 市电输入指示     */
+#define LED_UPS_IN            BIT64(DOUT_LED_UPS_IN)               /* UPS 输入         */
+#define LED_SYS_ON            BIT64(DOUT_LED_SYSTEM_ON)            /* 系统开机指示     */
+#define LED_S2_SOLO_SYS       BIT64(DOUT_LED_S2_SOLO_SYS)          /* S2 solo 指示     */
+#define LED_TROLLEY_CONNECTED BIT64(DOUT_LED_TROLLEY_CONNECTED)    /* 推车连接         */
+#define LED_IS_PC_ON          BIT64(DOUT_LED_IS_PC_ON)             /* IS_PC 指示       */
+#define LED_APP_HOST_ON       BIT64(DOUT_LED_APP_HOST_ON)          /* APP_HOST 指示    */
+#define LED_S1_SYS_ON         BIT64(DOUT_LED_S1_SYS_ON)            /* S1 系统指示      */
+#define LED_S2_SYS_ON         BIT64(DOUT_LED_S2_SYS_ON)            /* S2 系统指示      */
+#define LED_PWR24V_ON          BIT64(DOUT_LED_PWR_24V_ON)            /* 24V 输出         */
+#define LED_CP24V_ON           BIT64(DOUT_LED_CP_24V_ON)            /* 24V 输出        */
+#define LED_PAC230V_ON        BIT64(DOUT_LED_PAC230V_ON)           /* 230V 输出        */
+
+
+/* ==================== 状态驱动 ==================== */
+
+#define DRV_IS_PC_SITE    			BIT64(DOUT_DRV_IS_PC_SITE_ON)        /* IS_PC 侧驱动     */
+#define DRV_APP_HOST      			BIT64(DOUT_DRV_APP_HOST_SITE_ON)     /* APP_HOST 侧驱动  */
+#define DRV_MAINS_CONNECTED_MCU     BIT64(DOUT_MAINS_CONNECTED_MCU)      /* 市电检测->MCU    */
+#define DRV_MAINS_CONNECTED_IS_PC   BIT64(DOUT_MAINS_CONNECTED_IS_PC)    /* 市电检测->IS_PC  */
+#define DRV_TROLLEY_EN    			BIT64(DOUT_TROLLEY_ENABLE_DRV)       /* 推车使能         */
+/* 推车连接状态输出（T2 时随 trolley 连接置位）*/
+#define DRV_TRL_MU_MCU    			BIT64(DOUT_TRL_MU_CONNECTED_MCU)     /* 推车连接->MCU    */
+#define DRV_TRL_MU_IS_PC  			BIT64(DOUT_TRL_MU_CONNECTED_IS_PC)   /* 推车连接->IS_PC  */
 
 /* ==================== 管脚组 ==================== */
 
@@ -70,11 +84,15 @@
 #define SM_RELAY_ALL (K2 | K3 | K4 | K5 | K6 | K7 | K8_1 | K8_2 | \
 		      K9 | K10 | K11 | K12 | K13)
 
-/* 全部面板 LED / 状态驱动 */
-#define SM_LED_ALL   (L_GRID_IN | L_PWR24 | L_CP224 | L_TROLLEY | L_UPS_IN | \
-		      L_SYS_ON | L_S2_SOLO_SYS | L_S2_SYS_ON | L_IS_PC | \
-		      L_APP_HOST | D_IS_PC_SITE | D_APP_HOST | D_MAINS_MCU | \
-		      D_MAINS_IS_PC | D_TROLLEY_EN)
+/* 全部面板 LED */
+#define SM_LED_ALL   (LED_GRID_PWR_IN | LED_PWR24V_ON | LED_CP24V_ON | LED_TROLLEY_CONNECTED | \
+		      LED_UPS_IN | LED_SYS_ON | LED_S1_SYS_ON | LED_S2_SOLO_SYS | LED_S2_SYS_ON | \
+		      LED_IS_PC_ON | LED_APP_HOST_ON)
+
+/* 全部状态驱动输出（DRV_*，非 LED） */
+#define SM_DRV_ALL   (DRV_IS_PC_SITE | DRV_APP_HOST | DRV_MAINS_CONNECTED_MCU | \
+		      DRV_MAINS_CONNECTED_IS_PC | DRV_TROLLEY_EN | \
+		      DRV_TRL_MU_MCU | DRV_TRL_MU_IS_PC)
 
 /* ==================== 输入判定（DIN 位图谓词，S1/S2 共用） ==================== */
 /* 都是"某个 DIN 位是否有效"的判定，布尔语义读成问句 → is 前缀 */
@@ -89,6 +107,18 @@ static inline bool isTrolleyConnected(uint32_t din)
 {
 	return (din & BIT(DIN_TROLLEY_CONNECTED)) != 0U;
 }
+
+/* ==================== 上电判定 / 小车去抖参数 ==================== */
+/* 主模式确认窗：出现确定拨码后必须连续保持该状态 >= 1s 才进入对应系统；
+ * 期间若另一路配置也有效（冲突）或拨码变化 → 放弃，保持未进入。 */
+#define SYSTEM_CONFIRM_MS    1000U
+/* 小车连接去抖：有效电平需持续 >= 2s 才判为“已连接”；变为无效立即判为断开，
+ * 需要再持续 2s 有效才重新判为连接。 */
+#define TROLLEY_DEBOUNCE_MS  2000U
+
+/*! 去抖后的小车连接状态（在 state_machine.c 每 tick 更新一次）。
+ *  sm_s1/sm_s2 应使用本接口，而不是裸的 isTrolleyConnected(din)。 */
+bool isTrolleyConnectedDebounced(void);
 
 static inline bool isOnOffActive(uint32_t din)
 {
@@ -110,19 +140,40 @@ static inline bool isAppHostOn(uint32_t din)
 	return (din & BIT(DIN_APP_HOST_ON)) != 0U;
 }
 
+/* ==================== 24V 输出是否正常（AIN_ADC_PDC0 / PA6） ==================== */
+/* 开机 / 正常关机的前置条件：24V 输出正常（sensor 换算后的 mV）。
+ * 阈值按实际硬件标定调整。 */
+#define SM_24V_AIN_CH   AIN_ADC_PDC0
+#define SM_24V_MIN_MV   2200U
+
+static inline bool is24VOk(void)
+{
+	return sensorGetPhys(SM_24V_AIN_CH) >= SM_24V_MIN_MV;
+}
+
 /* ==================== 写电平 ==================== */
 
-static inline void relayWrite(uint64_t mask)
+/* 唯一的“组内全量写”：set 里置 1，grp 内其余置 0；grp 之外的位（其它组）不动。
+ * 每个状态对三组各调一次 = 写出本状态的完整输出，且不会瞬断本状态要保留的路：
+ *   doutWrite(SM_RELAY_ALL, ...) / doutWrite(SM_LED_ALL, ...) / doutWrite(SM_DRV_ALL, ...)
+ * 注意：LED 硬件为低电平点亮（overlay 已标 GPIO_ACTIVE_LOW），本层一律用逻辑电平
+ * （1 = 亮），物理极性由 gpio_pin_set_dt 按 DT 标志反转。 */
+static inline void doutWrite(uint64_t grp, uint64_t set)
 {
-	bspDoutSetBitmap(mask, true);
-	bspDoutSetBitmap(SM_RELAY_ALL & ~mask, false);
+	bspDoutSetBitmap(set, true);
+	bspDoutSetBitmap(grp & ~set, false);
 }
 
-static inline void ledWrite(uint64_t mask)
+/* 同上，但 keep 里的位保持不动（给 K4/K5 这类由别的逻辑单独控制的继电器用）*/
+static inline void doutWriteKeep(uint64_t grp, uint64_t set, uint64_t keep)
 {
-	bspDoutSetBitmap(mask, true);
-	bspDoutSetBitmap(SM_LED_ALL & ~mask, false);
+	bspDoutSetBitmap(set, true);
+	bspDoutSetBitmap(grp & ~set & ~keep, false);
 }
+
+/* 单独改某几位 → 直接用 BSP 位图接口，例：
+ *   bspDoutSetBitmap(K4 | K5, false);                位清 0
+ *   bspDoutSetBitmap(LED_TROLLEY_CONNECTED, true);   位置 1 */
 
 /* ==================== 对外接口 ==================== */
 

@@ -7,4 +7,5 @@ target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/../bsp
     ${CMAKE_CURRENT_LIST_DIR}/../sensor
     ${CMAKE_CURRENT_LIST_DIR}/../terminal
+    ${CMAKE_CURRENT_LIST_DIR}/../indicator
 )

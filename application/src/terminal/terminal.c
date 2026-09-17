@@ -45,15 +45,6 @@ static int16_t  last_t2;
 #define TERMINAL_SENSOR_LOG 0
 #endif
 
-/* 周期主动推送全部 ADC 通道：
- * 1 = 默认开启（上位机无需发送任何命令即可持续接收全部通道数据）
- * 0 = 关闭（仅在收到 ain 命令时输出） */
-#ifndef TERMINAL_AIN_PUSH
-#define TERMINAL_AIN_PUSH 1
-#endif
-#define AIN_PUSH_PERIOD_MS  1000
-
-static uint32_t last_ain_push;
 static bool     inited;
 
 /* last printed AC mains state (ac_meter) */
@@ -111,6 +102,7 @@ static void updateAc(void)
 	}
 }
 
+#if TERMINAL_SENSOR_LOG
 static void printTemp(const char *name, int16_t t)
 {
 	if (t == INT16_MIN) {
@@ -124,39 +116,7 @@ static void printTemp(const char *name, int16_t t)
 		printk("SENSOR %s: %s%d.%d °C\n", name, neg ? "-" : "", a / 10, a % 10);
 	}
 }
-
-/* 周期性输出全部 ADC 通道 —— 沿用上位机既有的 SENSOR 行格式：
- *   SENSOR adc_12v: 1.414 V
- *   SENSOR temp1: 25.3 °C
- *   SENSOR adc_vin: 220.5 V @ 50.0 Hz   /   n/a (no AC)
- * 与旧实现的区别：不再"仅变化 >3V 才打印"（那样 0V 附近的 pdc 通道永远
- * 不上报，上位机只能显示 n/a），而是每个周期把 15 个通道全部上报一次。 */
-static void printAllAin(void)
-{
-	/* 温度通道（名字与旧格式保持一致：temp1 / temp2） */
-	printTemp("temp1", sensorTempGet1());
-	printTemp("temp2", sensorTempGet2());
-
-	/* 其余电压通道（跳过温度与市电 AC 通道，它们单独处理） */
-	for (uint8_t i = 0; i < BSP_AIN_NUMBER; i++) {
-		if (i == AIN_ADC_TEMP1 || i == AIN_ADC_TEMP2 || i == AIN_ADC_VIN) {
-			continue;
-		}
-		const uint32_t mv = sensorGetPhys(i);
-		printk("SENSOR %s: %u.%03u V\n",
-		       bspAinGetName(i), mv / 1000U, mv % 1000U);
-	}
-
-	/* 市电 AC 通道：由 ac_meter 提供窗口 RMS 与频率 */
-	if (acMeterAcPresent()) {
-		const uint32_t rms = acMeterGetVinRmsMv();
-		printk("SENSOR adc_vin: %u.%03u V @ %u.%u Hz\n",
-		       rms / 1000U, rms % 1000U,
-		       acMeterGetVinFreq() / 10, acMeterGetVinFreq() % 10);
-	} else {
-		printk("SENSOR adc_vin: n/a (no AC)\n");
-	}
-}
+#endif
 
 bool terminalIsQuiet(void)
 {
@@ -231,13 +191,4 @@ void terminalUpdate(void)
 
 	/* AC mains (ac_meter) — presence / RMS / frequency */
 	updateAc();
-
-#if TERMINAL_AIN_PUSH
-	/* 周期性推送全部 ADC 通道：上位机默认即可收到所有通道，无需发命令 */
-	const uint32_t now = k_uptime_get_32();
-	if ((uint32_t)(now - last_ain_push) >= AIN_PUSH_PERIOD_MS) {
-		last_ain_push = now;
-		printAllAin();
-	}
-#endif
 }
