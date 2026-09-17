@@ -24,15 +24,15 @@
 #include <zephyr/sys/util.h>
 
 /* BSP */
-#include "bsp_ain.h"    /* AIN_ADC_PDC0 */
-#include "bsp_dio.h"    /* DOUT_LED_GRID_PWR_IN / DOUT_LED_UPS_IN */
+#include "bsp_ain.h"
+#include "bsp_dio.h"
 
 /* Application */
-#include "sensor.h"     /* sensorGetPhys() */
+#include "sensor.h"
 #include "state_machine.h"
 #include "sm_s1.h"
 #include "sm_s2.h"
-#include "terminal.h"   /* terminalIsQuiet(): silence logs during DFU */
+#include "terminal.h"
 
 /* ==================== Main mode (module-private) ==================== */
 

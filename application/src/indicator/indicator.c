@@ -8,7 +8,7 @@
 #include <zephyr/kernel.h>
 
 /* BSP */
-#include "bsp_aout.h"   /* bspAoutWrite / AOUT_PWR_ON_OFF */
+#include "bsp_aout.h"
 
 /* Application */
 #include "indicator.h"

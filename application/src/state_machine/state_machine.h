@@ -29,14 +29,14 @@
 #define STATE_MACHINE_H
 
 /* Zephyr */
-#include <zephyr/sys/util.h>   /* BIT64 */
+#include <zephyr/sys/util.h>
 
 /* BSP */
-#include "bsp_ain.h"           /* AIN_ADC_PDC0 (24V output monitor) */
-#include "bsp_dio.h"           /* DOUT/DIN indices (pins and input predicates) */
+#include "bsp_ain.h"
+#include "bsp_dio.h"
 
 /* Application */
-#include "sensor.h"            /* sensorGetPhys() */
+#include "sensor.h"
 
 /* ==================== K relays / efuse ==================== */
 

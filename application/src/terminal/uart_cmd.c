@@ -33,13 +33,13 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/drivers/i2c.h>
-#include <zephyr/sys/printk.h>   /* snprintk */
+#include <zephyr/sys/printk.h>
 #include <zephyr/sys/reboot.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/dfu/mcuboot.h>
 
 /* BSP */
-#include "bsp_ain.h"    /* AIN_ADC_* channel enum */
+#include "bsp_ain.h"
 #include "bsp_dio.h"
 #include "bsp_aout.h"
 #include "bsp_pwm.h"
