@@ -5,7 +5,10 @@
 #ifndef BSP_AIN_H
 #define BSP_AIN_H
 
+/* Standard library */
 #include <stdint.h>
+
+/* Zephyr */
 #include <zephyr/devicetree.h>
 
 /* Channel count derives from the io-channels array in app.overlay. */

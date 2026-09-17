@@ -28,6 +28,7 @@
 #ifndef SENSOR_H
 #define SENSOR_H
 
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 

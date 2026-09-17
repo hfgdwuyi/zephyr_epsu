@@ -150,7 +150,7 @@ index 265e17bd..730ae6fc 100644
  
  BOOT_LOG_MODULE_DECLARE(mcuboot);
  
-+/* CiosZhong: 外部看门狗 MAX6703A WDI (PH9) —— 由 mcuboot_wdi.overlay 定义 */
++/* CiosZhong: external MAX6703A WDI (PH9), defined by mcuboot_wdi.overlay */
 +#if DT_NODE_EXISTS(DT_NODELABEL(mcuboot_wdi))
 +static const struct gpio_dt_spec mcuboot_wdi_gpio =
 +	GPIO_DT_SPEC_GET(DT_NODELABEL(mcuboot_wdi), gpios);
@@ -163,7 +163,7 @@ index 265e17bd..730ae6fc 100644
  
  __weak void mcuboot_watchdog_setup(void)
  {
-+    /* CiosZhong: 配置外部 MAX6703A WDI (PH9) 为输出，初始低 */
++    /* CiosZhong: configure MAX6703A WDI (PH9) as output, initially low */
 +#if DT_NODE_EXISTS(DT_NODELABEL(mcuboot_wdi))
 +    if (device_is_ready(mcuboot_wdi_gpio.port)) {
 +        gpio_pin_configure_dt(&mcuboot_wdi_gpio, GPIO_OUTPUT);
@@ -178,7 +178,7 @@ index 265e17bd..730ae6fc 100644
      }
  #endif
 +
-+    /* CiosZhong: 喂外部 MAX6703A (WDI PH9) —— 每次 feed toggle 一次 */
++    /* CiosZhong: feed MAX6703A (WDI PH9) - toggle on every feed */
 +#if DT_NODE_EXISTS(DT_NODELABEL(mcuboot_wdi))
 +    static bool wdi_level;
 +    if (device_is_ready(mcuboot_wdi_gpio.port)) {

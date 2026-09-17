@@ -8,7 +8,7 @@
  */
 /*----------------------------------------------------------------------------*/
 
-/* C standard library */
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -40,8 +40,8 @@ static const struct device *const spi0_dev = DEVICE_DT_GET_OR_NULL(DT_ALIAS(spi0
 static const struct device *const spi0_dev = NULL;
 #endif
 
-/* PA12 — 原 DOUT reg 2 (pg_13v5)。已从 dout_config 移除（reg 2 留空洞），
- * 此处显式配置为数字输入：固件不能控制该引脚电平（无任何写操作路径）。 */
+/* PA12 - former DOUT reg 2 (pg_13v5). Removed from dout_config (reg 2 is a
+ * hole) and configured here as a digital input. */
 #if DT_NODE_HAS_PROP(DT_PATH(zephyr_user), pg_13v5_gpios)
 static const struct gpio_dt_spec pg13v5Input =
 	GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), pg_13v5_gpios);
@@ -58,7 +58,7 @@ void bspBoardInit(void)
 	bspDinApplyDebounce();  /* set debounce for mechanical switches */
 	/* DIN sampling / DOUT commit run as 1 ms tasks in scheduler */
 
-	/* PA12 输入：仅设置方向，不写入电平（DOUT 位图不再包含此引脚） */
+	/* PA12 input: direction only (not part of the DOUT bitmap) */
 #if DT_NODE_HAS_PROP(DT_PATH(zephyr_user), pg_13v5_gpios)
 	if (gpio_is_ready_dt(&pg13v5Input)) {
 		gpio_pin_configure_dt(&pg13v5Input, GPIO_INPUT);

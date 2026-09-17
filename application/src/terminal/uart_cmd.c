@@ -1,27 +1,28 @@
 /*
- * uart_cmd.c — 上位机命令服务（USART1 @ PB14(TX)/PB15(RX), 115200, 8N1）
+ * uart_cmd.c - host command service (USART1 @ PB14 TX / PB15 RX, 115200, 8N1)
  *
- * 与上位机（PC / 串口助手）通讯：
- *   - UART 中断接收 → 环形缓冲（不丢字节）
- *   - terminal 任务每 500 ms 调用 uartCmdPoll()：取出一行（\r\n 结尾）解析执行
- *   - 响应通过同一 UART 回发（行协议，方便脚本/串口助手调试）
- *   - 注：USART1 同时是 Zephyr console（printk），日志与命令响应同口。
+ * Line protocol with a host (PC / serial terminal):
+ *   - the UART ISR fills a ring buffer
+ *   - the cmd thread calls uartCmdPoll() every 10 ms: take one \r\n-terminated
+ *     line, parse and execute it
+ *   - responses go back over the same UART
+ *   - NOTE: USART1 is also the Zephyr console (printk).
  *
- * 命令集（每行一条）：
- *   help                    — 帮助
- *   info                    — 系统状态（状态机/故障/温度/电压/AC）
- *   dout <idx> <0|1>        — 控制 DOUT 输出（idx 0..doutMax-1）
- *   doutall <hex64>         — 直接写入 64 位 DOUT 位图
- *   dac <mv>                — DAC 恒定输出电压（0..3300 mV，清除方波状态位）
- *   dacwv <0|1>             — PA5 状态指示灯呼吸模式开关（1=呼吸 0=灭）
- *   pwm <ch> <duty>         — 风扇 PWM 占空比（ch 0/1，duty 0..100）
- *   pwmoff <ch>             — 停止 PWM
+ * Commands (one per line):
+ *   help                    - help
+ *   info                    - system status (state machine/faults/temp/voltage)
+ *   dout <idx> <0|1>        - drive a DOUT bit (idx 0..doutMax-1)
+ *   doutall <hex64>         - write the whole 64-bit DOUT bitmap
+ *   dac <mv>                - constant DAC output (0..3300 mV)
+ *   pwr_on_off <0|1>        - indicator mode (1 = breathing, 0 = off)
+ *   pwm <ch> <duty>         - fan PWM duty (ch 0/1, duty 0..100)
+ *   pwmoff <ch>             - stop PWM
  *
- * 注意：这些命令直接操作 BSP 输出，与状态机/风扇策略并发时可能被其覆盖，
- * 属调试/产测用途。
+ * These commands write BSP outputs directly and may be overwritten by the
+ * state machine: they are for debug / production test.
  */
 
-/* C standard library */
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -38,7 +39,7 @@
 #include <zephyr/dfu/mcuboot.h>
 
 /* BSP */
-#include "bsp_ain.h"    /* AIN_ADC_* 通道枚举 */
+#include "bsp_ain.h"    /* AIN_ADC_* channel enum */
 #include "bsp_dio.h"
 #include "bsp_aout.h"
 #include "bsp_pwm.h"
@@ -51,17 +52,17 @@
 #include "tmp75.h"
 #include "indicator.h"
 
-/* ==================== 常量 ==================== */
+/* ==================== Constants ==================== */
 
 #define UART_CMD_DEV   DEVICE_DT_GET(DT_NODELABEL(usart1))   /* PB14(TX)/PB15(RX) */
 
-#define RX_BUF_SIZE    8192   /* 环形缓冲（字节）— DFU 时容纳多行，防 10ms 轮询间隙溢出 */
-#define CMD_LINE_MAX   1100   /* 单行命令最大长度（dfu 块 ≤ 512B hex） */
-#define TX_CHUNK_MAX   128    /* info 多行输出分块发送 */
+#define RX_BUF_SIZE    8192   /* ring buffer (bytes): holds several DFU lines */
+#define CMD_LINE_MAX   1100   /* max line length (dfu block <= 512 B hex) */
+#define TX_CHUNK_MAX   128    /* chunk size for multi-line info output */
 
-/* ==================== 接收环形缓冲 ====================
- * 单生产者（UART ISR）单消费者（terminal 线程）：head 由 ISR 写，tail 由
- * 线程读；满则丢新字节。volatile 索引保证 ISR/线程间可见。 */
+/* ==================== RX ring buffer ====================
+ * Single producer (UART ISR) / single consumer (cmd thread): head written by
+ * the ISR, tail read by the thread; a full buffer drops new bytes. */
 
 static uint8_t  rx_buf[RX_BUF_SIZE];
 static volatile uint16_t rx_head;
@@ -72,7 +73,7 @@ static uint16_t line_len;
 static bool     uart_ready;
 static bool     inited;
 
-/* ==================== UART 发送 ==================== */
+/* ==================== UART TX ==================== */
 
 static void uartTxStr(const char *s)
 {
@@ -84,7 +85,7 @@ static void uartTxStr(const char *s)
 	}
 }
 
-/* ==================== UART 接收 ISR ==================== */
+/* ==================== UART RX ISR ==================== */
 
 static void uartRxIsr(const struct device *dev, void *user_data)
 {
@@ -103,11 +104,11 @@ static void uartRxIsr(const struct device *dev, void *user_data)
 			rx_buf[rx_head] = c;
 			rx_head = next;
 		}
-		/* 缓冲满：丢弃新字节 */
+		/* buffer full: drop the new byte */
 	}
 }
 
-/* ==================== 初始化（懒加载，幂等） ==================== */
+/* ==================== Init (lazy, idempotent) ==================== */
 
 static void uartCmdInit(void)
 {
@@ -125,14 +126,14 @@ static void uartCmdInit(void)
 	uart_irq_callback_user_data_set(UART_CMD_DEV, uartRxIsr, NULL);
 	uart_irq_rx_enable(UART_CMD_DEV);
 
-	/* 版本横幅走 UART 命令通道（不被 printk 启动刷屏淹没）。 */
+	/* Send the version banner over the command channel. */
 	uartTxStr("\r\n===== CiosZhong PSU =====\r\n");
 	uartTxStr("  App  v" CONFIG_CIOS_ZHONG_FW_VERSION "\r\n");
 	uartTxStr("  Boot v" CONFIG_CIOS_ZHONG_BOOT_VERSION " (MCUboot)\r\n");
 	uartTxStr("PSU CMD: ready (help for commands)\r\n");
 }
 
-/* ==================== 命令执行 ==================== */
+/* ==================== Command execution ==================== */
 
 static void cmdHelp(void)
 {
@@ -227,7 +228,7 @@ static void cmdDoutAll(const char *args)
 	if (end == args || (*end != '\0' && *end != '\r' && *end != '\n')) {
 		goto err;
 	}
-	/* 先清全部，再按位图置位（仅低 doutMax 位有效） */
+	/* Clear all, then set the bits of the requested bitmap */
 	bspDoutSetBitmap(UINT64_MAX, false);
 	bspDoutSetBitmap(mask, true);
 	uartTxStr("OK\r\n");
@@ -248,7 +249,7 @@ static void cmdDac(const char *args)
 	if (end == args || mv < 0 || mv > 3300) {
 		goto err;
 	}
-	/* 恒定电压输出：切到 MANUAL，indicatorUpdate 不再覆盖 */
+	/* Constant output: switch to MANUAL so indicatorUpdate() leaves it alone */
 	indicatorSetMode(INDICATOR_MANUAL);
 	bspAoutWrite(AOUT_PWR_ON_OFF, (int16_t)mv);
 	uartTxStr("OK\r\n");
@@ -269,7 +270,7 @@ static void cmdDacWave(const char *args)
 	if (end == args || (on != 0 && on != 1)) {
 		goto err;
 	}
-	/* pwr_on_off (PA5): 状态指示灯 —— 1 = 呼吸，0 = 灭 */
+	/* pwr_on_off (PA5): 1 = breathing, 0 = off */
 	indicatorSetMode(on ? INDICATOR_BREATH : INDICATOR_OFF);
 	uartTxStr(on ? "OK breath on\r\n" : "OK breath off\r\n");
 	return;
@@ -323,7 +324,7 @@ err:
 	uartTxStr("ERR usage: pwmoff <ch 0|1>\r\n");
 }
 
-/* ---- 状态查询（上位机显示用）---- */
+/* ---- Status query (for the host UI) ---- */
 
 static void cmdGetDout(void)
 {
@@ -362,7 +363,7 @@ static void cmdGetDin(void)
 	uartTxStr(buf);
 }
 
-/* ---- temp: 读取 TMP75 (I2C1, 0x48) 温度 ---- */
+/* ---- temp: read the TMP75 (I2C1, 0x48) ---- */
 static void cmdTemp(void)
 {
 	char buf[64];
@@ -382,7 +383,7 @@ static void cmdTemp(void)
 		return;
 	}
 
-	/* 拆成整数与三位小数，手工处理负号（避免浮点 printf） */
+	/* Split into integer and fraction, handling the sign manually */
 	int32_t whole = milliDegC / 1000;
 	int32_t frac  = milliDegC % 1000;
 	if (frac < 0) {
@@ -393,9 +394,9 @@ static void cmdTemp(void)
 	uartTxStr(buf);
 }
 
-/* ---- ain: 读取全部 ADC 通道 ----
- * 默认（不带参数）一次性打印所有通道的物理电压，便于上位机直接采集，
- * 无需逐通道控制。可选 "raw" 参数附带原始 ADC 码值用于诊断。 */
+/* ---- ain: read all ADC channels ----
+ * Without arguments prints the physical voltage of every channel; the optional
+ * "raw" argument also prints the raw ADC codes. */
 static void cmdAin(const char *args)
 {
 	char buf[96];
@@ -416,7 +417,7 @@ static void cmdAin(const char *args)
 		}
 
 		if (i == AIN_ADC_TEMP1 || i == AIN_ADC_TEMP2) {
-			/* 温度通道：sensor 缓存的是温度 ×10（不是电压） */
+			/* temperature channel: cache holds temp x10, not a voltage */
 			int16_t t = (int16_t)sensorGetPhys(i);
 			int16_t frac = t % 10;
 			if (frac < 0) {
@@ -425,7 +426,7 @@ static void cmdAin(const char *args)
 			snprintk(buf, sizeof(buf), "AIN[%2u] %-14s %4d.%d C%s\r\n",
 				 (unsigned)i, bspAinGetName(i), t / 10, frac, rawtxt);
 		} else if (i == AIN_ADC_VIN) {
-			/* 市电 AC 通道：Rms/频率由 ac_meter 计算，此处给 RMS */
+			/* mains AC channel: RMS is computed by ac_meter */
 			if (acMeterAcPresent()) {
 				uint32_t rms = acMeterGetVinRmsMv();
 				snprintk(buf, sizeof(buf),
@@ -449,7 +450,7 @@ static void cmdAin(const char *args)
 	}
 }
 
-/* ---- i2cscan: 扫描 I2C1 总线上的所有从机地址 ---- */
+/* ---- i2cscan: probe all slave addresses on I2C1 ---- */
 static void cmdI2cScan(void)
 {
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay)
@@ -466,8 +467,8 @@ static void cmdI2cScan(void)
 	uartTxStr("scan i2c1 (7-bit addr 0x08..0x77):\r\n");
 
 	for (uint16_t addr = 0x08; addr <= 0x77; addr++) {
-		/* 零长度写 = 只发 START+地址+STOP（标准 quick command）。
-		 * 不发送任何数据字节，因此不会误改 EEPROM/配置寄存器。 */
+		/* Zero-length write = START + address + STOP (standard quick command),
+		 * so no data byte is ever sent. */
 		if (i2c_write(bus, &dummy, 0, (uint8_t)addr) == 0) {
 			snprintk(buf, sizeof(buf), "  ACK  0x%02X\r\n", addr);
 			uartTxStr(buf);
@@ -482,10 +483,10 @@ static void cmdI2cScan(void)
 #endif
 }
 
-/* ---- i2cread <addr> [reg] [len]: 读 I2C1 从机寄存器（调试/器件识别） ----
- *   i2cread 0x52            → 纯读 2 字节（无寄存器指针，命令式接口用）
- *   i2cread 0x52 0x00 4     → 从寄存器 0x00 起读 4 字节（指针式接口用）
- * 参数均为 hex；len 默认 2，最大 32。 */
+/* ---- i2cread <addr> [reg] [len]: read I2C1 slave registers ----
+ *   i2cread 0x52            -> plain 2-byte read (command-style device)
+ *   i2cread 0x52 0x00 4     -> read 4 bytes from register 0x00
+ * All arguments are hex; len defaults to 2, max 32. */
 static void cmdI2cRead(const char *args)
 {
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay)
@@ -554,27 +555,25 @@ static void cmdI2cRead(const char *args)
 #endif
 }
 
-/* ==================== 行解析与分发 ==================== */
+/* ==================== Line parsing and dispatch ==================== */
 
-/* ==================== DFU (串口固件升级 → slot1 + MCUboot swap) ====================
- * 协议（行式，hex，块级 ACK + 偏移校验）：
- *   dfu           进入升级模式（擦除 slot1）
- *   size <hex>    固件总字节数
- *   data <off> <hex..>  数据块：off = 本块在固件中的偏移（hex），
- *                        hex = 块内容（≤512B/行）
- *   host 逐块等 ACK（"ACK <next_off>"），收到 ERR/超时重发同一块；
- *   固件校验 off，写失败不清会话状态，可重试。
- *   写完自动 boot_request_upgrade → 复位 → MCUboot swap-using-offset。
+/* ==================== DFU (serial upgrade -> slot1 + MCUboot) ==========
+ * Protocol (line based, hex, block ACK + offset check):
+ *   dfu                enter upgrade mode (erase slot1)
+ *   size <hex>         total firmware size in bytes
+ *   data <off> <hex..> data block: off = offset of this block (hex),
+ *                      hex = block payload (<= 512 B per line)
+ *   The host waits for "ACK <next_off>" per block and retries on ERR/timeout.
+ *   When done: read-back verify -> boot_request_upgrade() -> reset.
  *
- * MCUboot SWAP_USING_OFFSET 布局：slot1 的第一个扇区保留给 swap 算法做
- * 移动缓冲，升级镜像必须从 slot1 的第二个扇区开始存放（即偏移
- * MCUboot OVERWRITE_ONLY：镜像从 slot1 起始(0x0)写入，MCUboot 读
- * slot1 头判断并整体覆盖到 slot0。DFU_SECONDARY_IMG_OFFSET = 0。
+ * Note: the layout comment below describes an older SWAP_USING_OFFSET scheme;
+ * The build uses MCUboot OVERWRITE_ONLY: the image is written from the start of
+ * slot1 (0x0) and MCUboot copies it over slot0. DFU_SECONDARY_IMG_OFFSET = 0.
  */
 #define DFU_BLOCK_MAX            512   /* bytes per data line */
 #define DFU_HEX_CHARS            (DFU_BLOCK_MAX * 2)
-/* MCUboot 升级策略为 OVERWRITE_ONLY：MCUboot 从 slot1 起始(0x0)读
- * 镜像头并整体覆盖到 slot0，无 swap 第二扇区偏移要求。故写 0x0 起。 */
+/* OVERWRITE_ONLY: MCUboot reads the image header at the start of slot1 (0x0)
+ * and copies it over slot0, so the host writes from offset 0. */
 #define DFU_SECONDARY_IMG_OFFSET 0x0U
 
 static struct {
@@ -593,7 +592,7 @@ static uint8_t hexVal(char ch)
 	return 0xFF;
 }
 
-/* 解析 hex 字符串到 buf，返回字节数；非法字符返回 -1 */
+/* Parse a hex string into buf; return the byte count, -1 on bad input */
 static int hexParse(const char *s, uint8_t *buf, int max)
 {
 	int n = 0;
@@ -673,9 +672,9 @@ static void dfuData(const char *args)
 	off = strtoul(offtok, &end, 16);
 	if (end == offtok || save == NULL) { goto err; }
 
-	/* 块偏移必须与已接收长度一致（允许 host 重发同一块） */
+	/* The block offset must match the received length (allows a retry) */
 	if ((uint32_t)off != dfu.received) {
-		/* 旧块重发或乱序：不破坏状态，要求重发当前块 */
+		/* stale/out-of-order block: keep state, ask for the current block */
 		snprintk(buf, sizeof(buf), "ACK %X\r\n", (unsigned)dfu.received);
 		uartTxStr(buf);
 		return;
@@ -684,10 +683,9 @@ static void dfuData(const char *args)
 	n = hexParse(save, dfu.block, DFU_BLOCK_MAX);
 	if (n <= 0) { goto err; }
 
-	/* 块长必须恰好等于期望长度（末块除外恒为 DFU_BLOCK_MAX）。
-	 * UART 行偶发丢字节会得到错长 hex，若照写会把 received 破坏成
-	 * 非 512 对齐 → 后续 flash 写永远 offset-not-aligned。
-	 * 因此错长块整行拒收（不推进、不清状态），host 重发同块。 */
+	/* The block length must match exactly (always DFU_BLOCK_MAX except the last).
+	 * A short line would break the 512-byte alignment, so a bad length is
+	 * rejected as a whole and the host retries. */
 	uint32_t expected = dfu.total - dfu.received;
 	if (expected > DFU_BLOCK_MAX) { expected = DFU_BLOCK_MAX; }
 	if ((uint32_t)n != expected) {
@@ -697,20 +695,18 @@ static void dfuData(const char *args)
 		return;
 	}
 
-	/* MCUboot SWAP_USING_OFFSET 要求镜像放在 slot1 的第二个扇区起
-	 * （第一个扇区是 swap 移动缓冲）。host 上传偏移 off 从 0 计，
-	 * 写 flash 时统一加 DFU_SECONDARY_IMG_OFFSET。 */
+	/* Flash offset = host offset + DFU_SECONDARY_IMG_OFFSET. */
 	int rc = flash_area_write(dfu.fa, (off_t)(DFU_SECONDARY_IMG_OFFSET + dfu.received),
 				  dfu.block, (uint32_t)n);
 	if (rc != 0) {
-		/* 写失败：不清状态，host 会重发本块重试 */
+		/* write failed: keep state, the host will resend this block */
 		uartTxStr("ERR dfu write\r\n");
 		return;
 	}
 	dfu.received += (uint32_t)n;
 
 	if (dfu.received >= dfu.total) {
-		/* 全部写完 → 读回校验 → 请求升级 → 复位 */
+		/* done -> verify -> request upgrade -> reset */
 		uint32_t magic;
 		uint32_t dbg_off = DFU_SECONDARY_IMG_OFFSET;
 
@@ -727,7 +723,7 @@ static void dfuData(const char *args)
 		sys_reboot(0);
 		return;
 	}
-	/* 逐块 ACK（带下个期望偏移）：host 收到后才发下一块 */
+	/* Per-block ACK carrying the next expected offset */
 	snprintk(buf, sizeof(buf), "ACK %X\r\n", (unsigned)dfu.received);
 	uartTxStr(buf);
 	return;
@@ -735,7 +731,7 @@ err:
 	uartTxStr("ERR dfu data\r\n");
 }
 
-/* 返回 true = 已处理（dfu 专用命令） */
+/* true = handled (dfu-specific command) */
 static bool dfuHandle(const char *cmd, const char *args)
 {
 	if (strcmp(cmd, "dfu") == 0) {
@@ -762,11 +758,11 @@ static void uartCmdExecute(char *cmdline)
 	char *args;
 
 	if (cmd == NULL) {
-		return;   /* 空行 */
+		return;   /* empty line */
 	}
-	args = save;   /* 剩余参数（可能为 NULL） */
+	args = save;   /* remaining args (may be NULL) */
 
-	/* DFU 升级命令优先处理（含 dfu/size/data 状态机） */
+	/* DFU commands are handled first */
 	if (dfuHandle(cmd, args)) {
 		return;
 	}
@@ -810,7 +806,7 @@ static void uartCmdExecute(char *cmdline)
 	}
 }
 
-/* 从环形缓冲取一字节；无数据返回 -1。 */
+/* Take one byte from the ring buffer; -1 if empty. */
 static int uartRxGetByte(void)
 {
 	if (rx_tail == rx_head) {
@@ -828,7 +824,7 @@ void uartCmdPoll(void)
 		return;
 	}
 
-	/* 逐字节组行：\n 或 \r 结束（\r\n 视作同一行，\r 丢弃） */
+	/* Assemble a line: \n or \r ends it (\r\n counts as one) */
 	for (;;) {
 		int c = uartRxGetByte();
 		if (c < 0) {
@@ -848,6 +844,6 @@ void uartCmdPoll(void)
 		if (line_len < CMD_LINE_MAX - 1) {
 			line[line_len++] = (char)c;
 		}
-		/* 超长：继续吞字节到行尾（丢弃该行） */
+		/* over-long line: swallow bytes until the end and drop it */
 	}
 }

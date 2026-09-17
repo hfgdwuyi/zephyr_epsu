@@ -23,8 +23,11 @@
 ### 0.2 顶层主模式
 
 上电后按拨码判定 **S1 / S2**（**确定拨码需连续保持 1s** 才生效；期间拨码变化或两路同时有效=冲突则放弃，保持未进入、不驱动输出）。**进入某模式后锁定**：只要有一路配置仍为高就不切换；**只有两路配置都变低才解除锁定**，之后可重新判定并切到另一模式（同样需 1s 确认）。未判定/已解锁期间不驱动任何输出。
-`S1_SYSTEM_CONFIG=1 && S2_SYSTEM_CONFIG=0 → S1`；
-`S2_SYSTEM_CONFIG=1 && S1_SYSTEM_CONFIG=0 → S2`（`SOLO_SYSTEM_CONFIG` 选 solo/classic）。
+`S1_SYSTEM_CONFIG=1 && S2_SYSTEM_CONFIG=0 && SOLO_SYSTEM_CONFIG=0 → S1`；
+`S2_SYSTEM_CONFIG=1 && S1_SYSTEM_CONFIG=0 → S2`（`SOLO_SYSTEM_CONFIG` 在 S2 内选 solo/classic）。
+
+**S1 与 solo 互斥**：`SOLO_SYSTEM_CONFIG`(pj4) 有效时**否决 S1**（不进入、保持当前）；
+1s 确认窗内若 pj4 变为有效，判定被取消/重新计时，避免 S1 与 solo 耦合。
 
 ### 0.3 S1 实现状态（`application/src/state_machine/sm_s1.c`）
 
@@ -33,8 +36,8 @@
 | T0 STANDBY | `!市电`→T1；开关键(0.5~5s) **且 24V 正常**→T2 | K3,K10 | GRID / S1_SYS / PWR24 / CP224 / PAC230V（**无 MAINS_***，DRV 组全灭：DRV_IS_PC_SITE / DRV_APP_HOST 不受 IS_PC/APP_HOST 影响）；**trolley 连接才加 TROLLEY / TRL_MU_MCU / TRL_MU_IS_PC / TROLLEY_EN** |
 | T1 OFF_NO_MAINS | 市电恢复→T0 | K3,K13 | 全灭 |
 | T2 RUN | `!市电`→T3；≥2s 后**松手** **且 24V 正常**→T4 | K3,K6,K7,K8_1,K9,K10,K11,K12,K13（两轨每 10ms 依次）；**K4/K5 随 trolley（主 staging 之后 10ms 顺序使能）** | + DRV_IS_PC_SITE / DRV_APP_HOST；**trolley 连接才加 TROLLEY / TROLLEY_EN / TRL_MU_MCU / TRL_MU_IS_PC** |
-| T3 RUN_OR | 市电恢复→T2；开关键(500ms~5s 松手) 且 24V 正常→T4 | K2,K7,K8_1,K9,K10,K11,K12,K13 | UPS / S1_SYS / PWR24 / CP224 / PAC230V / TROLLEY / DRV_IS_PC_SITE / DRV_APP_HOST |
-| T4 SHUTDOWN | **稳态**；市电掉电→T1；开关键(500ms~5s 松手)→T2 | **K3,K10**（K13 关闭）+ IS_PC→K9,K11；APP_HOST→K13 | + 对应驱动输出；**trolley 连接才加 TROLLEY / TRL_MU_MCU / TRL_MU_IS_PC / TROLLEY_EN（不控 K4/K5）**（每 1ms 刷新；**IS_PC/APP_HOST 为锁存单向：输入高→输出高，一旦输入变低即锁存关断，之后再变高也不恢复，重新进入 T4 才复位**）|
+| T3 RUN_OR | **只能进 T0/T1**：市电恢复→T0；关机有效(500ms~5s 松手且 24V 正常)→T1（不允许进 T2/T4）| 基态 K2,K7,K8_1,K10,K12；**IS_PC→K9,K11；APP_HOST→K13（锁存单向）** | UPS / S1_SYS / PWR24 / CP224 / PAC230V / TROLLEY；**IS_PC→DRV_IS_PC_SITE；APP_HOST→DRV_APP_HOST** |
+| T4 SHUTDOWN | **稳态**；市电掉电→T1；开关键(500ms~5s 松手)→T2 | **K3,K10**（K13 关闭）+ IS_PC→K9,K11；APP_HOST→K13 | **DRV_IS_PC_SITE / DRV_APP_HOST 不驱动（只在开机态 T2/T3 使能）**；trolley 连接才加 TROLLEY / TRL_MU_MCU / TRL_MU_IS_PC / TROLLEY_EN（不控 K4/K5）（每 1ms 刷新；**IS_PC/APP_HOST 为锁存单向：输入高→输出高，一旦输入变低即锁存关断，之后再变高也不恢复，重新进入 T4 才复位**）|
 | HW_RESET | `SYSTEM_RESET` 上升沿；释放+2s→T0/T1 | 全断 | 全灭 |
 | 软件复位 | 开关键按满 ≥5s **后松手** → 先进入独立的 **SW_RESET 态**（全断，含 K3/K10）→ `SW_RESET_MS`(1s) 后按市电进 T0/T1 | 全断 | 全灭 |
 
@@ -51,9 +54,9 @@ S2 与 S1 同构：T0~T4 + 硬件/软件复位；子模式 solo（pj4=1）/ clas
 |------|------|--------|----------|
 | T0 STANDBY | `!市电`→T1；开关键(0.5~5s) **且 24V 正常**→T2 | K3,K10 | GRID / S2_SYS(±SOLO) / PWR24 / CP224 / PAC230V（DRV 组全灭）；**trolley 连接才加 TROLLEY / TRL_MU_MCU / TRL_MU_IS_PC / TROLLEY_EN** |
 | T1 OFF_NO_MAINS | 市电恢复→T0 | K3,K13 | 全灭 |
-| T2 RUN | `!市电`→T3；≥2s 后**松手** **且 24V 正常**→T4 | K3,K6,K7,K8_1,K8_2,K9,K10,K11,K12,K13（两轨每 10ms 依次）；**K4/K5 随 trolley（主 staging 之后 10ms 顺序使能）** | + MAINS_* / DRV_IS_PC_SITE / DRV_APP_HOST；**trolley 连接才加 TROLLEY / TROLLEY_EN / TRL_MU_MCU / TRL_MU_IS_PC** |
-| T3 RUN_OR | 市电恢复→T2；开关键(500ms~5s 松手) 且 24V 正常→T4 | Solo: K2,K5,K8_1,K8_2,K9,K10,K11,K12,K13（两轨每 10ms 依次）<br>Chassis: K2,K8_1,K8_2,K9,K10,K11,K12,K13（两轨每 10ms 依次） | UPS / S2_SYS(±SOLO) / PWR24 / CP224 / PAC230V / DRV_IS_PC_SITE / DRV_APP_HOST |
-| T4 SHUTDOWN | **稳态**；市电掉电→T1；开关键(500ms~5s 松手)→T2 | **K3,K10**（K13 关闭）+ IS_PC→K9；APP_HOST→K5,K11 | + 对应驱动输出；**trolley 连接才加 TROLLEY / TRL_MU_MCU / TRL_MU_IS_PC / TROLLEY_EN（不控 K4/K5）**（每 1ms 刷新；**IS_PC/APP_HOST 为锁存单向：输入高→输出高，一旦输入变低即锁存关断，之后再变高也不恢复，重新进入 T4 才复位**）|
+| T2 RUN | `!市电`→T3；≥2s 后**松手** **且 24V 正常**→T4 | **Solo**：K3,**K4**,K6,K7,K8_1,K8_2,K9,K10,K11,K12,K13；**K5 随 trolley**<br>**Chassis**：K3,K6,K7,K8_1,K8_2,K9,K10,K11,K12,K13；**K4 随 trolley** | + MAINS_* / DRV_IS_PC_SITE / DRV_APP_HOST；**trolley 连接才加 TROLLEY / TROLLEY_EN / TRL_MU_MCU / TRL_MU_IS_PC** |
+| T3 RUN_OR | **只能进 T0/T1**：市电恢复→T0；关机有效(500ms~5s 松手且 24V 正常)→T1（不允许进 T2/T4）| Solo / Chassis 均为 K2,K8_1,K8_2,K9,K10,K11,K12,K13（**不含 K5/K6**）| UPS / S2_SYS(±SOLO) / PWR24 / CP224 / PAC230V / DRV_IS_PC_SITE / DRV_APP_HOST |
+| T4 SHUTDOWN | **稳态**；市电掉电→T1；开关键(500ms~5s 松手)→T2 | **K3,K10**（K13 关闭）+ IS_PC→K9；APP_HOST→K5,K11 | **DRV_IS_PC_SITE / DRV_APP_HOST 不驱动（只在开机态 T2/T3 使能）**；trolley 连接才加 TROLLEY / TRL_MU_MCU / TRL_MU_IS_PC / TROLLEY_EN（不控 K4/K5）（每 1ms 刷新；**IS_PC/APP_HOST 为锁存单向：输入高→输出高，一旦输入变低即锁存关断，之后再变高也不恢复，重新进入 T4 才复位**）|
 | HW_RESET | `SYSTEM_RESET` 上升沿；释放+2s→T0/T1 | 全断 | 全灭 |
 | 软件复位 | 开关键按满 ≥5s **后松手** → 先进入独立的 **SW_RESET 态**（全断，含 K3/K10）→ `SW_RESET_MS`(1s) 后按市电进 T0/T1 | 全断 | 全灭 |
 
@@ -88,7 +91,7 @@ S2 与 S1 同构：T0~T4 + 硬件/软件复位；子模式 solo（pj4=1）/ clas
 
 差异主要体现在以下几个方面：
 
-- 系统配置输入不同，例如 `S1_SYSTEM_CONFIG`、`S2_SYSTEM_CONFIG`、`SOLO_SYSTEM_CONFIG`
+- 系统配置输入不同：`S1_SYSTEM_CONFIG` 选 S1、`S2_SYSTEM_CONFIG` 选 S2；`SOLO_SYSTEM_CONFIG`（pj4）**仅在 S2 下有效**，用于在 S2 内选 solo / classic
 - LED 输出命名不同，例如 `LED_S1_SYS_ON`、`LED_S2_SYS_ON`、`LED_S2_SOLO_SYS`
 - 某些继电器组合不同，例如 `K5`、`K8_2`、`K10` 的参与方式不同
 - trolley 相关信号在 T0（待机）与 T2（开机）中被持续检测（**T0/T2 判断**，见 §0）
@@ -185,7 +188,8 @@ stateDiagram-v2
 
 - 输入信号: `S1_SYSTEM_CONFIG && ME_BOX_ERROR`
 - 电平: `3V3 && 0V && 3V3`
-- 继电器: `K2`, `K7`, `K8_1`, `K9`, `K10`, `K11`, `K12`, `K13` 为 `ON`。从其他状态过来的原本其余继电器OFF
+- 继电器: `K2`, `K7`, `K8_1`, `K10`, `K12` 为 `ON`（基态）；`K9/K11` 由 `IS_PC_ON`、`K13` 由 `APP_HOST_ON` 条件使能。从其他状态过来的原本其余继电器 OFF
+- 补充: `IS_PC_ON` 高 → `K9,K11` + `DRV_IS_PC_SITE_ON`；`APP_HOST_ON` 高 → `K13` + `DRV_APP_HOST_SITE_ON`；低电平对应关断。**锁存单向**（进入 T3 首次采样，之后再变高不恢复）
 - 状态逻辑: 系统进入 `Standby` 模式，下一状态为 `T1` 或 `T2`
 - 输出: `LED_UPS_IN`, `LED_S1_SYS_ON`, `LED_PWR_24_ON`, `LED_CP_24V_ON`, `LED_PAC230V_ON`, `LED_TROLLEY_CONNECTED`, `DRV_IS_PC_SITE_ON`, `DRV_APP_HOST_SITE_ON`
 
@@ -195,7 +199,7 @@ stateDiagram-v2
 - 电平: `3V3 && 3V3 && 3V3`
 - 继电器基态: `K3 ON`（**K13 关闭**），从其他状态过来的原本其余继电器OFF
 - 下一状态: `T1`
-- 补充: `IS_PC_ON` 高 → `K9,K11` + `DRV_IS_PC_SITE_ON`；`APP_HOST_ON` 高 → `K13` + `DRV_APP_HOST_SITE_ON`。**锁存单向**：输入一旦变低即关断并锁存，之后再变高也不恢复（重新进入 T4 才复位）
+- 补充: `IS_PC_ON` 高 → `K9,K11`；`APP_HOST_ON` 高 → `K13`（**只控继电器；这两个 DRV 只在开机态 T2/T3 使能，T4 不驱动**）。**锁存单向**：输入一旦变低即关断并锁存，之后再变高也不恢复（重新进入 T4 才复位）
 
 #### 硬件复位
 
@@ -215,14 +219,15 @@ stateDiagram-v2
 
 ### 5.1 配置特征
 
-- 主配置条件围绕 `S1_SYSTEM_CONFIG && ME_BOX_ERROR && S2_SYSTEM_CONFIG && SOLO_SYSTEM_CONFIG`
+- 主配置条件围绕 `S2_SYSTEM_CONFIG && SOLO_SYSTEM_CONFIG`（且 `S1_SYSTEM_CONFIG = 0`）
+  —— **solo 只能在 S2 下进入，S1 与 pj4 无关**（原 Excel 写成 `S1 && S2 && SOLO`，与 §0.2 模式表矛盾，属描述错误）
 - 相比 S1 模式，额外强调 `S2` 和 `SOLO` 配置同时参与判断
 
 ### 5.2 各状态整理
 
 #### T0 上电待机
 
-- 输入信号: `S1_SYSTEM_CONFIG && ME_BOX_ERROR && S2_SYSTEM_CONFIG && SOLO_SYSTEM_CONFIG`
+- 输入信号: `S2_SYSTEM_CONFIG && ME_BOX_ERROR && SOLO_SYSTEM_CONFIG`（`S1_SYSTEM_CONFIG = 0`）
 - 电平: `3V3 && 3V3 && 3V3 && 3V3`
 - 继电器: `K3 ON`, `K10 ON`
 - 下一状态: `T1` 或 `T2`
@@ -236,28 +241,28 @@ stateDiagram-v2
 
 #### T2 系统开机
 
-- 输入信号: `S1_SYSTEM_CONFIG && ME_BOX_ERROR && S2_SYSTEM_CONFIG && SOLO_SYSTEM_CONFIG`
+- 输入信号: `S2_SYSTEM_CONFIG && ME_BOX_ERROR && SOLO_SYSTEM_CONFIG`（`S1_SYSTEM_CONFIG = 0`）
 - 电平: `3V3 && 3V3 && 3V3 && 3V3`
-- 继电器: `K3`, `K6`, `K7`, `K8_1`, `K8_2`,`K9`, `K10`, `K11`, `K12`, `K13` 为 `ON`（当前固件：K4/K5 随 trolley（主 staging 之后 10ms 顺序使能）；S2 另加 K8_2，从其他状态过来的原本其余继电器OFF
+- 继电器: `K3`, **`K4`**, `K6`, `K7`, `K8_1`, `K8_2`,`K9`, `K10`, `K11`, `K12`, `K13` 为 `ON`；**`K5` 随 trolley 连接状态**；从其他状态过来的原本其余继电器 OFF
 - 下一状态: `T1`、`T2` 或 `T3`
 - 输出: `LED_GRID_PWR_IN`, `LED_S2_SYS_ON`, `LED_S2_SOLO_SYS`, `LED_PWR_24_ON`, `LED_CP_24V_ON`, `LED_PAC230V_ON`, `MAINS_CONNECTED_MCU`, `DRV_IS_PC_SITE_ON`, `MAINS_CONNECTED_ISPC`, `DRV_APP_HOST_SITE_ON`
 - 补充（当前固件）: 与 S1 T2 相同 —— T2 持续判断 trolley（连接使能 / 断开关断）
 
 #### T3 开机后市电掉电
 
-- 输入信号: `S1_SYSTEM_CONFIG && ME_BOX_ERROR && S2_SYSTEM_CONFIG && SOLO_SYSTEM_CONFIG`
+- 输入信号: `S2_SYSTEM_CONFIG && ME_BOX_ERROR && SOLO_SYSTEM_CONFIG`（`S1_SYSTEM_CONFIG = 0`）
 - 电平: `3V3 && 0V && 3V3 && 3V3`
-- 继电器: `K2`, `K5`, `K8_1`, `K8_2`, `K9`, `K10`, `K11`, `K12`, `K13` 为 `ON`，从其他状态过来的原本其余继电器OFF
+- 继电器: `K2`, `K8_1`, `K8_2`, `K9`, `K10`, `K11`, `K12`, `K13` 为 `ON`（**不含 K5**），从其他状态过来的原本其余继电器 OFF
 - 状态逻辑: 系统 `Standby` 模式，下一状态为 `T1` 或 `T2`
 - 输出: `LED_UPS_IN`, `LED_S1_SYS_ON`, `LED_PWR_24_ON`, `LED_CP_24V_ON`, `LED_PAC230V_ON`, `DRV_IS_PC_SITE_ON`, `DRV_APP_HOST_SITE_ON`
 
 #### T4 正常关机
 
-- 输入信号: `S1_SYSTEM_CONFIG && ME_BOX_ERRO && S2_SYSTEM_CONFIG && SOLO_SYSTEM_CONFIG`
+- 输入信号: `S2_SYSTEM_CONFIG && ME_BOX_ERROR && SOLO_SYSTEM_CONFIG`（`S1_SYSTEM_CONFIG = 0`）
 - 电平: `3V3 && 3V3 && 3V3 && 3V3`
 - 继电器基态: `K3 ON`（**K13 关闭**），从其他状态过来的原本其余继电器OFF
 - 下一状态: `T1`
-- 补充: 高电平时 `K9 ON / DRV_IS_PC_SITE_ON`，`K5, K11 ON / DRV_APP_HOST_SITE_ON`；低电平时对应关闭
+- 补充: 高电平时 `K9 ON`、`K5,K11 ON`（**只控继电器；DRV_IS_PC_SITE / DRV_APP_HOST 只在开机态 T2/T3 使能**）；低电平时对应关闭
 
 #### 硬件复位
 
@@ -298,7 +303,7 @@ stateDiagram-v2
 
 - 输入信号: `S2_SYSTEM_CONFIG && ME_BOX_ERROR`
 - 电平: `3V3 && 3V3`
-- 继电器: `K3`, `K6`, `K7`, `K8_1`,`K8_2`, `K9`, `K10`, `K11`, `K12`, `K13` 为 `ON`（当前固件：K4/K5 随 trolley（主 staging 之后 10ms 顺序使能）；S2 另加 K8_2）,从其他状态过来的原本其余继电器OFF
+- 继电器: `K3`, `K6`, `K7`, `K8_1`,`K8_2`, `K9`, `K10`, `K11`, `K12`, `K13` 为 `ON`；**`K4` 随 trolley 连接状态**；从其他状态过来的原本其余继电器 OFF
 - 下一状态: `T1`、`T2` 或 `T3`
 - 输出: `LED_GRID_PWR_IN`, `LED_S1_SYS_ON`, `LED_PWR_24_ON`, `LED_CP_24V_ON`, `LED_PAC230V_ON`, `MAINS_CONNECTED_MCU`, `DRV_IS_PC_SITE_ON`, `MAINS_CONNECTED_ISPC`, `DRV_APP_HOST_SITE_ON`
 - 补充（当前固件）: 与前两页一致 —— T2 持续判断 trolley（连接使能 / 断开关断）
@@ -335,10 +340,10 @@ stateDiagram-v2
 
 | 项目 | S1 with Trolley | Solo with Trolley | Chassis SYS with Trolley |
 | --- | --- | --- | --- |
-| 主配置条件 | `S1_SYSTEM_CONFIG && ME_BOX_ERROR` | `S1_SYSTEM_CONFIG && ME_BOX_ERROR && S2_SYSTEM_CONFIG && SOLO_SYSTEM_CONFIG` | `S2_SYSTEM_CONFIG && ME_BOX_ERROR` |
+| 主配置条件 | `S1_SYSTEM_CONFIG && ME_BOX_ERROR`（S2=0）| `S2_SYSTEM_CONFIG && SOLO_SYSTEM_CONFIG`（S1=0）| `S2_SYSTEM_CONFIG && ME_BOX_ERROR`（S1=0）|
 | T0 指示灯特征 | `LED_S1_SYS_ON` | `LED_S2_SYS_ON`, `LED_S2_SOLO_SYS` | `LED_S2_SYS_ON` |
-| T2 典型继电器 | `K3,K6,K7,K8_1,K9,K10,K11,K12,K13`；K4/K5 随 trolley（主 staging 之后 10ms 顺序使能） | `K3,K6,K7,K8_1,K8_2,K9,K10,K11,K12,K13`；K4/K5 随 trolley（主 staging 之后 10ms 顺序使能） | 同 Solo |
-| T3 典型差异 | `K2,K7,K8_1,K9,K10,K11,K12,K13` | `K2,K5,K8_1,K8_2,K9,K10,K11,K12,K13` | `K2,K8_1,K8_2,K9,K10,K11,K12,K13` |
+| T2 典型继电器 | `K3,K6,K7,K8_1,K9,K10,K11,K12,K13`；K4/K5 随 trolley（10ms 顺序）| `K3,K6,K7,K8_1,K8_2,K9,K10,K11,K12,K13`；**K4 常合（与 trolley 无关）** | `K3,K7,K8_1,K8_2,K9,K10,K11,K12,K13`；**K5→(+10ms)→K6 随 trolley** |
+| T3 典型差异 | `K2,K7,K8_1,K10,K12` + 条件 K9/K11/K13 | `K2,K8_1,K8_2,K9,K10,K11,K12,K13` | `K2,K8_1,K8_2,K9,K10,K11,K12,K13` |
 | trolley 逻辑 | **T0/T2 持续判断**（连接使能 / 断开关断）| 同左 | 同左 |
 
 ## 8. 整理结论

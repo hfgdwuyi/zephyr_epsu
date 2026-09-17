@@ -53,8 +53,7 @@ static void heartbeatStart(void)
 
 int main(void)
 {
-	/* MCUboot 升级确认：若本次是从 slot1 test-swap 启动的新固件，
-	 * 立即标记 image-ok，固化新版本，防止下次复位被 revert 回旧版。 */
+	/* MCUboot confirm: mark the running image as OK so it is not reverted. */
 	if (!boot_is_img_confirmed()) {
 		boot_write_img_confirmed();
 		printk("MCUboot: image confirmed\n");

@@ -9,7 +9,7 @@
  * the dout_config and din_config nodes define the mapping.
  */
 
-/* C standard library */
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 #include <limits.h>
@@ -49,10 +49,9 @@ static const struct gpio_dt_spec dout_specs[] = {
 #define DOUT_MAX ARRAY_SIZE(dout_specs)
 const uint8_t doutMax = DOUT_MAX;
 
-/* 受保护常高 DOUT（调试用）：掩码内的位只允许置 1、拒绝清 0。
- * 现置空 —— 全部继电器输出交由状态机（S1: sm_s1.c）控制。
- * 若调试需要某几路常高，把对应 BIT64(DOUT_xxx) 或进来即可。 */
-#define DOUT_FORCE_HIGH_MASK (0ULL)   /* 置空：全部输出交由状态机配置表控制 */
+/* Force-high DOUT mask (debug): bits here can only be set, never cleared.
+ * Empty - all relay outputs are controlled by the state machine. */
+#define DOUT_FORCE_HIGH_MASK (0ULL)
 
 /* ==================== DIN: devicetree → gpio_dt_spec array ==================== */
 
@@ -154,7 +153,7 @@ void bspDinSetDebouncing(uint8_t pin, bspDinSettings_t settings)
 static void bspDoutInit(void)
 {
 	for (uint8_t i = 0; i < DOUT_MAX; i++) {
-		/* 空洞(如原 PC8-10 的 4-6)无 GPIO spec → port 为 NULL，跳过 */
+		/* holes (e.g. old PC8-10) have no GPIO spec -> port is NULL, skip */
 		if (dout_specs[i].port == NULL) {
 			continue;
 		}
@@ -165,8 +164,7 @@ static void bspDoutInit(void)
 		gpio_pin_set_dt(&dout_specs[i], 0);
 	}
 
-	/* 上电强制输出高（调试）：置位受保护 K 引脚 bitmap；
-	 * 之后任何清 0 请求被 bspDoutSetBitmap 拦截，持续保持高。 */
+	/* Apply the force-high mask at boot (debug only; mask is empty). */
 	bspDoutSetBitmap(DOUT_FORCE_HIGH_MASK, true);
 	bspDoutUpdate();
 }
@@ -190,14 +188,13 @@ static bool bspDoutGetBit(uint8_t pin)
 	return atomic_test_bit(&dout_state[pin / 32], pin % 32);
 }
 
-/* 受保护常高 DOUT（调试用）：这几个 DOUT 位只允许置 1，任何清 0
- * 请求（状态机/上位机）都会被忽略，保证调试期间引脚持续输出高。
- * 量产时置空此掩码即可恢复正常控制。 */
+/* Force-high DOUT (debug): these bits can only be set; clear requests are
+ * ignored. Empty in production. */
 /* Set/clear every DOUT bit selected by the 64-bit mask. Robust to
  * non-contiguous pin groups. This is the sole public write entry. */
 void bspDoutSetBitmap(uint64_t mask, bool state)
 {
-	/* 保护位只允许置 1：清 0 请求被忽略（调试强制常高） */
+	/* force-high bits: clear requests are ignored */
 	if (!state) {
 		mask &= ~DOUT_FORCE_HIGH_MASK;
 	}
@@ -234,12 +231,11 @@ void bspDoutUpdate(void)
 	atomic_val_t lo = atomic_get(&dout_state[0]);
 	atomic_val_t hi = atomic_get(&dout_state[1]);
 
-	/* 强制常高引脚（调试）：每次刷新把受保护 DOUT 位强制为 1
-	 * （双保险；正常情况下 bspDoutSetBitmap 已拦截清 0）。量产移除。 */
+	/* Force protected bits to 1 on every refresh (belt and braces, debug only). */
 	lo |= (atomic_val_t)(DOUT_FORCE_HIGH_MASK & 0xFFFFFFFFULL);
 
 	for (uint8_t i = 0; i < DOUT_MAX; i++) {
-		if (dout_specs[i].port == NULL) {   /* 空洞无 GPIO spec */
+		if (dout_specs[i].port == NULL) {   /* hole: no GPIO spec */
 			continue;
 		}
 		if (!gpio_is_ready_dt(&dout_specs[i])) {

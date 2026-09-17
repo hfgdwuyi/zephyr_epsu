@@ -20,6 +20,7 @@
 #ifndef IS25LP064_H
 #define IS25LP064_H
 
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>

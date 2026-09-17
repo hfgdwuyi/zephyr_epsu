@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-psu_monitor.py — CiosZhong PSU ADC 通道实时监控（命令行版）
+psu_monitor.py - CiosZhong PSU ADC channel monitor (command line)
 
-被动接收固件每秒推送的 SENSOR 行，在终端里实时刷新成一张表。
-不依赖图形界面，适合脚本化/远程验证。
+Passively parses the SENSOR lines pushed by the firmware and redraws a table
+in the terminal. No GUI, so it suits scripting / remote verification.
 
-用法：
-  python3 psu_monitor.py                     # 自动找串口
+Usage:
+  python3 psu_monitor.py                     # auto-detect the port
   python3 psu_monitor.py /dev/cu.usbserial-130
-  python3 psu_monitor.py /dev/cu.usbserial-130 --raw   # 同时打印原始行
+  python3 psu_monitor.py /dev/cu.usbserial-130 --raw   # also print raw lines
 
-依赖：pyserial
+Requires pyserial
 """
 import argparse
 import re
@@ -22,7 +22,7 @@ try:
     import serial
     from serial.tools import list_ports
 except ImportError:
-    print("error: 需要 pyserial")
+    print("error: pyserial required")
     sys.exit(1)
 
 BAUD = 115200
@@ -42,10 +42,10 @@ RE_SENSOR = re.compile(r"SENSOR\s+(\w+)\s*:\s*(.+?)\s*$")
 
 
 def render(values, rounds, status):
-    out = ["\033[H\033[J"]   # 清屏
-    out.append("CiosZhong PSU — ADC 通道实时监控")
+    out = ["\033[H\033[J"]   # clear screen
+    out.append("CiosZhong PSU - ADC channel monitor")
     out.append("=" * 52)
-    out.append(f"{'通道':<16}{'引脚':<8}{'数值':>14}{'':<3}{'更新':<10}")
+    out.append(f"{'Channel':<16}{'Pin':<8}{'Value':>14}{'':<3}{'Updated':<10}")
     out.append("-" * 52)
     for name, pin, unit in CHANNELS:
         v, ts = values.get(name, ("—", ""))
@@ -53,14 +53,14 @@ def render(values, rounds, status):
     out.append("-" * 52)
     out.append(status)
     out.append("")
-    out.append(f"已完成 {rounds} 轮上报    Ctrl-C 退出")
+    out.append(f"{rounds} rounds received    Ctrl-C to quit")
     print("\n".join(out), flush=True)
 
 
 def main():
-    ap = argparse.ArgumentParser(description="ADC 通道实时监控")
+    ap = argparse.ArgumentParser(description="ADC channel monitor")
     ap.add_argument("port", nargs="?")
-    ap.add_argument("--raw", action="store_true", help="同时打印原始串口行")
+    ap.add_argument("--raw", action="store_true", help="also print raw serial lines")
     args = ap.parse_args()
 
     port = args.port
@@ -69,17 +69,17 @@ def main():
                  if "usbserial" in p.device or "USB" in p.device or "SLAB" in p.device]
         port = ports[0] if ports else None
     if not port:
-        print("error: 找不到串口，请手动指定")
+        print("error: no serial port found, specify one")
         sys.exit(1)
 
     ser = serial.Serial(port, BAUD, timeout=0.3)
-    print(f"已连接 {port} @ {BAUD}，等待固件推送...")
+    print(f"connected {port} @ {BAUD}, waiting for firmware data...")
 
     values = {}
     rounds = 0
     n_lines = 0
     last_rx = time.time()
-    render(values, rounds, f"等待数据... ({port})")
+    render(values, rounds, f"waiting for data... ({port})")
 
     try:
         while True:
@@ -102,17 +102,17 @@ def main():
                                             time.strftime("%H:%M:%S"))
                             n_lines += 1
                             break
-            # 每收满一轮就重绘
+            # redraw after each complete round
             if n_lines >= len(CHANNELS):
                 rounds += n_lines // len(CHANNELS)
                 n_lines = n_lines % len(CHANNELS)
                 render(values, rounds,
-                       f"已连接 {port} | 最后接收 {time.strftime('%H:%M:%S', time.localtime(last_rx))}")
+                       f"connected {port} | last rx {time.strftime('%H:%M:%S', time.localtime(last_rx))}")
             elif time.time() - last_rx > 3:
-                render(values, rounds, f"⚠ {int(time.time()-last_rx)}s 无数据（板子在跑吗？串口对吗？）")
+                render(values, rounds, f"! no data for {int(time.time()-last_rx)}s (is the board running? right port?)")
                 last_rx = time.time()
     except KeyboardInterrupt:
-        print("\n已停止。")
+        print("\nstopped.")
     finally:
         ser.close()
 

@@ -8,7 +8,8 @@
  *
  */
 /*----------------------------------------------------------------------------*/
-/* C standard library */
+
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -46,13 +47,13 @@ static const struct device *const dac_dev = DEVICE_DT_GET(BSP_DAC_NODE);
 #define BSP_AOUT_VREF_MV 3300U
 #endif
 
-/* 初始化明细日志开关：0 = 关闭（默认，串口保持干净）；1 = 打印 */
+/* Verbose init log: 0 = off (default), 1 = print */
 #ifndef BSP_AOUT_VERBOSE_LOG
 #define BSP_AOUT_VERBOSE_LOG 0
 #endif
 
 static bool aout_ready;
-static int16_t last_dac_mv;   /* 最近一次 bspAoutWrite 的电压值 (mV) — 状态查询用 */
+static int16_t last_dac_mv;   /* last bspAoutWrite() value (mV), for status query */
 
 static const struct dac_channel_cfg dac_ch_cfg = {
     .channel_id = BSP_DAC_CHANNEL_ID,
@@ -109,7 +110,7 @@ void bspAoutWrite(uint8_t channel, int16_t val)
     const uint32_t code = (uint32_t)(((uint64_t)mv * (uint64_t)BSP_AOUT_MAX_CODE) / BSP_AOUT_VREF_MV);
     (void)dac_write_value(dac_dev, BSP_DAC_CHANNEL_ID, code);
 
-    /* 记录最近一次写入值（供上位机状态查询） */
+    /* Remember the last written value (for host status queries) */
     last_dac_mv = (int16_t)mv;
 }
 
@@ -121,5 +122,5 @@ int16_t bspAoutGetMv(uint8_t channel)
     return last_dac_mv;
 }
 
-/* 注：状态指示灯（呼吸/常亮/灭）的逻辑已移至应用层 indicator 模块，
- *     BSP 只提供 bspAoutWrite()/bspAoutGetMv() 等 DAC 原语。 */
+/* NOTE: indicator logic (breath/on/off) moved to the application indicator
+ *       module; the BSP only provides DAC primitives. */

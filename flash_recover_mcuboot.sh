@@ -1,24 +1,24 @@
 #!/bin/sh
-# flash_recover_mcuboot.sh — MCUboot + App 烧录脚本（首次/恢复，ST-Link）
+# flash_recover_mcuboot.sh - flash MCUboot + App (first time / recovery, ST-Link)
 #
-# E1 样品调试固件组合：
-#   MCUboot bootloader  v1.0.0     (SWAP_USING_OFFSET, 2026-09-08 验证)
-#   App 固件            v0.2.0     (串口 DFU + MCUboot confirm)
+# Sample firmware combination:
+#   MCUboot bootloader  v1.0.0     (verified on the board)
+#   App firmware        v0.2.x     (serial DFU + MCUboot confirm)
 #
-# 烧写布局（内部 flash0 = 0x08000000 起 2MB 单设备）：
+# Layout (internal flash0, 2 MB from 0x08000000):
 #   boot    MCUboot        build-mcuboot/zephyr/zephyr.bin   @ 0x08000000
 #   app     App (slot0)    build/zephyr/zephyr.signed.bin    @ 0x08020000
-# 之后客户升级走串口 DFU（psu_dfu.py → slot1 0x08100000，MCUboot swap）。
+# Later customer upgrades use serial DFU (psu_dfu.py -> slot1, MCUboot).
 #
-# 用法：
-#   ./flash_recover_mcuboot.sh            # 烧 boot + app
-#   ./flash_recover_mcuboot.sh boot       # 只烧 boot
-#   ./flash_recover_mcuboot.sh app        # 只烧 app
+# Usage:
+#   ./flash_recover_mcuboot.sh            # boot + app
+#   ./flash_recover_mcuboot.sh boot       # boot only
+#   ./flash_recover_mcuboot.sh app        # app only
 #
-# 说明：
-#   - 通过 NRST 硬件复位窗口烧录（reset_config srst_only），自动重试 6 次。
-#   - 运行态固件/MAX6703A 看门狗会干扰 SWD：若持续失败，
-#     请 BOOT0 拉高 → 断电 ≥10s → 上电（保持高）后再跑本脚本。
+# Notes:
+#   - Flashes through the NRST hardware-reset window, retrying 6 times.
+#   - The running firmware / MAX6703A watchdog can disturb SWD: if it keeps
+#     failing, pull BOOT0 high, power off >= 10 s, power on and rerun.
 set -u
 cd "$(dirname "$0")"
 
@@ -28,7 +28,7 @@ APP=build/zephyr/zephyr.signed.bin
 WANT=${1:-all}   # all | boot | app
 
 flash_once() {   # $1=bin  $2=addr  $3=name
-    echo "== 烧录 $3 ($1) @ $2 =="
+    echo "== flashing $3 ($1) @ $2 =="
     openocd -f board/st_nucleo_h745zi.cfg \
                 -c "adapter speed 950" \
         -c "init" -c "reset halt" -c "halt" \
@@ -41,14 +41,14 @@ flash_retry() {  # $1=bin  $2=addr  $3=name
     while [ "$i" -le 6 ]; do
         echo "=== attempt $i ($3) ==="
         if flash_once "$1" "$2" "$3"; then
-            echo ">>> $3 烧录成功 (Verified OK)"
+            echo ">>> $3 flashed OK (verified)"
             return 0
         fi
         i=$((i + 1))
         sleep 2
     done
-    echo "!!! $3 烧录失败：6 次未成功"
-    echo "    建议: BOOT0 拉高 → 断电 ≥10s → 上电(保持高) → 重跑本脚本"
+    echo "!!! $3 FAILED after 6 attempts"
+    echo "    Try: pull BOOT0 high -> power off >= 10 s -> power on -> rerun"
     return 1
 }
 
@@ -75,5 +75,5 @@ case "$WANT" in
 esac
 
 echo "done."
-[ "$rc" -eq 0 ] && echo ">>> 全部烧录成功。BOOT0 拉低后断电重上电即可运行。"
+[ "$rc" -eq 0 ] && echo ">>> All images flashed. Pull BOOT0 low and power-cycle."
 exit $rc

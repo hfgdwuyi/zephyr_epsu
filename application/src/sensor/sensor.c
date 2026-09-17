@@ -23,7 +23,7 @@
  *   accumulated here too, so consumers only query.
  */
 
-/* C standard library */
+/* Standard library */
 #include <stddef.h>
 #include <stdint.h>
 #include <limits.h>
@@ -244,7 +244,7 @@ static uint32_t divMvFromRaw(uint32_t raw)
 }
 
 /* 2:1 divider rails (3V3 / 5V0 monitors): Vactual = Vadc × 2.
- * 硬件上这两路各用对半分压，固件必须乘回 2 才得到真实电压。 */
+ * These two rails use a 2:1 divider, so the firmware multiplies by 2. */
 static uint32_t div2MvFromRaw(uint32_t raw)
 {
 	return mvFromRaw(raw) * 2U;
@@ -286,8 +286,8 @@ static const sensorChanCfg_t sensor_cfg[] = {
 	{ AIN_ADC_PDC7,     1,  2, false, divMvFromRaw },
 	{ AIN_ADC_PDC0_ALT, 1,  2, false, divMvFromRaw },
 	/* monitor rails: 500 ms */
-	{ AIN_ADC_12V,     10,  2, false, mvFromRaw },     /* 直连：1.42V 即实际值 */
-	{ AIN_ADC_5V0,     10,  2, false, div2MvFromRaw }, /* 2:1 分压 */
+	{ AIN_ADC_12V,     10,  2, false, mvFromRaw },     /* direct: value as measured */
+	{ AIN_ADC_5V0,     10,  2, false, div2MvFromRaw }, /* 2:1 divider */
 	{ AIN_ADC_3V3,     10,  2, false, div2MvFromRaw },
 	/* NTC temperature: 1 s — slow thermal time constant */
 	{ AIN_ADC_TEMP1,   20,  3, true,  tempFromRawU },

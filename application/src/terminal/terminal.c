@@ -7,7 +7,7 @@
  * plus one initial snapshot at startup.
  */
 
-/* C standard library */
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 #include <limits.h>
@@ -38,9 +38,8 @@ static const uint8_t term_mv_chan[] = {
 static uint32_t last_mv[ARRAY_SIZE(term_mv_chan)];  /* last printed rail values */
 static int16_t  last_t1;
 static int16_t  last_t2;
-/* SENSOR 周期/变化日志开关：
- * 0 = 关闭（默认，串口保持干净；需要看值时用 temp / sensor 命令查询）
- * 1 = 打印启动快照及变化触发的传感器值 */
+/* SENSOR log: 0 = off (default; use the temp/sensor commands instead),
+ * 1 = print the boot snapshot and value changes. */
 #ifndef TERMINAL_SENSOR_LOG
 #define TERMINAL_SENSOR_LOG 0
 #endif
@@ -110,7 +109,7 @@ static void printTemp(const char *name, int16_t t)
 	} else if (t == 0) {
 		printk("SENSOR %s: n/a\n", name);
 	} else {
-		/* 正确处理负温度：-334 → "-33.4"（原实现会打成 "-33.-4"） */
+		/* Handle negative temperatures correctly: -334 -> "-33.4" */
 		int16_t neg = (t < 0);
 		int16_t a = neg ? (int16_t)-t : t;
 		printk("SENSOR %s: %s%d.%d °C\n", name, neg ? "-" : "", a / 10, a % 10);
@@ -125,11 +124,10 @@ bool terminalIsQuiet(void)
 
 void terminalUpdate(void)
 {
-	/* 上位机命令服务（USART1）由 scheduler 的 10 ms cmd 线程轮询，
-	 * 此处不再调用 uartCmdPoll()（500ms 周期太慢，DFU 时 RX 会溢出）。 */
+	/* The host command service is polled by the scheduler's 10 ms thread;
+	 * uartCmdPoll() is not called here (500 ms is too slow for DFU). */
 
-	/* DFU 上传期间静默：SENSOR printk 与升级 ACK 共用 USART1，
-	 * 打印会抢占总线导致主机收不到完整的 "ok" 应答。 */
+	/* Stay quiet during DFU: SENSOR printk shares USART1 with the ACK stream. */
 	if (terminalIsQuiet()) {
 		return;
 	}
@@ -138,7 +136,7 @@ void terminalUpdate(void)
 	int16_t t2 = sensorTempGet2();
 
 	if (!inited) {
-		/* 启动快照：仅记录初值，不打印（避免开机 15 行刷屏） */
+		/* Boot snapshot: only record the initial values (no boot-time spam) */
 #if TERMINAL_SENSOR_LOG
 		printTemp("temp1", t1);
 		printTemp("temp2", t2);

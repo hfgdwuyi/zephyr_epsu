@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-psu_adc_monitor.py — CiosZhong PSU ADC 通道实时监视上位机（tkinter GUI）
+psu_adc_monitor.py - CiosZhong PSU ADC channel monitor (tkinter GUI)
 
-功能：
-  - 自动检测串口（/dev/cu.usbserial-* 或 /dev/ttyUSB*）
-  - 被动接收固件周期推送的 SENSOR 行，解析后实时填表
-  - 15 个 ADC 通道（含温度 / 市电）各自显示数值、单位、更新时间
-  - 底部显示原始通信内容，便于核对固件到底发了什么
-  - 可手动发命令（如 ain raw / temp / i2cscan）做诊断
+Features:
+  - auto-detects the serial port (/dev/cu.usbserial-* or /dev/ttyUSB*)
+  - passively parses the SENSOR lines pushed by the firmware
+  - shows value, unit and update time for all 15 ADC channels
+  - raw serial traffic is shown at the bottom
+  - can send diagnostic commands (ain raw / temp / i2cscan)
 
-用法：
-  python3 psu_adc_monitor.py                 # 自动找串口
+Usage:
+  python3 psu_adc_monitor.py                 # auto-detect the port
   python3 psu_adc_monitor.py /dev/cu.usbserial-130
 
-依赖：pyserial（tkinter 为 Python 自带）
+Requires pyserial (tkinter ships with Python)
 """
 import re
 import sys
@@ -27,12 +27,12 @@ try:
     import serial
     from serial.tools import list_ports
 except ImportError:
-    print("error: 需要 pyserial（pip install pyserial）")
+    print("error: pyserial required (pip install pyserial)")
     sys.exit(1)
 
 BAUD = 115200
 
-# 固件上报表（顺序固定，缺失的显示 —）
+# Firmware report table (fixed order; missing values show '-')
 CHANNELS = [
     ("temp1",          "°C"),
     ("temp2",          "°C"),
@@ -51,7 +51,7 @@ CHANNELS = [
     ("adc_vin",        "V"),
 ]
 
-# 引脚标注，方便对照硬件
+# Pin labels for cross-checking against hardware
 PIN_HINT = {
     "temp1": "PA3", "temp2": "PA4",
     "adc_12v": "PH2", "adc_pdc7": "PF11", "adc_pdc6": "PF12", "adc_pdc5": "PF13",
@@ -79,30 +79,30 @@ class MonitorApp:
         self.last_rx = 0.0
         self.cells = {}
 
-        root.title("CiosZhong PSU — ADC 通道监视")
+        root.title("CiosZhong PSU - ADC channel monitor")
         root.geometry("560x700")
 
-        # ---------- 顶部：串口控制 ----------
+        # ---------- top: serial control ----------
         top = ttk.Frame(root, padding=8)
         top.pack(fill="x")
 
-        ttk.Label(top, text="串口:").pack(side="left")
+        ttk.Label(top, text="Port:").pack(side="left")
         self.port_var = tk.StringVar(value=port or "")
         self.port_box = ttk.Combobox(top, textvariable=self.port_var, width=26)
         self.port_box["values"] = find_ports()
         self.port_box.pack(side="left", padx=4)
 
-        ttk.Button(top, text="刷新", width=6, command=self.refresh_ports).pack(side="left")
-        self.btn = ttk.Button(top, text="连接", width=8, command=self.toggle)
+        ttk.Button(top, text="Refresh", width=8, command=self.refresh_ports).pack(side="left")
+        self.btn = ttk.Button(top, text="Connect", width=8, command=self.toggle)
         self.btn.pack(side="left", padx=4)
 
-        # ---------- 中部：通道表格 ----------
-        mid = ttk.LabelFrame(root, text="ADC 通道（固件每秒推送一轮）", padding=6)
+        # ---------- middle: channel table ----------
+        mid = ttk.LabelFrame(root, text="ADC channels (one round per second)", padding=6)
         mid.pack(fill="x", padx=8, pady=4)
 
         hdr = ttk.Frame(mid)
         hdr.pack(fill="x")
-        for txt, w in (("通道", 14), ("引脚", 8), ("数值", 12), ("单位", 5), ("更新", 8)):
+        for txt, w in (("Channel", 14), ("Pin", 8), ("Value", 12), ("Unit", 5), ("Updated", 10)):
             ttk.Label(hdr, text=txt, width=w, font=("Helvetica", 11, "bold"),
                       anchor="w").pack(side="left")
 
@@ -119,28 +119,28 @@ class MonitorApp:
             tst.pack(side="left")
             self.cells[name] = (val, tst)
 
-        # ---------- 手动命令 ----------
+        # ---------- manual command ----------
         cmd = ttk.Frame(root, padding=(8, 2))
         cmd.pack(fill="x")
-        ttk.Label(cmd, text="手动命令:").pack(side="left")
+        ttk.Label(cmd, text="Command:").pack(side="left")
         self.cmd_var = tk.StringVar(value="ain raw")
         ent = ttk.Entry(cmd, textvariable=self.cmd_var, width=24)
         ent.pack(side="left", padx=4)
         ent.bind("<Return>", lambda e: self.send_cmd())
-        ttk.Button(cmd, text="发送", width=6, command=self.send_cmd).pack(side="left")
+        ttk.Button(cmd, text="Send", width=6, command=self.send_cmd).pack(side="left")
         for quick in ("ain", "ain raw", "temp", "i2cscan", "info"):
             ttk.Button(cmd, text=quick, width=7,
                        command=lambda q=quick: self.quick(q)).pack(side="left", padx=1)
 
-        # ---------- 原始通信 ----------
-        raw_box = ttk.LabelFrame(root, text="原始串口数据", padding=4)
+        # ---------- raw traffic ----------
+        raw_box = ttk.LabelFrame(root, text="Raw serial data", padding=4)
         raw_box.pack(fill="both", expand=True, padx=8, pady=4)
         self.raw = tk.Text(raw_box, height=12, wrap="none",
                            font=("Menlo", 10), background="#101418", foreground="#c8e6c9")
         self.raw.pack(fill="both", expand=True)
 
-        # ---------- 状态栏 ----------
-        self.status = tk.StringVar(value="未连接")
+        # ---------- status bar ----------
+        self.status = tk.StringVar(value="not connected")
         ttk.Label(root, textvariable=self.status, anchor="w",
                   relief="sunken", padding=4).pack(fill="x", side="bottom")
 
@@ -167,7 +167,7 @@ class MonitorApp:
             self.ser.write((cmd + "\r\n").encode())
             self.append_raw(f">>> {cmd}")
         except Exception as exc:
-            self.append_raw(f"!!! 发送失败: {exc}")
+            self.append_raw(f"!!! send failed: {exc}")
 
     def toggle(self):
         if self.ser:
@@ -178,18 +178,18 @@ class MonitorApp:
     def connect(self):
         port = self.port_var.get().strip()
         if not port:
-            self.status.set("请先选择串口")
+            self.status.set("select a port first")
             return
         try:
             self.ser = serial.Serial(port, BAUD, timeout=0.2)
         except Exception as exc:
-            self.status.set(f"打开失败: {exc}")
+            self.status.set(f"open failed: {exc}")
             return
         self.running = True
         self.rx_thread = threading.Thread(target=self.rx_loop, daemon=True)
         self.rx_thread.start()
-        self.btn.config(text="断开")
-        self.status.set(f"已连接 {port} @ {BAUD}")
+        self.btn.config(text="Disconnect")
+        self.status.set(f"connected {port} @ {BAUD}")
 
     def disconnect(self):
         self.running = False
@@ -201,8 +201,8 @@ class MonitorApp:
             except Exception:
                 pass
         self.ser = None
-        self.btn.config(text="连接")
-        self.status.set("未连接")
+        self.btn.config(text="Connect")
+        self.status.set("not connected")
 
     # ------------------------------------------------------------------
     def rx_loop(self):
@@ -211,7 +211,7 @@ class MonitorApp:
             try:
                 data = self.ser.read(256)
             except Exception as exc:
-                self.status.set(f"读取错误: {exc}")
+                self.status.set(f"read error: {exc}")
                 break
             if not data:
                 continue
@@ -233,7 +233,7 @@ class MonitorApp:
             name, val = m.group(1), m.group(2)
             if name in self.cells:
                 lbl, tst = self.cells[name]
-                # 数值与单位拆开显示
+                # value and unit are shown separately
                 num = val
                 unit = ""
                 if val.endswith("°C"):
@@ -248,12 +248,12 @@ class MonitorApp:
                 tst.config(text=time.strftime("%H:%M:%S"))
 
         self.status.set(
-            f"已连接 | 原始行 {self.lines_seen} | 约 {self.frames} 轮 | "
-            f"最后接收 {time.strftime('%H:%M:%S', time.localtime(self.last_rx))}")
+            f"connected | lines {self.lines_seen} | ~{self.frames} rounds | "
+            f"last rx {time.strftime('%H:%M:%S', time.localtime(self.last_rx))}")
 
     def append_raw(self, text):
         self.raw.insert("end", text + "\n")
-        # 只保留最近 400 行
+        # keep only the last 400 lines
         if int(self.raw.index("end-1c").split(".")[0]) > 400:
             self.raw.delete("1.0", "100.0")
         self.raw.see("end")

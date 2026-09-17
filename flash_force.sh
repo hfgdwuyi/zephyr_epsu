@@ -1,20 +1,19 @@
 #!/bin/sh
-# flash_force.sh — 复位循环/看门狗干扰下的强制烧录（抢窗口多策略）
+# flash_force.sh - forced flashing under reset loops / watchdog interference
 #
-# 适用场景：板上 MAX6703A 外部看门狗在持续复位 MCU（app 起不来、没人喂狗），
-#          常规单次 openocd 命令连 halt 都保持不住（"timed out while waiting
-#          for target halted"）。本脚本轮换多种连接/复位策略并高频重试，
-#          尽可能抓住复位间隙完成烧录。
+# Use when the MAX6703A keeps resetting the MCU (so a normal single openocd
+# command cannot even halt the target: "timed out while waiting for target
+# halted"). Rotates several connect/reset strategies with fast retries.
 #
-# 用法：
-#   ./flash_force.sh              # 烧 boot + app
-#   ./flash_force.sh app          # 只烧 app
-#   ./flash_force.sh boot         # 只烧 boot
-#   ./flash_force.sh app 40       # 指定每个策略的重试次数（默认 20）
+# Usage:
+#   ./flash_force.sh              # flash boot + app
+#   ./flash_force.sh app          # app only
+#   ./flash_force.sh boot         # boot only
+#   ./flash_force.sh app 40       # retries per strategy (default 20)
 #
-# 若全部失败，说明复位是**持续**的（不是间隙），必须硬件处理：
-#   1) BOOT0 拉高 + 断电 ≥10s + 上电
-#   2) 断开 MAX6703A 的 RST → MCU NRST 连接
+# If everything fails the reset is continuous, not a gap; fix it in hardware:
+#   1) pull BOOT0 high + power off >= 10 s + power on
+#   2) disconnect MAX6703A RST from MCU NRST
 set -u
 cd "$(dirname "$0")"
 
@@ -30,11 +29,11 @@ case "$WANT" in
     *) echo "usage: $0 [all|boot|app] [tries]"; exit 2 ;;
 esac
 
-# 先清理可能残留的 openocd（会占用 ST-Link 与端口，导致莫名失败）
+# Clean up any leftover openocd (it holds the ST-Link and causes odd failures)
 pkill -9 openocd 2>/dev/null
 sleep 1
 
-flash_one() {   # $1=file $2=addr $3=策略号 $4=速度 $5..=额外 openocd 参数
+flash_one() {   # $1=file $2=addr $3=strategy $4=speed $5..=extra openocd args
     f=$1; a=$2; strat=$3; spd=$4; shift 4
     openocd -f board/st_nucleo_h745zi.cfg \
         -c "adapter speed $spd" "$@" \
@@ -48,7 +47,7 @@ try_target() {  # $1=file $2=addr
     base=$(basename "$f")
 
     for s in $(seq 1 "$TRIES"); do
-        # 轮换 4 种策略：标准 / 高速 / 不碰NRST / 软件复位
+        # Rotate 4 strategies: standard / fast / no-NRST / software reset
         case $((s % 4)) in
             1) set -- 950  ;;
             2) set -- 4000 ;;
@@ -56,15 +55,15 @@ try_target() {  # $1=file $2=addr
             0) set -- 950 -c "cortex_m reset_config sysresetreq" ;;
         esac
 
-        printf "\r  尝试 %2d/%d (策略%s) ... " "$s" "$TRIES" "$(( (s % 4) + 1 ))"
+        printf "\r  try %2d/%d (strategy %s) ... " "$s" "$TRIES" "$(( (s % 4) + 1 ))"
         out=$(flash_one "$f" "$a" "$s" "$@" 2>&1)
         if echo "$out" | grep -q "Verified OK"; then
-            printf "\n>>> %s 烧录成功 (第 %d 次尝试)\n" "$base" "$s"
+            printf "\n>>> %s flashed OK (attempt %d)\n" "$base" "$s"
             return 0
         fi
         sleep 0.3
     done
-    printf "\n!!! %s 失败：%d 次尝试均未成功\n" "$base" "$TRIES"
+    printf "\n!!! %s FAILED after %d attempts\n" "$base" "$TRIES"
     return 1
 }
 
@@ -72,22 +71,24 @@ rc=0
 for t in $TARGETS; do
     file=${t%@*}
     addr=${t#*@}
-    echo "== 烧录 $file @ $addr =="
+    echo "== flashing $file @ $addr =="
     try_target "$file" "$addr" || rc=1
 done
 
 echo
 if [ "$rc" -eq 0 ]; then
-    echo ">>> 全部烧录成功。BOOT0 拉低后断电重上电即可运行。"
+    echo ">>> All images flashed. Pull BOOT0 low, power-cycle and run."
 else
     cat <<'EOF'
->>> 烧录失败。复位是持续的，纯软件无法穿透，请任选一种硬件处理：
+>>> Flashing failed. The reset is continuous, so software cannot get through.
+    Pick one of these hardware workarounds:
 
-  [1] BOOT0 拉高 + 断电 ≥10 秒 + 上电（保持高）→ 再跑本脚本
-  [2] 断开板上 MAX6703A 的 RST → MCU NRST 连接（0Ω/跳线/割线）→ 烧完恢复
-  [3] 给 MAX6703A 的 WDI(PH9) 外接 10Hz 左右方波持续喂狗
+  [1] pull BOOT0 high + power off >= 10 s + power on (keep high), then rerun
+  [2] disconnect MAX6703A RST from MCU NRST (0R / jumper / trace cut), restore
+      afterwards
+  [3] feed MAX6703A WDI (PH9) with an external ~10 Hz square wave
 
-  另可用万用表量 MCU NRST：持续低 → 必须用 [2]；周期脉冲 → [1] 可行。
+  Measuring MCU NRST helps: permanently low -> use [2]; periodic pulses -> [1].
 EOF
 fi
 exit $rc

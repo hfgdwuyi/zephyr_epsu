@@ -11,8 +11,8 @@
 
 LOG_MODULE_REGISTER(bsp_ain, LOG_LEVEL_INF);
 
-/* 详细启动日志开关：AIN 逐通道清单（name/dev/ch）。
- * 0 = 关闭（默认，串口保持干净）；1 = 打开用于排查通道映射。 */
+/* Verbose boot log: per-channel AIN list (name/dev/ch).
+ * 0 = off (default), 1 = on to debug the channel mapping. */
 #ifndef BSP_AIN_VERBOSE_LOG
 #define BSP_AIN_VERBOSE_LOG 0
 #endif

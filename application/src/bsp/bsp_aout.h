@@ -4,13 +4,14 @@
  * Project: Building Block Low End MCU
  *
  * @file
- * @brief Header file for bsp_aout.c (Zephyr port) — BSP 层只提供 DAC 原语。
- *        状态指示灯逻辑（呼吸/常亮/灭）在应用层 indicator 模块。
+ * @brief Header for bsp_aout.c - the BSP only provides DAC primitives.
+ *        Indicator logic lives in the application indicator module.
  */
 /*----------------------------------------------------------------------------*/
 #ifndef BSP_AOUT_H
 #define BSP_AOUT_H
 
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 

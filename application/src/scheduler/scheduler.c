@@ -138,8 +138,7 @@ static void aoutWorkFn(struct k_work *w)
 {
 	indicatorUpdate();
 	sysHbBump();
-	/* 5 ms：PA5 锯齿波 4 s 周期内 800 级台阶（~1.9 mV/级），
-	 * 保证 0.25 Hz 锯齿线性度足够平滑。 */
+	/* 5 ms cadence for the PA5 ramp (smooth enough for the 4 s period). */
 	k_work_schedule(k_work_delayable_from_work(w), K_MSEC(5));
 }
 
@@ -156,8 +155,7 @@ static void wdiWorkFn(struct k_work *w)
 static K_WORK_DELAYABLE_DEFINE(wdi_work, wdiWorkFn);
 
 /* ========== 3000 ms: status log ==========
- * 实时状态打印已按需求移除（不再每 3 秒刷屏）。
- * 需要诊断时通过上位机命令 `info` 查询（见 uart_cmd.c）。 */
+ * Periodic status printing was removed; use the host `info` command instead. */
 
 static void statusWorkFn(struct k_work *w)
 {

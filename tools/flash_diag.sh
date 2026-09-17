@@ -1,14 +1,14 @@
 #!/bin/sh
-# flash_diag.sh — STM32H745 SWD 连接诊断（换板/连不上时先跑这个）
+# flash_diag.sh - STM32H745 SWD connectivity diagnostics
 #
-# 用法：
-#   ./tools/flash_diag.sh            # 默认跑全部诊断
-#   ./tools/flash_diag.sh quick      # 只跑主策略（最快）
+# Usage:
+#   ./tools/flash_diag.sh            # run all checks
+#   ./tools/flash_diag.sh quick      # primary strategy only (fastest)
 #
-# 输出：每项策略 PASS/FAIL + 最后结论。供换板排查：
-#   全部 FAIL + 电压正常  → 芯片侧问题（RDP 锁 / 固件占 SWD / 虚焊）
-#   BOOT0 高能连上         → 板上固件把 PA13/14 复用成 GPIO 了
-#   完全无电压             → SWD 供电/接线问题
+# Prints PASS/FAIL per strategy and a conclusion:
+#   all FAIL but voltage OK  -> chip side (RDP lock / firmware owns SWD / bad solder)
+#   only connects with BOOT0 high -> firmware reuses PA13/14 as GPIO
+#   no voltage at all        -> SWD power / wiring problem
 set -u
 cd "$(dirname "$0")/.."
 
@@ -18,7 +18,7 @@ LOG=/tmp/flash_diag.log
 pass=0
 fail=0
 
-try() {   # $1=策略名  其余=openocd 参数
+try() {   # $1=strategy name, rest = openocd args
     name=$1; shift
     if openocd "$@" 2>&1 | tee -a "$LOG" | grep -qE "target voltage|Target voltage"; then
         echo "PASS"
@@ -27,21 +27,21 @@ try() {   # $1=策略名  其余=openocd 参数
     fi
 }
 
-echo "====  ST-Link probe 识别 ===="
+echo "====  ST-Link probe detection ===="
 if openocd -f interface/stlink-dap.cfg -c "transport select dapdirect_swd" \
         -c "adapter speed 100" -c "init" -c "shutdown" \
         2>&1 | tee -a "$LOG" | grep -q "STLINK V2\|STLINK-V3\|STLINK V3"; then
-    echo "[1] probe 识别: PASS"
+    echo "[1] probe detect: PASS"
     pass=$((pass+1))
 else
-    echo "[1] probe 识别: FAIL (检查 USB / 驱动)"
+    echo "[1] probe detect: FAIL (check USB / driver)"
     fail=$((fail+1))
 fi
 
 echo
-echo "====  SWD 连接策略 ===="
+echo "====  SWD connect strategies ===="
 v=$(grep -oE "Target voltage: [0-9.]+" "$LOG" | head -1)
-echo "    目标电压: ${v:-N/A}"
+echo "    target voltage: ${v:-N/A}"
 
 echo "[2] dapdirect_swd init:          \c"
 if openocd -f interface/stlink-dap.cfg -c "transport select dapdirect_swd" \
@@ -85,21 +85,21 @@ else
 fi
 
 echo
-echo "====  结果: 连接 PASS=$((pass-1)) FAIL=$fail (probe 识别不计入) ===="
+echo "====  result: connect PASS=$((pass-1)) FAIL=$fail (probe detect excluded) ===="
 echo
 if [ "$pass" -ge 2 ]; then
-    echo ">>> 至少一种策略能连上。烧录请用 flash_recover_mcuboot.sh / flash_stlink.sh"
-    echo "    若仅 BOOT0 高时能连：板上固件占用了 PA13/14 (SWDIO/SWCLK)，"
-    echo "    需先擦除/烧录引导固件，或检查固件 GPIO 配置。"
+    echo ">>> At least one strategy connected. Flash with flash_recover_mcuboot.sh / flash_stlink.sh"
+    echo "    If it only connects with BOOT0 high, the firmware owns PA13/14:"
+    echo "    erase / flash the bootloader first, or check the GPIO config."
 elif grep -q "Target voltage:" "$LOG"; then
-    echo ">>> 全部 FAIL 但目标电压正常 → 芯片侧问题："
-    echo "    1) RDP 读保护级别1/2（级别2永久锁死，需换芯片）"
-    echo "    2) 芯片虚焊/损坏，或型号不是 H745"
-    echo "    3) SWDIO/SWCLK 到芯片引脚断线（NRST 高不代表 SWD 通）"
-    echo "    建议：BOOT0 拉高再跑一次本脚本；仍 FAIL 则查 RDP/换芯片。"
+    echo ">>> All FAIL but target voltage OK -> chip side:"
+    echo "    1) RDP level 1/2 (level 2 is permanent, chip must be replaced)"
+    echo "    2) bad solder / damaged chip, or not an H745"
+    echo "    3) SWDIO/SWCLK not connected (NRST high does not mean SWD works)"
+    echo "    Try BOOT0 high once more; if it still fails check RDP / the chip."
 else
-    echo ">>> 全部 FAIL 且无目标电压 → 接线/供电问题："
-    echo "    检查 SWDIO/SWCLK/GND/3V3、ST-Link USB、目标供电。"
+    echo ">>> All FAIL and no target voltage -> wiring / power problem:"
+    echo "    Check SWDIO/SWCLK/GND/3V3, the ST-Link USB and target power."
 fi
 echo
-echo "完整日志: $LOG"
+echo "Full log: $LOG"

@@ -1,48 +1,51 @@
 /*!
  * @file sm_s1.h
- * @brief S1 模式状态机（MU SYS 控制器）—— 依据 S1_MU_SYS_ctr_logic.md 的
- *        “S1 with Trolley” 页签（§4）
+ * @brief S1 state machine (MU SYS controller) - per "S1逻辑功能测试.md"
  *
- * S1 系统共有 5 个工作状态 + 硬件/软件复位，由 SYSTEM_ON_OFF1 按键、
- * 市电(ME_BOX)、外部复位共同驱动（当前版本暂不判断 trolley 连接）：
+ * S1 has 5 working states plus hardware/software reset, driven by the
+ * SYSTEM_ON_OFF1 key, mains (ME_BOX_ERROR) and SYSTEM_RESET:
  *
- *   STANDBY      待机        ：市电正常、未开机（K3+K13 待机回路）
- *   OFF_NO_MAINS 关机·无市电  ：ME_BOX 异常 → 自动关机
- *   RUN          开机运行     ：按键开机后，AC/DC 各路依次使能（10ms 间隔）
- *   RUN_OR       开机运行·OR  ：开机过程中市电丢失 → 切 OR 模式供电（T3）
- *   SHUTDOWN     正常关机     ：按键关机；K9/K11 ← IS_PC_ON，K10 ← APP_HOST_ON
- *   RESET        硬件复位     ：SYSTEM_RESET 上升沿，全部重新初始化
- *   软件复位（非独立状态）     ：SYSTEM_ON_OFF 持续 ≥ 5s → 按 Tx 判定直接进 T0/T1
+ *   STANDBY      T0 standby        : mains OK, not powered on; K3,K10 +
+ *                                    K9/K11 <- IS_PC_ON, K13 <- APP_HOST_ON
+ *   OFF_NO_MAINS T1 off / no mains : everything off, wait for the supply to drop
+ *   RUN          T2 powered on     : K3,K6,K7,K8_1,K9,K10,K11,K12,K13 (+K4,K5 trolley)
+ *   UPS          T3 UPS mode       : mains lost while running; K2,K10 (+K9/K11 ; K13)
+ *                                    mains restored -> back to T0
+ *   SHUTDOWN     T4 normal shutdown: K3,K10; K9/K11 <- IS_PC_ON, K13 <- APP_HOST_ON
+ *   RESET        hardware reset    : SYSTEM_RESET rising edge, full re-init
+ *   SW_RESET     software reset    : SYSTEM_ON_OFF released after >= 5s -> T0/T1
  *
- * 开关键时长（SYSTEM_ON_OFF1）：0.5s ≤ 按住 < 5s = 正常开机/关机；
- * ≥ 5s = 软件复位。
+ * On/off key (SYSTEM_ON_OFF1): 0.5 s <= hold < 5 s = normal on/off (on release);
+ * hold >= 5 s = software reset.
  */
 /*----------------------------------------------------------------------------*/
 #ifndef SM_S1_H
 #define SM_S1_H
 
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 
 typedef enum {
-	SM_S1_STANDBY = 0,      /* 待机：市电+推车就绪，未开机（md 的 T0）   */
-	SM_S1_OFF_NO_MAINS,     /* 关机·市电掉电 / OR 关机（md 的 T1）      */
-	SM_S1_RUN,              /* 开机运行：两轨 10ms 依次上电（md 的 T2） */
-	SM_S1_RUN_OR,           /* 开机运行·市电掉电（OR 模式，md 的 T3）   */
-	SM_S1_SHUTDOWN,         /* 正常关机（md 的 T4）                     */
-	SM_S1_RESET,            /* 硬件复位                                 */
-	SM_S1_SW_RESET,         /* 软件复位（先全断，再回 T0/T1）*/
+	SM_S1_STANDBY = 0,      /* standby, not powered on (md T0)     */
+	SM_S1_OFF_NO_MAINS,     /* off: mains lost / UPS shutdown (md T1) */
+	SM_S1_RUN,              /* powered on (md T2)                   */
+	SM_S1_UPS,           /* powered on, mains lost, UPS mode (md T3) */
+	SM_S1_SHUTDOWN,         /* normal shutdown (md T4)              */
+	SM_S1_RESET,            /* hardware reset                       */
+	SM_S1_SW_RESET,         /* software reset (all off, then T0/T1) */
 	SM_S1_STATE_COUNT
 } smS1State_t;
 
-/*! 进入 S1 系统：直接进入初始子状态 STANDBY，由该子状态设置管脚。
- *  没有"退出"接口 —— 系统切换即进入新系统的子状态，管脚只在子状态中控制。 */
+/*! Enter the S1 system: goes straight to STANDBY/OFF_NO_MAINS, which drives
+ *  the pins. There is no "exit" call - switching systems just enters the other
+ *  system's sub-state, and pins are only driven from sub-states. */
 void smS1Enter(void);
 
 /*!
- * @brief S1 系统每个 tick 的推进
- * @param din 当前 DIN 位图快照（bspDinGetBitmap()）
- * @return 当前状态
+ * @brief Advance the S1 system by one tick
+ * @param din current DIN bitmap snapshot (bspDinGetBitmap())
+ * @return current state
  */
 smS1State_t smS1Tick(uint32_t din);
 

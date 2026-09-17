@@ -10,10 +10,13 @@
 #ifndef BSP_DIO_H
 #define BSP_DIO_H
 
-#include <zephyr/devicetree.h>
-#include <zephyr/sys/util.h>
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
+
+/* Zephyr */
+#include <zephyr/devicetree.h>
+#include <zephyr/sys/util.h>
 
 /* ==================== DOUT index — pin_config.xlsx ====================
  * The DOUT index of a pin IS the `reg` of its child of dout_config in
@@ -34,8 +37,8 @@
 #define DOUT_WDI                   DOUT_IDX(wdi)                  /* PH9  */
 
 /* Power good / K13 enable
- * 注: PA12 (原 DOUT_PG_13V5 / reg 2) 已改为输入端，不受 DOUT 位图控制，
- *     故此处不再提供该 DOUT 索引（reg 2 在 dout_config 中留空洞）。 */
+ * Note: PA12 (former DOUT_PG_13V5 / reg 2) is an input now and not part of the
+ *       DOUT bitmap, so no index is provided here (reg 2 is a hole). */
 #define DOUT_K13_EN                DOUT_IDX(k13_en)               /* PB6  */
 
 /* Panel LED indicators */
@@ -52,7 +55,7 @@
 #define DOUT_LED_APP_HOST_ON       DOUT_IDX(led_app_host_on)      /* PD12 */
 #define DOUT_LED_PAC230V_ON        DOUT_IDX(led_pac230v_on)       /* PD8  */
 
-/* PC8-10 三色状态灯已移交 bsp_led 管理（bsp_led.h），不再占用 DOUT 位图 */
+/* PC8-10 tri-color LEDs moved to bsp_led (bsp_led.h); not in the DOUT bitmap */
 
 /* Relay / power drivers (K2..K13) */
 #define DOUT_K5_DRV                DOUT_IDX(k5_drv)               /* PI4  */
@@ -74,7 +77,7 @@
 #define DOUT_MAINS_CONNECTED_IS_PC DOUT_IDX(mains_connected_is_pc) /* PJ13 */
 #define DOUT_MAINS_CONNECTED_MCU   DOUT_IDX(mains_connected_mcu)  /* PJ14 */
 
-/* Trolley connected status outputs（原 DIN PD13/PD14 改为输出）*/
+/* Trolley connected status outputs (former DIN PD13/PD14, now outputs) */
 #define DOUT_TRL_MU_CONNECTED_MCU   DOUT_IDX(trl_mu_connected_mcu)   /* PD13 */
 #define DOUT_TRL_MU_CONNECTED_IS_PC DOUT_IDX(trl_mu_connected_is_pc) /* PD14 */
 

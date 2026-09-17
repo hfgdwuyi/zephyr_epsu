@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-psu_dfu.py — CiosZhong PSU 串口固件升级工具（支持连续多次烧录 / 可靠性测试）
+psu_dfu.py - CiosZhong PSU serial firmware upgrade tool (repeat / reliability)
 
-通过 USART1 (PB14/PB15) 把签名固件 (zephyr.signed.bin) 发送给运行中的 APP，
-APP 写入 slot1 并请求 MCUboot swap，复位后自动运行新固件。
+Sends the signed firmware (zephyr.signed.bin) over USART1 (PB14/PB15) to the
+running app, which writes it to slot1 and requests the MCUboot upgrade.
 
-协议（与 uart_cmd.c dfu 一致）：
-  dfu            → APP 擦除 slot1 并进入升级状态
-  size <hex>     → 声明固件总字节数
-  data <off> <hex...> → 带偏移的 512B hex 块；逐块 ACK，ERR/超时重发
-  全部发送后 APP 自动 boot_request_upgrade + 复位
+Protocol (same as uart_cmd.c):
+  dfu            -> app erases slot1 and enters upgrade mode
+  size <hex>     -> total firmware size
+  data <off> <hex...> -> 512 B hex block with offset; per-block ACK, retry
+  after the last block the app calls boot_request_upgrade() and resets
 
-用法：
-  单次： python3 psu_dfu.py <serial-port> <signed-firmware.bin>
-  循环： python3 psu_dfu.py <serial-port> <signed-firmware.bin> --count 50
-         （连续升级 50 次做可靠性测试；每次自动重开串口等待重启完成）
-  其它： --stop-on-fail   任一次失败立即停止
-        --interval SEC    每轮之间额外等待（默认 0）
-        --version-check   每轮后读一次 app 版本横幅确认固件已运行（默认开）
+Usage:
+  once:  python3 psu_dfu.py <serial-port> <signed-firmware.bin>
+  loop:  python3 psu_dfu.py <serial-port> <signed-firmware.bin> --count 50
+  other: --stop-on-fail   stop at the first failure
+         --interval SEC   extra wait between rounds (default 0)
 
-依赖：pyserial
+Requires pyserial
 """
 import argparse
 import sys
@@ -28,14 +26,14 @@ import time
 
 import serial
 
-BLOCK = 512  # 每行数据字节数（与固件 uart_cmd.c DFU_BLOCK_MAX 一致）
+BLOCK = 512  # data bytes per line (matches uart_cmd.c DFU_BLOCK_MAX)
 
 
 # --------------------------------------------------------------------------
-# 串口读取辅助
+# Serial read helpers
 # --------------------------------------------------------------------------
 def read_until_ack(ser, timeout=5):
-    """读串口直到出现 'ACK ' 或 'ERR'（DFU 应答行）。"""
+    """Read until 'ACK ' or 'ERR' appears (a DFU response line)."""
     buf = b""
     end = time.time() + timeout
     while time.time() < end:
@@ -49,7 +47,7 @@ def read_until_ack(ser, timeout=5):
 
 
 def read_until(ser, token, timeout=10):
-    """读串口直到出现 token，返回期间收到的文本。"""
+    """Read until token appears; return everything received."""
     buf = b""
     end = time.time() + timeout
     while time.time() < end:
@@ -63,35 +61,35 @@ def read_until(ser, token, timeout=10):
 
 
 # --------------------------------------------------------------------------
-# 单次升级
+# Single upgrade
 # --------------------------------------------------------------------------
 def upgrade_once(ser, image, verbose=True):
-    """执行一次完整 DFU 上传 + 触发 reboot。
+    """Run one full DFU upload and trigger the reboot.
 
-    返回: True 成功（上传 + 收到 rebooting）；False 失败。
-    调用方负责在 reboot 后重新打开串口等待新固件就绪。
+    Returns True on success (upload done + rebooting seen).
+    The caller reopens the port afterwards to wait for the new firmware.
     """
     total = len(image)
     total_blocks = (total + BLOCK - 1) // BLOCK
 
-    # 1. 进入 dfu（先清残留，保证干净握手）
+    # 1. enter dfu (clear leftovers first for a clean handshake)
     ser.write(b"\r\n\r\n")
     time.sleep(0.1)
     ser.reset_input_buffer()
     ser.write(b"dfu\r\n")
     resp = read_until(ser, "size <hex>", 30)
     if "size <hex>" not in resp:
-        print(f"  [FAIL] APP 未进入 DFU 模式: {resp.strip()[:80]}")
+        print(f"  [FAIL] app did not enter DFU mode: {resp.strip()[:80]}")
         return False
 
     # 2. size
     ser.write(f"size {total:X}\r\n".encode())
     resp = read_until(ser, "data <hex>", 10)
     if "data <hex>" not in resp:
-        print(f"  [FAIL] size 应答异常: {resp.strip()[:80]}")
+        print(f"  [FAIL] bad size response: {resp.strip()[:80]}")
         return False
 
-    # 3. 分块发送
+    # 3. send the blocks
     sent = 0
     for idx in range(total_blocks):
         off = idx * BLOCK
@@ -99,7 +97,7 @@ def upgrade_once(ser, image, verbose=True):
         last = (idx == total_blocks - 1)
 
         if last:
-            # 末块：固件写完直接 rebooting（无 ACK）
+            # last block: the firmware replies rebooting (no ACK)
             ser.write(f"data {off:X} ".encode() + chunk.hex().encode() + b"\r\n")
             resp = read_until(ser, "rebooting", 40)
             if "rebooting" in resp:
@@ -108,7 +106,7 @@ def upgrade_once(ser, image, verbose=True):
                     print(f"  sent {sent}/{total}")
                     print(f"  [DONE] {resp.strip()[:80]}")
                 return True
-            print(f"  [FAIL] 末块无 rebooting 响应: {resp.strip()[:80]}")
+            print(f"  [FAIL] no rebooting response after the last block: {resp.strip()[:80]}")
             return False
 
         ok = False
@@ -119,21 +117,21 @@ def upgrade_once(ser, image, verbose=True):
                 sent += len(chunk)
                 ok = True
                 break
-            ser.reset_input_buffer()  # 坏行/超时 → 重发同块
+            ser.reset_input_buffer()  # bad line / timeout -> resend the block
         if not ok:
-            print(f"  [FAIL] 块 0x{off:X} 多次失败，放弃")
+            print(f"  [FAIL] block 0x{off:X} failed repeatedly, giving up")
             return False
         if verbose and (sent % 16384 == 0 or sent >= total):
             print(f"  sent {sent}/{total}")
 
-    return False  # 理论不可达（末块已 return）
+    return False  # unreachable (the last block returns)
 
 
 # --------------------------------------------------------------------------
-# 等待重启后的固件就绪（读到启动横幅/PSU CMD ready）
+# Wait for the firmware to come up after the reboot
 # --------------------------------------------------------------------------
 def wait_app_ready(ser, timeout=15):
-    """复位后等 APP 起来：读到 'PSU CMD: ready' 视为成功。"""
+    """After reset, wait for 'PSU CMD: ready'."""
     buf = b""
     end = time.time() + timeout
     while time.time() < end:
@@ -147,37 +145,37 @@ def wait_app_ready(ser, timeout=15):
 
 
 # --------------------------------------------------------------------------
-# 主流程：单次或连续 N 次
+# Main: single run or N rounds
 # --------------------------------------------------------------------------
 def main():
-    ap = argparse.ArgumentParser(description="CiosZhong PSU 串口固件升级（可靠性测试）")
-    ap.add_argument("port", help="串口，如 /dev/cu.usbserial-110")
-    ap.add_argument("firmware", help="签名固件 zephyr.signed.bin")
-    ap.add_argument("--count", type=int, default=1, help="连续升级次数（默认 1）")
-    ap.add_argument("--stop-on-fail", action="store_true", help="任一次失败立即停止")
+    ap = argparse.ArgumentParser(description="CiosZhong PSU serial firmware upgrade")
+    ap.add_argument("port", help="serial port, e.g. /dev/cu.usbserial-110")
+    ap.add_argument("firmware", help="signed firmware zephyr.signed.bin")
+    ap.add_argument("--count", type=int, default=1, help="number of rounds (default 1)")
+    ap.add_argument("--stop-on-fail", action="store_true", help="stop at the first failure")
     ap.add_argument("--interval", type=float, default=0.0,
-                    help="每轮之间额外等待秒数（默认 0）")
-    ap.add_argument("--quiet", action="store_true", help="减少打印")
+                    help="extra seconds between rounds (default 0)")
+    ap.add_argument("--quiet", action="store_true", help="less output")
     args = ap.parse_args()
 
     with open(args.firmware, "rb") as f:
         image = f.read()
     total = len(image)
-    print(f"固件: {args.firmware} ({total} bytes)")
-    print(f"串口: {args.port}   连续次数: {args.count}")
+    print(f"firmware: {args.firmware} ({total} bytes)")
+    print(f"port: {args.port}   rounds: {args.count}")
 
     ok_count = 0
     fail_count = 0
     t_start = time.time()
 
     for i in range(1, args.count + 1):
-        print(f"\n===== 第 {i}/{args.count} 次升级 =====")
-        # 每次独立连接（reboot 后旧连接会失效/需重开）
+        print(f"\n===== round {i}/{args.count} =====")
+        # Reconnect every round (the old handle dies after a reboot)
         try:
             ser = serial.Serial(args.port, 115200, timeout=0.1)
             ser.reset_input_buffer()
         except serial.SerialException as e:
-            print(f"  [FAIL] 打开串口失败: {e}")
+            print(f"  [FAIL] cannot open the port: {e}")
             fail_count += 1
             if args.stop_on_fail:
                 break
@@ -186,20 +184,20 @@ def main():
 
         try:
             success = upgrade_once(ser, image, verbose=not args.quiet)
-            ser.close()  # 上传完先关，等重启
+            ser.close()  # close before the reboot
 
             if success:
-                # 重启后等 APP ready（重开串口）
-                time.sleep(1.5)  # 给 MCUboot swap + 启动留时间
+                # wait for the app after the reboot (reopen the port)
+                time.sleep(1.5)  # give MCUboot and the app time to come up
                 ser2 = serial.Serial(args.port, 115200, timeout=0.1)
                 ready, _ = wait_app_ready(ser2, timeout=15)
                 ser2.close()
                 if ready:
                     ok_count += 1
-                    print(f"  [OK] 第 {i} 次成功，APP 已就绪")
+                    print(f"  [OK] round {i} succeeded, app is up")
                 else:
-                    # 上传成功但 APP 没确认就绪：算失败
-                    print(f"  [FAIL] 上传成功但 APP 未就绪（可能 swap/启动异常）")
+                    # upload OK but the app never confirmed: count as failure
+                    print(f"  [FAIL] upload OK but the app did not come up")
                     fail_count += 1
                     if args.stop_on_fail:
                         break
@@ -208,21 +206,21 @@ def main():
                 if args.stop_on_fail:
                     break
         except serial.SerialException as e:
-            print(f"  [FAIL] 串口错误: {e}")
+            print(f"  [FAIL] serial error: {e}")
             fail_count += 1
             if args.stop_on_fail:
                 break
 
         if args.interval > 0 and i < args.count:
-            print(f"  等待 {args.interval}s ...")
+            print(f"  waiting {args.interval}s ...")
             time.sleep(args.interval)
 
     elapsed = time.time() - t_start
-    print("\n================= 结果汇总 =================")
-    print(f"总次数: {args.count}   成功: {ok_count}   失败: {fail_count}")
+    print("\n================= Summary =================")
+    print(f"rounds: {args.count}   ok: {ok_count}   failed: {fail_count}")
     if ok_count + fail_count > 0:
-        print(f"成功率: {ok_count * 100.0 / (ok_count + fail_count):.1f}%")
-    print(f"总耗时: {elapsed:.1f}s")
+        print(f"success rate: {ok_count * 100.0 / (ok_count + fail_count):.1f}%")
+    print(f"elapsed: {elapsed:.1f}s")
     sys.exit(0 if fail_count == 0 else 1)
 
 

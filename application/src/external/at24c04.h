@@ -26,6 +26,7 @@
 #ifndef AT24C04_H
 #define AT24C04_H
 
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>

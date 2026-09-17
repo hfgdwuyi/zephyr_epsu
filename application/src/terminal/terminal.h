@@ -13,6 +13,7 @@
 #ifndef TERMINAL_H
 #define TERMINAL_H
 
+/* Standard library */
 #include <stdbool.h>
 
 /* Terminal thread cadence — the scheduler calls terminalUpdate() every base tick. */
@@ -26,9 +27,8 @@
 /* Process one terminal tick: print sensor values that changed meaningfully. */
 void terminalUpdate(void);
 
-/* 日志静默：串口正在被其它协议占用（当前 = 串口 DFU 升级中），
- * 此时任何 printk / 周期性打印都会插进协议流里把应答冲掉。
- * 其它模块要打日志前查这个接口即可，不必依赖 uart_cmd 模块。 */
+/* Log silence: the UART is owned by another protocol (currently serial DFU),
+ * so any printk would corrupt its response stream. Check this before logging. */
 bool terminalIsQuiet(void);
 
 #endif /* TERMINAL_H */

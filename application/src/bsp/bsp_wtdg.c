@@ -7,7 +7,7 @@
  * @brief Watchdog control functions (Zephyr port)
  */
 
-/* C standard library */
+/* Standard library */
 #include <stdbool.h>
 
 /* Zephyr */
@@ -38,15 +38,14 @@ static struct wdt_timeout_cfg wdt_config = {
 };
 
 #if DT_HAS_COMPAT_STATUS_OKAY(st_stm32_window_watchdog)
-/* WWDG 窗口上限（硬件限制）：t_max = 64 × 4096 × 2^WDGTB_max / f_PCLK3。
- * 本板 PCLK3 = AHB / D1PPRE = (SYSCLK/HPRE)/2 = (480/2)/2 = 120 MHz，
- * WDGTB 最大 /128 → t_max ≈ 279.6 ms（t_min ≈ 34.1 us）。
- * 若请求超过上限，wdt_install_timeout() 会返回 -EINVAL(-22)，且因为发生在
- * wdt_setup() 之前，WWDG 根本不会启动（等于没有内部看门狗）。
- * 故取 250 ms（实得 ≈253 ms，在驱动的 10% 容限内）：既在硬件范围内，又给
- * bspWtdgInit()→schedulerStart() 之间的启动初始化留出余量（其间有手动
- * bspWtdgFeed()）；运行时由 50 ms 心跳喂狗，有 5x 余量。
- * 跨 boot 的升级安全由外部 MAX6703A(1.6s, WDI=PH9) 保证，与本窗口无关。 */
+/* WWDG maximum window (hardware limit): t_max = 64 * 4096 * 2^WDGTB_max / f_PCLK3.
+ * PCLK3 = (SYSCLK/HPRE)/2 = (480/2)/2 = 120 MHz and WDGTB max is /128,
+ * so t_max ~= 279.6 ms (t_min ~= 34.1 us).
+ * A larger timeout makes wdt_install_timeout() return -EINVAL (-22) before
+ * wdt_setup(), so the WWDG would never start at all.
+ * Therefore 250 ms (actual ~253 ms, inside the driver's 10% tolerance): within
+ * the hardware limit and leaves head-room for init before the 50 ms heartbeat.
+ * Cross-boot upgrade safety is provided by the external MAX6703A (1.6 s, PH9). */
 #define WDT_MAX_WINDOW  250U
 #elif DT_HAS_COMPAT_STATUS_OKAY(nordic_nrf_wdt)
 #define WDT_ALLOW_CALLBACK 0

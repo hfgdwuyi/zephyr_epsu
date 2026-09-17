@@ -8,7 +8,7 @@
  */
 /*----------------------------------------------------------------------------*/
 
-/* C standard library */
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -41,7 +41,7 @@ static const struct pwm_dt_spec pwm_specs[PWM_OUT_COUNT] = {
     DT_FOREACH_PROP_ELEM_SEP(ZEPHYR_USER_NODE, pwms, BSP_PWM_SPEC_ELEM, (,))
 };
 
-static inline bool pwmIdxValid(uint8_t idx)
+static bool pwmIdxValid(uint8_t idx)
 {
     return (idx < PWM_OUT_COUNT);
 }

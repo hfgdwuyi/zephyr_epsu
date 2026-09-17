@@ -10,6 +10,7 @@
 #ifndef BSP_BOARD_H
 #define BSP_BOARD_H
 
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 

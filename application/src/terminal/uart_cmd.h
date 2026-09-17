@@ -1,17 +1,17 @@
 /*
- * uart_cmd.h — 上位机命令服务（USART1, 115200）
+ * uart_cmd.h - host command service (USART1, 115200)
  *
- * 由 terminal 任务周期调用 uartCmdPoll()：UART 中断接收放入环形缓冲，
- * 按行解析 ASCII 命令并执行（DOUT / DAC / PWM 控制，状态查询）。
+ * uartCmdPoll() is called periodically (scheduler 10 ms thread): the UART ISR
+ * fills a ring buffer, lines are parsed as ASCII commands.
  */
 
 #ifndef UART_CMD_H
 #define UART_CMD_H
 
-/* 处理一周期：取一行命令解析执行（幂等，首次调用自动初始化 UART）。 */
+/* Process one period: parse and run a line (idempotent, inits UART once). */
 void uartCmdPoll(void);
 
-/* DFU 上传进行中（供其它 printk 线程在升级期间静默，避免与 ACK 竞争 USART1）。 */
+/* DFU upload in progress (other printk threads stay quiet to avoid contention). */
 bool uartCmdDfuActive(void);
 
 #endif /* UART_CMD_H */

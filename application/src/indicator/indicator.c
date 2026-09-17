@@ -1,32 +1,33 @@
 /*!
  * @file indicator.c
- * @brief 状态指示灯（DAC1_OUT2 / PA5）—— 应用层实现（见 indicator.h）
+ * @brief Status indicator (DAC1_OUT2 / PA5) - implementation (see indicator.h)
  */
 /*----------------------------------------------------------------------------*/
+
 /* Zephyr */
 #include <zephyr/kernel.h>
 
 /* BSP */
 #include "bsp_aout.h"   /* bspAoutWrite / AOUT_PWR_ON_OFF */
 
-/* 本模块 */
+/* Application */
 #include "indicator.h"
 
-/* 呼吸波形参数 */
+/* Breathing waveform parameters */
 typedef enum {
-	INDICATOR_ON_MV     = 1500,   /* 常亮 / 呼吸峰值 (mV) */
-	INDICATOR_PERIOD_MS = 4000,   /* 呼吸周期 0.25 Hz */
-	INDICATOR_HALF_MS   = 2000,   /* 半周期：渐亮 / 渐暗各 2 s */
+	INDICATOR_ON_MV     = 1500,   /* on level / breathing peak (mV) */
+	INDICATOR_PERIOD_MS = 4000,   /* breathing period */
+	INDICATOR_HALF_MS   = 2000,   /* half period: fade in / out, 2 s each */
 } indicatorWaveParam_t;
 
-static indicatorMode_t indicator_mode = INDICATOR_BREATH;   /* 上电默认呼吸（待机） */
-static bool           indicator_breath_fast;              /* 开关键按下 → 呼吸频率加倍 */
+static indicatorMode_t indicator_mode = INDICATOR_BREATH;   /* boot default: breathing */
+static bool           indicator_breath_fast;              /* on/off key held */
 
 void indicatorSetMode(indicatorMode_t mode)
 {
 	indicator_mode = mode;
 
-	/* 立即更新一次，避免下一次 indicatorUpdate() 前残留旧值 */
+	/* Apply immediately so no stale value is left before the next update */
 	if (mode == INDICATOR_ON) {
 		bspAoutWrite(AOUT_PWR_ON_OFF, (int16_t)INDICATOR_ON_MV);
 	} else if (mode == INDICATOR_OFF) {
@@ -44,7 +45,7 @@ void indicatorSetBreathFast(bool fast)
 	indicator_breath_fast = fast;
 }
 
-/* 三角波呼吸：0 → 1500 → 0，相位由 k_uptime_get_32() 推算（不会累积漂移）*/
+/* Triangle breathing: 0 -> 1500 -> 0; phase from k_uptime_get_32() (no drift) */
 static void indicatorBreath(uint32_t period_ms)
 {
 	const uint32_t half = period_ms / 2U;
@@ -63,10 +64,10 @@ static void indicatorBreath(uint32_t period_ms)
 void indicatorUpdate(void)
 {
 	if (indicator_mode == INDICATOR_MANUAL) {
-		return;   /* 由 bspAoutWrite 直接控制，不干预 */
+		return;   /* driven by bspAoutWrite() directly */
 	}
 
-	/* 开关键按下期间：不论当前模式，统一走“双倍频率”的呼吸（按键反馈）*/
+	/* While the on/off key is held: breathe at double frequency (key feedback) */
 	if (indicator_breath_fast) {
 		indicatorBreath((uint32_t)INDICATOR_PERIOD_MS / 2U);
 		return;

@@ -1,91 +1,123 @@
 /*!
  * @file sm_s1.c
- * @brief S1 系统状态机实现（见 sm_s1.h）
+ * @brief S1 state machine implementation (see sm_s1.h)
  *
- * 管脚处理：直接操作 BSP 的位图接口 bspDoutSetBitmap()，在各自子状态中
- * 指定位置调用 —— 没有中间状态表，也没有通用 apply 包装：
+ * Pin handling: each sub-state writes its own complete level via the BSP bitmap
+ * API - no intermediate state table, no generic "apply" wrapper:
  *
- *   doutWrite(SM_RELAY_ALL, S1_STANDBY_RELAY);                // 继电器电平：要的写 1，其余写 0
- *   doutWrite(SM_LED_ALL, ...);                               // 面板 LED：要的写 1，其余 LED 写 0
- *   doutWrite(SM_DRV_ALL, ...);                             // 状态驱动 (DRV_*)：要的写 1，其余写 0
+ *   doutWrite(SM_RELAY_ALL, S1_STANDBY_RELAY);   // relays: listed on, the rest off
+ *   doutWrite(SM_LED_ALL, ...);                  // panel LEDs: listed on, the rest off
+ *   doutWrite(SM_DRV_ALL, ...);                  // status drivers: listed on, the rest off
  *
- * 每个状态写出自己那一份完整电平，不做"整组复位再重设"：
- * 本状态仍然要合的路（例如 RUN 状态里的 K3/K13）不会被中途拉掉，
- * 只把本状态不需要的路明确写 0。relay 与 led 写法完全一致，不区分系统归属。
- * K2~K7 是交流继电器，K8_1/K8_2/K9~K13 是 efuse。每个状态用 doutWrite(SM_RELAY_ALL, 集合)
- * 一次性给出该状态的完整继电器电平：集合内的合上，其余（含上一状态遗留的）全部写 0。
- * 例：T2 使能 S1_RUN_RELAY，K2 等其余关闭；T3 使能 S1_RUN_OR_RELAY，K3/K6 等关闭。
+ * A state never "resets the whole group and then re-sets": relays it keeps
+ * closed (e.g. K3/K10 in T0/T2/T4) are not dropped, only the ones it does not
+ * need are explicitly written 0.
+ * K2~K7 are AC relays; K8_1/K8_2/K9~K13 are efuses.
  *
- * WDI(PH9) 归 max6703a 模块，本文件一律不触碰。
+ * WDI (PH9) belongs to the max6703a module and is never touched here.
  */
 /*----------------------------------------------------------------------------*/
+
+/* Zephyr */
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 
-#include "indicator.h"       /* 状态指示灯（PA5，应用层） */
-#include "state_machine.h"   /* 管脚定义 / 电平写入 / 输入判定（S1/S2 共用） */
+/* Application */
+#include "indicator.h"       
+#include "state_machine.h"   
 #include "sm_s1.h"
 
-/* 状态名（仅本文件打印用） */
+/* State names (for logs in this file) */
 static const char *s1StateName(smS1State_t st);
 
-/* ==================== 各子状态的继电器集合 ====================
- * 每个状态要合哪几路继电器，在这里显式写出来（与 md 的 Relay sequence 对应）：
- *   K2~K7            = 交流继电器（AC）
+/* ==================== Per-state relay sets ====================
+ * The relays each state closes are listed explicitly here (md Relay sequence):
+ *   K2~K7            = AC relays
  *   K8_1/K8_2/K9~K13 = efuse
  */
-/* 待机回路（md T0） */
+/* Standby loop (md T0). K9/K11 (IS_PC_ON) and K13 (APP_HOST_ON) are added
+ * conditionally in s1OutputStandby. */
 #define S1_STANDBY_RELAY      (K3 | K10)
-/* 市电掉电仍保持待机回路（md T1） */
-#define S1_OFF_NO_MAINS_RELAY (K3 | K13)
-/* 开机（md T2）：AC 与 efuse 两轨同时起步、各轨内部 10ms 依次延时。
- * 注：T2 额外加入 K10 使能；K4/K5 不在集合内，由 s1OutputRunTrolley 按 trolley 连接动态控制。 */
+/* Run (md T2). K4/K5 are not in the set; s1OutputRunTrolley drives them per trolley. */
 #define S1_RUN_RELAY          (K3 | K6 | K7 | \
 			       K8_1 | K9 | K10 | K11 | K12 | K13)
-/* OR 模式（md T3）：市电掉电、推车供电。注意 S1 表 T3 无 K6。 */
-#define S1_RUN_OR_RELAY       (K2 | K7 | \
-			       K8_1 | K9 | K10 | K11 | K12 | K13)
-/* 正常关机（md T4）：待机回路 + K9/K11（IS_PC_ON）/ K10（APP_HOST_ON）动态决定 */
-#define S1_SHUTDOWN_RELAY     (K3 | K10)    /* T4：K3,K10；K13 关闭 */
+/* UPS mode (md T3: mains lost after power-on): base set K2,K10; K9/K11 and K13
+ * are added conditionally in s1OutputUps. */
+#define S1_UPS_RELAY       (K2 | K10)
+/* Normal shutdown (md T4): base K3/K10; K9/K11 and K13 are conditional. */
+#define S1_SHUTDOWN_RELAY     (K3 | K10)    /* T4: K3,K10; K13 off */
 
-/* ==================== 内部状态 ==================== */
+/* ==================== Internal state ==================== */
 
 static smS1State_t s1_state = SM_S1_STANDBY;
 static int64_t     s1_entry_ms;
 static uint32_t    s1_prev_din;
-static bool        s1_prev_valid;   /* 首个 tick 不做边沿判定（无历史值） */
+static bool        s1_prev_valid;   /* first tick: no edge detection */
 
-/* 开关键（SYSTEM_ON_OFF1）按下时长门限（ms）：
- *   500ms ~ 5s（松手）→ onoff_2s  ：开机 / 关机（按满 500ms 后松手瞬间生效）
- *   >= 5s（仍按住）   → onoff_long：软件复位（从按下时刻起算，不受 500ms 影响）
- *   同一次按下只执行一次开/关机（acted）；关机后 T4 为稳态，再按一次开机。 */
-#define S1_ONOFF_MIN_MS     500   /* >= 500ms：武装，松手时执行开/关机 */
-#define S1_ONOFF_RESET_MS 5000   /* >= 5s：软件复位（按满后松手触发）*/
+/* On/off key (SYSTEM_ON_OFF1) hold thresholds (ms):
+ *   500 ms ~ 5 s released -> onoff_2s  : power on / off (acts on release)
+ *   >= 5 s (still held)   -> onoff_long: software reset
+ * One press performs at most one on/off (acted). */
+#define S1_ONOFF_MIN_MS     500   /* >= 500 ms: armed, acts on release */
+#define S1_ONOFF_RESET_MS  5000   /* >= 5 s: software reset (on release) */
 
-/* 软件复位：先全断，保持该时长后再进 T0/T1 */
-#define S1_SW_RESET_MS 1000      /* 软件复位态保持时长，之后进 T0/T1 */
+/* Software reset: all off, then T0/T1 after this hold time */
+#define S1_SW_RESET_MS 1000      /* SW_RESET dwell time */
 
-/* 硬件复位：SYSTEM_RESET 释放后再保持该时长，市电正常才回 T0 */
+/* Hardware reset: hold after SYSTEM_RESET release, then T0 if mains OK */
 #define S1_RESET_HOLD_MS 2000
 
-/* T2 开机后 60s 内禁止关机（只能软件复位）*/
+/* No shutdown within 60 s after power-on in T2 (SW reset only) */
 #define S1_RUN_NO_OFF_MS 60000
 
-static bool    s1_onoff_pressed;      /* 当前是否处于按下过程 */
-static int64_t s1_onoff_start_ms;     /* 本次按下的起始时刻 */
-static bool    s1_onoff_2s_fired;     /* 已按满 500ms（武装，松手时执行开/关机）*/
-static bool    s1_onoff_reset_armed;  /* 本次按下是否已按满 5s（松手时复位）*/
-static bool    s1_onoff_acted;        /* 本次按下是否已执行过开/关机（松手事件期）*/
+static bool    s1_onoff_pressed;      /* key currently pressed */
+static int64_t s1_onoff_start_ms;     /* press start time */
+static bool    s1_onoff_2s_fired;     /* armed at 500 ms (acts on release) */
+static bool    s1_onoff_reset_armed;  /* armed at 5 s (reset on release) */
+static bool    s1_onoff_acted;        /* already performed on/off this press */
 
-/* K4/K5 随 trolley，但按 10ms 顺序使能：0=全断, 1=K4合, 2=K4+K5合 */
+/* K4/K5 follow trolley with a 10 ms step: 0=off, 1=K4 closed, 2=K4+K5 closed */
 #define S1_K45_STEP_MS 10
 static uint8_t s1_k45_state;
 static int64_t s1_k45_ms;
 
-static bool s1_t2_rep_valid;   /* T2 小车上报缓存 */
+/* IS_PC_ON / APP_HOST_ON latch-off (shared by T0/T3/T4): once an input goes low
+ * it is latched off; re-sampled on the first call after entering T0/T3/T4. */
+static bool s1_od_active;      /* T0/T3/T4 entry re-sampled */
+static bool s1_ispc_off;
+static bool s1_apphost_off;
+
+/* Re-sample the IS_PC_ON / APP_HOST_ON latch on state entry, then latch any low */
+static void s1UpdateOdLatch(uint32_t din)
+{
+	if (!s1_od_active) {
+		s1_od_active      = true;
+		s1_ispc_off       = false;
+		s1_apphost_off    = false;
+	}
+	if (!isPcOn(din)) {
+		s1_ispc_off = true;
+	}
+	if (!isAppHostOn(din)) {
+		s1_apphost_off = true;
+	}
+}
+
+/* Latched-on condition: input high and never seen low since state entry */
+static bool s1PcLatched(uint32_t din)
+{
+	return isPcOn(din) && !s1_ispc_off;
+}
+
+static bool s1AppHostLatched(uint32_t din)
+{
+	return isAppHostOn(din) && !s1_apphost_off;
+}
+
+static bool s1_t2_rep_valid;   /* T2 trolley report cache */
 static bool s1_t2_rep_trolley;
 
-/* 继电器控制日志：把当前状态要合的 K 打印出来（只在集合变化时打印一次）*/
+/* Relay log: print the K set of the current state (only when it changes) */
 static const struct { uint64_t bit; const char *name; } s1_k_tab[] = {
 	{ K2, "K2" }, { K3, "K3" }, { K4, "K4" }, { K5, "K5" }, { K6, "K6" },
 	{ K7, "K7" }, { K8_1, "K8_1" }, { K8_2, "K8_2" }, { K9, "K9" },
@@ -100,7 +132,7 @@ static void s1RelayLog(const char *stage, uint64_t mask)
 	size_t off = 0;
 
 	if (valid && mask == prev) {
-		return;   /* 集合未变 → 不打印 */
+		return;   /* unchanged -> do not print */
 	}
 	valid = true;
 	prev  = mask;
@@ -121,65 +153,74 @@ static void s1RelayLog(const char *stage, uint64_t mask)
 	printk("S1 %s relay: %s\n", stage, buf);
 }
 
-/* ==================== 各子状态的管脚输出 ==================== */
-/* 管脚号直接写在各状态自己的函数里，改哪一路就改哪一行 */
+/* ==================== Per-state output functions ==================== */
 
-/* 24V 判定：打印采样值（换算 mV + 原始 ADC 计数），返回是否通过 */
+/* 24V check: print the reading (scaled mV + raw ADC) and return pass/fail */
 static bool s1Check24V(const char *stage)
 {
 	const uint32_t mv = sensorGetPhys(SM_24V_AIN_CH);
 	const bool     ok = is24VOk();
 
-	printk("S1: %s 24V 检测 %u mV (raw %u, 门限 %u mV) -> %s\n",
+	printk("S1: %s 24V check %u mV (raw %u, threshold %u mV) -> %s\n",
 	       stage, mv, bspAinGetRawValue(SM_24V_AIN_CH), SM_24V_MIN_MV,
-	       ok ? "OK" : "异常");
+	       ok ? "OK" : "FAIL");
 
 	return ok;
 }
 
-/* T0 待机：按 trolley 连接状态单独置/清这 4 路。
- * 注意用按位写（不是 doutWrite 全量写），否则会把 T0 其它 LED/驱动一起清掉。 */
-static void s1StandbyTrolley(uint32_t din)
-{
-	const bool on = isTrolleyConnectedDebounced();
-
-	bspDoutSetBitmap(LED_TROLLEY_CONNECTED, on);                              /* LED */
-	bspDoutSetBitmap(DRV_TROLLEY_EN | DRV_TRL_MU_MCU | DRV_TRL_MU_IS_PC, on); /* DRV */
-}
-
-/* STANDBY（md T0）上电待机：K3 + K13 待机回路 + 供电指示 */
+/* STANDBY (md T0; identically the "UPS mode, mains restored" result of md
+ * section 7, because mains restore leads here):
+ *   relays  K3,K10 + K9/K11 (IS_PC_ON) + K13 (APP_HOST_ON)
+ *   LEDs    GRID / S1_SYS_ON / PWR24 / CP24 / PAC230V (+ trolley)
+ *   drivers MAINS_CONNECTED_MCU/IS_PC (+ trolley); the IS_PC/APP_HOST "site"
+ *           drivers themselves are only enabled from T2/T3 on */
 static void s1OutputStandby(uint32_t din)
 {
-	doutWrite(SM_RELAY_ALL, S1_STANDBY_RELAY);
-	s1RelayLog("T0", S1_STANDBY_RELAY);
-	/* md T0 输出：GRID / S1_SYS_ON / PWR24 / CP224 / PAC230V + MAINS_CONNECTED_*
-	 * （PD4 LED_SYS_ON 仅开机态使能，待机不亮）*/
-	doutWrite(SM_LED_ALL, LED_GRID_PWR_IN | LED_S1_SYS_ON | LED_PWR24V_ON | LED_CP24V_ON | LED_PAC230V_ON);
-	doutWrite(SM_DRV_ALL, 0);   /* T0：K9/K5/K11 由继电器组清；DRV_IS_PC_SITE / DRV_APP_HOST 在这里清 */
-	s1StandbyTrolley(din);   /* T0 也实时跟随 trolley（LED + DRV）*/
-	/* 状态指示灯：待机 → 呼吸灯 */
-	indicatorSetMode(INDICATOR_BREATH);
+	const bool trolley = isTrolleyConnectedDebounced();
+	uint64_t relay = S1_STANDBY_RELAY;                  /* K3 | K10 */
+	uint64_t led   = LED_GRID_PWR_IN | LED_S1_SYS_ON | LED_PWR24V_ON |
+			 LED_CP24V_ON | LED_PAC230V_ON;
+	uint64_t drv   = DRV_MAINS_CONNECTED_MCU | DRV_MAINS_CONNECTED_IS_PC;
+
+	s1UpdateOdLatch(din);
+
+	if (s1PcLatched(din)) {
+		relay |= (K9 | K11);
+	}
+	if (s1AppHostLatched(din)) {
+		relay |= K13;
+	}
+
+	if (trolley) {
+		led |= LED_TROLLEY_CONNECTED;
+		drv |= DRV_TROLLEY_EN | DRV_TRL_MU_MCU | DRV_TRL_MU_IS_PC;
+	}
+
+	doutWrite(SM_RELAY_ALL, relay);
+	s1RelayLog("T0", relay);
+	doutWrite(SM_LED_ALL, led);
+	doutWrite(SM_DRV_ALL, drv);
+	indicatorSetMode(INDICATOR_BREATH);   /* standby -> breathing */
 }
 
-/* OFF_NO_MAINS（md T1）市电掉电 / OR 关机：继电器保持待机回路（同 STANDBY）
- * LED：md 未给出该状态的点亮要求 → 全灭（若需与 STANDBY 一致请说明） */
-/* T1 市电掉电 / OR 关机（md）：保持待机回路（K3,K13），LED / 驱动全灭 */
+/* OFF_NO_MAINS (md T1; md section 8 says the UPS-mode power-off closes every
+ * relay / signal / efuse enable and then waits for the supply to drop) */
 static void s1OutputOffNoMains(void)
 {
-	// doutWrite(SM_RELAY_ALL, S1_OFF_NO_MAINS_RELAY);   /* K3 | K13 */
-	// doutWrite(SM_LED_ALL, 0);
-	// doutWrite(SM_DRV_ALL, 0);
-	// indicatorSetMode(INDICATOR_OFF);
+	doutWrite(SM_RELAY_ALL, 0);   /* all relays / efuse enables off */
+	s1RelayLog("T1", 0);
+	doutWrite(SM_LED_ALL, 0);
+	doutWrite(SM_DRV_ALL, 0);
+	indicatorSetMode(INDICATOR_OFF);
 }
 
-/* T2 的输出（LED + 驱动）：固定部分 + 仅推车连接时点亮/使能的部分（md T2 补充：
- * 连接 → LED_TROLLEY_CONNECTED / TROLLEY_ENABLE_DRV / TRL_MU_CONNECTED_MCU /
- * TRL_MU_CONNECTED_IS_PC；断开 → 关断）。每个 tick 调用以持续跟随 trolley。 */
+/* T2 outputs (LEDs + drivers): fixed part plus the trolley-conditional part
+ * (md T2 note). Called every tick to keep following the trolley. */
 static void s1OutputRunTrolley(uint32_t din)
 {
 	const bool trolley = isTrolleyConnectedDebounced();
 
-	/* T2 小车连接状态上报：只在跳变时打印（本函数每 1ms 调用一次）*/
+	/* T2 trolley report: print only on change (this runs every 1 ms) */
 	if (!s1_t2_rep_valid || s1_t2_rep_trolley != trolley) {
 		s1_t2_rep_valid   = true;
 		s1_t2_rep_trolley = trolley;
@@ -201,10 +242,10 @@ static void s1OutputRunTrolley(uint32_t din)
 	doutWrite(SM_LED_ALL, led);
 	doutWrite(SM_DRV_ALL, drv);
 
-	/* K4/K5：随 trolley（连接 → K4 先合、10ms 后 K5；断开 → 立即断开），
-	 * 不在 S1_RUN_RELAY 内，由本函数单独控制。 */
+	/* K4/K5 follow trolley (K4 first, K5 10 ms later; open immediately on loss).
+	 * They are not part of S1_RUN_RELAY and are driven here. */
 	if (!trolley) {
-		bspDoutSetBitmap(K4 | K5, false);   /* 未连接 → 关闭 K4/K5 */
+		bspDoutSetBitmap(K4 | K5, false);   /* not connected -> open K4/K5 */
 		s1_k45_state = 0U;
 		return;
 	}
@@ -221,36 +262,47 @@ static void s1OutputRunTrolley(uint32_t din)
 	}
 }
 
-/* RUN（md T2）系统开机：使能 S1_RUN_RELAY（K3,K6,K7,K8_1,K9,K10,K11,K12,K13），
- * 关闭 K2 / K4 / K5 等其余；K4/K5 另由 s1OutputRunTrolley 按 trolley 顺序使能。 */
+/* RUN (md T2): enable S1_RUN_RELAY, disable the rest (K2/K4/K5 handled by
+ * s1OutputRunTrolley). */
 static void s1OutputRun(uint32_t din)
 {
 	doutWriteKeep(SM_RELAY_ALL, S1_RUN_RELAY, K4 | K5);
-	s1RelayLog("T2", S1_RUN_RELAY);   /* K4/K5 不在此处动，交给 trolley 逻辑 */
+	s1RelayLog("T2", S1_RUN_RELAY);
 	s1OutputRunTrolley(din);
-	indicatorSetMode(INDICATOR_ON);   /* 开机运行 → 常亮 */
+	indicatorSetMode(INDICATOR_ON);   /* running -> solid on */
 }
 
-/* RUN_OR（md T3）开机后市电掉电（OR 模式）：使能 S1_RUN_OR_RELAY
- * （K2,K7,K8_1,K9,K10,K11,K12,K13），关闭 K3 / K6 等其余。 */
-static void s1OutputRunOr(void)
+/* UPS mode (md T3: mains lost after power-on). Base S1_UPS_RELAY (K2,K10) plus
+ * the conditional outputs (same one-way latch as T0/T4):
+ *   IS_PC_ON    high -> K9 | K11 + DRV_IS_PC_SITE ; low -> all three off
+ *   APP_HOST_ON high -> K13      + DRV_APP_HOST   ; low -> both off
+ * md T3 lists no LED_SYSTEM_ON. */
+static void s1OutputUps(uint32_t din)
 {
-	/* OR 态市电掉电：LED_GRID_PWR_IN 不在 mask 内 → doutWrite(SM_LED_ALL, …) 会自动熄灭它 */
-	doutWrite(SM_LED_ALL, LED_UPS_IN | LED_S1_SYS_ON | LED_SYS_ON | LED_PWR24V_ON | LED_CP24V_ON |
-		 LED_PAC230V_ON | LED_TROLLEY_CONNECTED);
-	doutWrite(SM_DRV_ALL, DRV_IS_PC_SITE | DRV_APP_HOST);
-	indicatorSetMode(INDICATOR_ON);   /* 开机运行(OR) → 常亮 */
-	doutWrite(SM_RELAY_ALL, S1_RUN_OR_RELAY);
-	s1RelayLog("T3", S1_RUN_OR_RELAY);
+	uint64_t relay = S1_UPS_RELAY;                   /* K2 | K10 */
+	uint64_t drv   = 0;
+
+	s1UpdateOdLatch(din);
+
+	if (s1PcLatched(din)) {
+		relay |= (K9 | K11);
+		drv   |= DRV_IS_PC_SITE;
+	}
+	if (s1AppHostLatched(din)) {
+		relay |= K13;
+		drv   |= DRV_APP_HOST;
+	}
+
+	doutWrite(SM_RELAY_ALL, relay);
+	s1RelayLog("T3", relay);
+	doutWrite(SM_LED_ALL, LED_UPS_IN | LED_S1_SYS_ON | LED_PWR24V_ON |
+			     LED_CP24V_ON | LED_PAC230V_ON | LED_TROLLEY_CONNECTED);
+	doutWrite(SM_DRV_ALL, drv);
+	indicatorSetMode(INDICATOR_ON);   /* UPS mode -> solid on */
 }
 
-/* T4 输入（trolley / IS_PC_ON / APP_HOST_ON）变化上报：
- * s1OutputShutdown 每 1ms 被调用一次，这里只在三者任一跳变时打印一行，避免刷屏。 */
-/* T4 里 IS_PC / APP_HOST 输出的“锁存关断”：一旦输入变低就锁死，
- * 之后输入再变高也不恢复（重新进入 T4 时复位）。 */
-static bool s1_t4_active;      /* 本次 T4 是否已做过入口重采样 */
-static bool s1_t4_ispc_off;
-static bool s1_t4_apphost_off;
+/* T4 input report (trolley / IS_PC_ON / APP_HOST_ON): this function runs every
+ * 1 ms, so print only when one of the three changes. */
 
 static bool s1_t4_rep_valid;
 static bool s1_t4_rep_trolley;
@@ -265,7 +317,7 @@ static void s1ReportShutdownInputs(uint32_t din)
 
 	if (s1_t4_rep_valid && trolley == s1_t4_rep_trolley &&
 	    ispc == s1_t4_rep_ispc && apphost == s1_t4_rep_apphost) {
-		return;   /* 无变化 → 不打印 */
+		return;   /* unchanged -> do not print */
 	}
 	s1_t4_rep_valid   = true;
 	s1_t4_rep_trolley = trolley;
@@ -275,14 +327,14 @@ static void s1ReportShutdownInputs(uint32_t din)
 	printk("S1 T4: trolley=%d is_pc_on=%d app_host_on=%d\n", trolley, ispc, apphost);
 }
 
-/* SHUTDOWN（md T4）正常关机：基态 K3,K10（K13 关闭）+ 动态位（每 1ms 随输入刷新）
- *   trolley 连接 → LED_TROLLEY_CONNECTED + TROLLEY_EN + TRL_MU_MCU/IS_PC（不控 K4/K5）
- *   IS_PC_ON    高 → K9 | K11 + DRV_IS_PC_SITE_ON；低 → 三者关闭
- *   APP_HOST_ON 高 → K13      + DRV_APP_HOST_SITE_ON；低 → 二者关闭 */
+/* SHUTDOWN (md T4): base K3,K10 (K13 off) plus dynamic bits (refreshed every ms)
+ *   trolley connected -> LED_TROLLEY_CONNECTED + TROLLEY_EN + TRL_MU_MCU/IS_PC
+ *   IS_PC_ON    high -> K9 | K11   (DRV_IS_PC_SITE is only on in the running states)
+ *   APP_HOST_ON high -> K13        (DRV_APP_HOST    is only on in the running states)*/
 static void s1OutputShutdown(uint32_t din)
 {
 	const bool trolley = isTrolleyConnectedDebounced();
-	uint64_t relay = S1_SHUTDOWN_RELAY;                     /* K3 | K10（K13 关闭）*/
+	uint64_t relay = S1_SHUTDOWN_RELAY;                     /* K3 | K10 (K13 off) */
 	uint64_t led   = LED_GRID_PWR_IN | LED_PWR24V_ON | LED_CP24V_ON | LED_PAC230V_ON;
 	uint64_t drv   = DRV_MAINS_CONNECTED_MCU | DRV_MAINS_CONNECTED_IS_PC;
 
@@ -297,53 +349,35 @@ static void s1OutputShutdown(uint32_t din)
 		drv &= ~(DRV_TROLLEY_EN | DRV_TRL_MU_MCU | DRV_TRL_MU_IS_PC);
 	}
 
-	/* 进入 T4 后的“第一次”调用：先把锁存清零，从此刻起重新采样这两个输入。
-	 * 之前状态里出现过的低电平不会被带进来 —— 只有进入关机态之后看到的低才算。 */
-	if (!s1_t4_active) {
-		s1_t4_active      = true;
-		s1_t4_ispc_off    = false;
-		s1_t4_apphost_off = false;
-	}
+	s1UpdateOdLatch(din);
 
-	/* IS_PC / APP_HOST：锁存单向 —— 输入为高则输出高；一旦（进入 T4 之后）输入变低
-	 * 就锁存关断，之后再变高也不恢复（要重新进入 T4 才会复位锁存）。 */
-	if (!isPcOn(din)) {
-		s1_t4_ispc_off = true;
-	}
-	if (!isAppHostOn(din)) {
-		s1_t4_apphost_off = true;
-	}
-
-	if (isPcOn(din) && !s1_t4_ispc_off) {
+	/* IS_PC / APP_HOST only affect relays here (K9/K11; K13).
+	 * DRV_IS_PC_SITE / DRV_APP_HOST are only enabled in the running states. */
+	if (s1PcLatched(din)) {
 		relay |= (K9 | K11);
-		drv   |= DRV_IS_PC_SITE;
 	}
 	else {
-		relay &= ~(K9 | K11);               /* IS_PC 侧关闭（输入低 / 已锁存关断）*/
-		drv   &= ~DRV_IS_PC_SITE;
+		relay &= ~(K9 | K11);
 	}
 
-	if (isAppHostOn(din) && !s1_t4_apphost_off) {
+	if (s1AppHostLatched(din)) {
 		relay |= K13;
-		drv   |= DRV_APP_HOST;
 	}
 	else {
-		relay &= ~K13;               /* APP_HOST 侧关闭（输入低 / 已锁存关断）*/
-		drv   &= ~DRV_APP_HOST;
+		relay &= ~K13;
 	}
 
 	doutWrite(SM_RELAY_ALL, relay);
 	s1RelayLog("T4", relay);
 	doutWrite(SM_LED_ALL, led);
 	doutWrite(SM_DRV_ALL, drv);
-	indicatorSetMode(INDICATOR_BREATH);   /* 关机态与待机一致：呼吸灯 */
+	indicatorSetMode(INDICATOR_BREATH);   /* shutdown looks like standby: breathing */
 }
 
-/* RESET 硬件复位：全部断开（md：K OFF）*/
-/* 软件复位（md 软件复位）：先把 K3/K10 及其余全部输出关闭 */
+/* Software reset: turn everything off (all relays, LEDs, drivers) */
 static void s1OutputSwReset(void)
 {
-	doutWrite(SM_RELAY_ALL, 0);   /* K3/K10/K13 … 全断 */
+	doutWrite(SM_RELAY_ALL, 0);   /* all relays off */
 	s1RelayLog("SW_RESET", 0);
 	doutWrite(SM_LED_ALL, 0);
 	doutWrite(SM_DRV_ALL, 0);
@@ -359,14 +393,14 @@ static void s1OutputReset(void)
 	indicatorSetMode(INDICATOR_OFF);
 }
 
-/* 进入某子状态时写它自己的输出（每 1ms 也会由 smS1Tick 再调一次，需幂等）*/
+/* Write a state's own outputs (also called every 1 ms from smS1Tick: idempotent) */
 static void s1Output(smS1State_t st, uint32_t din)
 {
 	switch (st) {
 	case SM_S1_STANDBY:      s1OutputStandby(din);   break;
 	case SM_S1_OFF_NO_MAINS: s1OutputOffNoMains();   break;
 	case SM_S1_RUN:          s1OutputRun(din);       break;
-	case SM_S1_RUN_OR:       s1OutputRunOr();        break;
+	case SM_S1_UPS:       s1OutputUps(din);     break;
 	case SM_S1_SHUTDOWN:     s1OutputShutdown(din);  break;
 	case SM_S1_RESET:        s1OutputReset();        break;
 	case SM_S1_SW_RESET:     s1OutputSwReset();     break;
@@ -374,44 +408,44 @@ static void s1Output(smS1State_t st, uint32_t din)
 	}
 }
 
-/* ==================== 状态切换 ==================== */
+/* ==================== State transitions ==================== */
 
 static void s1EnterState(smS1State_t st, uint32_t din)
 {
 	s1_state    = st;
 	s1_entry_ms = k_uptime_get();
-	s1_k45_state      = 0U;   /* K4/K5 顺序使能重新开始 */
+	s1_k45_state      = 0U;   /* restart the K4/K5 sequence */
 
 	printk("S1: -> %s\n", s1StateName(st));
 
-	s1_t2_rep_valid = false;   /* 新状态：T2 小车上报缓存失效 */
+	s1_t2_rep_valid = false;   /* new state: invalidate the T2 trolley report */
 	s1_t4_rep_valid = false;
-	s1_t4_active = false;     /* 新状态：下次进 T4 会重新采样 IS_PC/APP_HOST */
+	s1_od_active = false;     /* new state: IS_PC/APP_HOST will be re-sampled */
 
-	/* 进入时立即写一次：RESET 态在 tick 里会提前 return，到不了每 tick 的
-	 * s1Output；其它态只是提前 1ms 生效（幂等，无副作用）。 */
+	/* Write once on entry: RESET returns early in the tick and would never reach
+	 * the per-tick s1Output; other states just apply 1 ms earlier (idempotent). */
 	s1Output(st, din);
 }
 
-/* ==================== 对外接口 ==================== */
+/* ==================== Public API ==================== */
 
 static const char *s1StateName(smS1State_t st)
 {
 	switch (st) {
-	case SM_S1_STANDBY:      return "STANDBY 上电待机 (T0)";
-	case SM_S1_OFF_NO_MAINS: return "OFF 市电掉电/OR关机 (T1)";
-	case SM_S1_RUN:          return "RUN 系统开机 (T2)";
-	case SM_S1_RUN_OR:       return "RUN 开机后市电掉电OR (T3)";
-	case SM_S1_SHUTDOWN:     return "SHUTDOWN 正常关机 (T4)";
-	case SM_S1_RESET:        return "RESET 硬件复位";
-	case SM_S1_SW_RESET:     return "SW_RESET 软件复位";
+	case SM_S1_STANDBY:      return "STANDBY (T0)";
+	case SM_S1_OFF_NO_MAINS: return "OFF_NO_MAINS (T1)";
+	case SM_S1_RUN:          return "RUN (T2)";
+	case SM_S1_UPS:       return "UPS (T3)";
+	case SM_S1_SHUTDOWN:     return "SHUTDOWN (T4)";
+	case SM_S1_RESET:        return "RESET (hardware)";
+	case SM_S1_SW_RESET:     return "SW_RESET (software)";
 	default:                 return "?";
 	}
 }
 
 void smS1Enter(void)
 {
-	s1_prev_valid = false;      /* 进入后首个 tick 只记录输入，不判边沿 */
+	s1_prev_valid = false;      /* first tick records inputs without edges */
 	s1_prev_din   = 0;
 	s1_onoff_pressed    = false;
 	s1_onoff_start_ms   = 0;
@@ -419,9 +453,7 @@ void smS1Enter(void)
 	s1_onoff_reset_armed = false;
 	s1_onoff_acted      = false;
 
-	/* 按当前输入直接进入正确的初始子状态：
-	 * 市电正常 → T0(STANDBY)，市电掉电 → T1(OFF_NO_MAINS)，
-	 * 避免先误进 T0 再被下一个 tick 拉去 T1。 */
+	/* Enter the correct initial sub-state directly: mains OK -> T0, else T1. */
 	const uint32_t din = bspDinGetBitmap();
 
 	s1EnterState(isMainsOk(din) ? SM_S1_STANDBY : SM_S1_OFF_NO_MAINS, din);
@@ -437,13 +469,13 @@ smS1State_t smS1Tick(uint32_t din)
 	const bool    reset_prev = isResetActive(s1_prev_din);
 
 	bool reset_rise  = reset && !reset_prev;
-	bool onoff_2s    = false;   /* 满 500ms 后松手：开机 / 关机 */
-	bool onoff_long  = false;   /* 按满 5s（仍按住）：软件复位 */
+	bool onoff_2s    = false;   /* released after 500 ms: on/off */
+	bool onoff_long  = false;   /* held 5 s: software reset */
 
-	/* ---- 开关键计时（低→高 = 按下）----
-	 *   按满 500ms 后「松手」(高→低) → onoff_2s  （开机/关机，每次按下只一次）；
-	 *   按满 5s    后「松手」(高→低) → onoff_long（软件复位）。
-	 *   两者都在松手沿触发；>= 5s 时只复位、不再执行开/关机。 */
+	/* ---- On/off key timing (low->high = pressed) ----
+	 *   released after >= 500 ms -> onoff_2s  (power on/off, once per press)
+	 *   released after >= 5 s     -> onoff_long (software reset)
+	 * Both fire on the release edge; >= 5 s only resets, no on/off. */
 	if (!s1_prev_valid) {
 		reset_rise = false;
 		s1_onoff_pressed    = onoff;
@@ -452,18 +484,18 @@ smS1State_t smS1Tick(uint32_t din)
 		s1_onoff_reset_armed = false;
 		s1_onoff_acted      = false;
 		s1_prev_valid = true;
-	} else if (onoff && !onoff_prev) {              /* 低→高：按下 */
+	} else if (onoff && !onoff_prev) {              /* low->high: pressed */
 		s1_onoff_pressed    = true;
 		s1_onoff_start_ms   = now;
 		s1_onoff_2s_fired   = false;
 		s1_onoff_reset_armed = false;
 		s1_onoff_acted      = false;
-	} else if (!onoff && onoff_prev) {              /* 高→低：松手 → 在此刻动作 */
+	} else if (!onoff && onoff_prev) {              /* high->low: released, act now */
 		s1_onoff_pressed = false;
 		if (s1_onoff_reset_armed) {
-			onoff_long = true;                      /* 满 5s 后松手 → 软件复位 */
+			onoff_long = true;                      /* released after 5 s -> reset */
 		} else if (s1_onoff_2s_fired) {
-			onoff_2s = true;                        /* 满 500ms 后松手 → 开机/关机 */
+			onoff_2s = true;                        /* released after 500 ms -> on/off */
 		}
 		s1_onoff_2s_fired    = false;
 		s1_onoff_reset_armed = false;
@@ -474,18 +506,15 @@ smS1State_t smS1Tick(uint32_t din)
 		const int64_t held = now - s1_onoff_start_ms;
 
 		if (held >= S1_ONOFF_RESET_MS) {
-			s1_onoff_reset_armed = true;            /* 满 5s：复位武装 */
+			s1_onoff_reset_armed = true;            /* 5 s: reset armed */
 		} else if (held >= S1_ONOFF_MIN_MS) {
-			s1_onoff_2s_fired = true;               /* 满 500ms：开/关机武装 */
+			s1_onoff_2s_fired = true;               /* 500 ms: on/off armed */
 		}
 	}
 
-	/* 判定规则（当前版本）：全部只看市电 ME_BOX_ERROR。
-	 *   - T1(市电掉电) 只由 mains == false 触发；
-	 *   - 开机中市电掉电 → T3(OR)；
-	 *   - 暂不判断 trolley 连接状态（不参与任何状态迁移）。 */
+	/* Transitions are driven by mains (ME_BOX_ERROR) only. */
 
-	/* ---- 1) 硬件复位优先：SYSTEM_RESET 上升沿 → 全部重新初始化 ---- */
+	/* ---- 1) Hardware reset first: SYSTEM_RESET rising edge -> full re-init ---- */
 	if (reset_rise) {
 		s1_onoff_pressed    = false;
 		s1_onoff_2s_fired   = false;
@@ -496,7 +525,7 @@ smS1State_t smS1Tick(uint32_t din)
 		return s1_state;
 	}
 
-	/* ---- 2) 硬件复位态：reset 释放后 2s，市电正常回 T0，否则保持关机 ---- */
+	/* ---- 2) RESET state: 2 s after release, T0 if mains OK, else stay off ---- */
 	if (s1_state == SM_S1_RESET) {
 		if (!reset && (now - s1_entry_ms) >= S1_RESET_HOLD_MS) {
 			s1EnterState(mains ? SM_S1_STANDBY : SM_S1_OFF_NO_MAINS, din);
@@ -505,15 +534,15 @@ smS1State_t smS1Tick(uint32_t din)
 		return s1_state;
 	}
 
-	/* ---- 3) 软件复位：SYSTEM_ON_OFF 按满 >= 5s 后松手（任意状态）----
-	 * 进入独立的 SW_RESET 子状态：先把 K3/K10 等全部输出关闭，稳定后再进 T0/T1。 */
+	/* ---- 3) Software reset: key released after >= 5 s (any state) ----
+	 * Enter SW_RESET: all outputs off, then T0/T1. */
 	if (onoff_long) {
 		s1EnterState(SM_S1_SW_RESET, din);
 		s1_prev_din = din;
 		return s1_state;
 	}
 
-	/* ---- 4) 软件复位态：输出已全断，等待 SW_RESET_MS 后按 Tx 判定进 T0/T1 ---- */
+	/* ---- 4) SW_RESET state: wait SW_RESET_MS, then T0/T1 by mains ---- */
 	if (s1_state == SM_S1_SW_RESET) {
 		if ((now - s1_entry_ms) >= S1_SW_RESET_MS) {
 			s1EnterState(mains ? SM_S1_STANDBY : SM_S1_OFF_NO_MAINS, din);
@@ -523,49 +552,51 @@ smS1State_t smS1Tick(uint32_t din)
 	}
 
 
-	/* ---- 状态转换 ---- */
+	/* ---- Transitions ---- */
 	switch (s1_state) {
 
-	case SM_S1_STANDBY:   /* T0 上电待机 */
+	case SM_S1_STANDBY:   /* T0 standby */
 		if (!mains) {
-			s1EnterState(SM_S1_OFF_NO_MAINS, din);   /* 仅市电掉电 → T1 */
-		} else if (onoff_2s && s1Check24V("开机")) {
-			s1_onoff_acted = true;                   /* 本次按下已动作 → 不再关机 */
-			s1EnterState(SM_S1_RUN, din);            /* 满 500ms 松手且 24V 正常 → 开机 */
+			s1EnterState(SM_S1_OFF_NO_MAINS, din);   /* mains lost -> T1 */
+		} else if (onoff_2s && s1Check24V("power-on")) {
+			s1_onoff_acted = true;                   /* this press already acted */
+			s1EnterState(SM_S1_RUN, din);            /* 24V OK -> power on */
 		}
 		break;
 
-	case SM_S1_OFF_NO_MAINS:   /* T1 市电掉电 / OR 关机 */
+	case SM_S1_OFF_NO_MAINS:   /* T1 off, mains lost */
 		if (mains) {
-			s1EnterState(SM_S1_STANDBY, din);        /* 市电恢复 → 回待机 */
+			s1EnterState(SM_S1_STANDBY, din);        /* mains restored -> T0 */
 		}
 		break;
 
-	case SM_S1_RUN:   /* T2 系统开机 */
+	case SM_S1_RUN:   /* T2 running */
 		if (!mains) {
-			s1EnterState(SM_S1_RUN_OR, din);         /* 开机后市电掉电 → OR(T3) */
-		} else if (onoff_2s && !s1_onoff_acted && s1Check24V("关机")) {
-			s1_onoff_acted = true;                   /* 本次按下已动作 */
-			s1EnterState(SM_S1_SHUTDOWN, din);       /* 满 500ms 松手且 24V 正常 → 正常关机 */
+			s1EnterState(SM_S1_UPS, din);         /* mains lost -> T3 */
+		} else if (onoff_2s && !s1_onoff_acted && s1Check24V("power-off")) {
+			s1_onoff_acted = true;                   /* this press already acted */
+			s1EnterState(SM_S1_SHUTDOWN, din);       /* 24V OK -> shutdown */
 		}
 		break;
 
-	case SM_S1_RUN_OR:   /* T3 开机后市电掉电（OR 模式） */
+	case SM_S1_UPS:   /* T3 UPS mode (steady state) */
+		/* T3 may only go to T0 or T1:
+		 *   mains restored -> T0 (standby; does not auto-resume T2)
+		 *   valid power-off -> T1 */
 		if (mains) {
-			s1EnterState(SM_S1_RUN, din);            /* 市电恢复回开机 */
-		}
-		else if (onoff_2s && !s1_onoff_acted && s1Check24V("关机")) {
-			s1_onoff_acted = true;                   /* 本次按下已动作 */
-			s1EnterState(SM_S1_SHUTDOWN, din);       /* OR 态下再按 → 正常关机(T4) */
+			s1EnterState(SM_S1_STANDBY, din);         /* -> T0 */
+		} else if (onoff_2s && !s1_onoff_acted && s1Check24V("power-off")) {
+			s1_onoff_acted = true;                    /* this press already acted */
+			s1EnterState(SM_S1_OFF_NO_MAINS, din);    /* power-off -> T1 */
 		}
 		break;
 
-	case SM_S1_SHUTDOWN:   /* T4 正常关机（稳态：保持关机输出，等按键重新开机）*/
+	case SM_S1_SHUTDOWN:   /* T4 shutdown (steady; wait for the key to power on) */
 		if (!mains) {
-			s1EnterState(SM_S1_OFF_NO_MAINS, din);   /* 市电掉电 → T1 */
-		} else if (onoff_2s && !s1_onoff_acted && s1Check24V("开机")) {
+			s1EnterState(SM_S1_OFF_NO_MAINS, din);   /* mains lost -> T1 */
+		} else if (onoff_2s && !s1_onoff_acted && s1Check24V("power-on")) {
 			s1_onoff_acted = true;
-			s1EnterState(SM_S1_RUN, din);            /* 再按（500ms~5s 松手）→ T2 */
+			s1EnterState(SM_S1_RUN, din);            /* press again -> T2 */
 		}
 		break;
 
@@ -573,14 +604,14 @@ smS1State_t smS1Tick(uint32_t din)
 		break;
 	}
 
-	/* 每 1ms 重新应用当前状态的输出（幂等）：trolley 跟随 / K4,K5 推进 /
-	 * T4 的 IS_PC、APP_HOST 位都随之刷新。 */
+	/* Re-apply the current state's outputs every 1 ms (idempotent): trolley,
+	 * K4/K5 progression and the T4 IS_PC/APP_HOST bits all follow here. */
 	s1Output(s1_state, din);
 
-	/* 开关键按下期间：指示灯走双倍频率呼吸 */
+	/* While the on/off key is held: indicator breathes at double frequency */
 	indicatorSetBreathFast(onoff);
 
-	/* 全局指示灯：PD9 = S1 系统（S1 模式内常亮）；PD6 = 推车连接（与所在状态无关）*/
+	/* Global indicators: PD9 = S1 system (always on in S1); PD6 = trolley connected */
 	bspDoutSetBitmap(BIT64(DOUT_LED_S1_SYS_ON), true);
 	bspDoutSetBitmap(BIT64(DOUT_LED_TROLLEY_CONNECTED), isTrolleyConnectedDebounced());
 

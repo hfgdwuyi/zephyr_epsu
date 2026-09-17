@@ -11,7 +11,7 @@
  *   - FDCAN1: PH13 (CAN1_TX) / PH14 (CAN1_RX)
  *   - FDCAN2: PB13 (CAN2_TX) / PB5  (CAN2_RX)
  *   - I2C1:   PB8 (SCL) / PB9 (SDA), WP on PB7
- *   - Console: USART1 PB14/PB15（USART3 已 disabled，PD8/PD9 用作 GPIO）
+ *   - Console: USART1 PB14/PB15 (USART3 disabled; PD8/PD9 used as GPIO)
  *   - On-board LEDs kept for bsp_led (green PB0 / yellow PE1)
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -24,8 +24,7 @@
 	leds: leds {
 		compatible = "gpio-leds";
 
-		/* LED 低电平点亮 → GPIO_ACTIVE_LOW，gpio_pin_set_dt/toggle_dt
-		 * 会自动反转极性：SwitchOn=物理低=亮。 */
+		/* Active low: gpio_pin_set_dt/toggle_dt apply the polarity. */
 		green_led: led_1 {
 			gpios = <&gpioc 10 GPIO_ACTIVE_LOW>;
 			label = "Status LED green (PC10)";

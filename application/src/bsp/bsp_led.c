@@ -8,7 +8,7 @@
  */
 /*----------------------------------------------------------------------------*/
 
-/* C standard library */
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -21,7 +21,7 @@
 #include "bsp_led.h"
 
 /*! @struct Structure for LED description
- * 产品板 PC8/9/10 三色灯：0=绿(PC10 OK)、1=红(PC9 FAULT)、2=黄(PC8 WARN) */
+ * Board tri-color LEDs PC8/9/10: 0=green(PC10 OK), 1=red(PC9 FAULT), 2=yellow(PC8 WARN) */
 #define BSP_LED_LIST(X)           \
     X(LED_GREEN,  green_led)      \
     X(LED_RED,    red_led)        \
@@ -57,9 +57,8 @@ void bspLedInit(void)
             continue;
         }
 
-        /* 只配方向，初始电平用 gpio_pin_set_dt(0) 显式设（set_dt 会按
-         * ACTIVE_LOW/ACTIVE_HIGH 反转：灭=逻辑 inactive=物理高(对 LOW)）。
-         * 避免 GPIO_OUTPUT_INIT_LOGICAL 在部分驱动里不反转的坑。 */
+        /* Configure direction only; set the level explicitly with
+         * gpio_pin_set_dt(0), which honours ACTIVE_LOW/HIGH. */
         gpio_pin_configure_dt(&ledPinCfg[i], GPIO_OUTPUT);
         gpio_pin_set_dt(&ledPinCfg[i], 0);
     }

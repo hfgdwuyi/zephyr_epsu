@@ -25,7 +25,7 @@
  *     declared absent and vin_rms / freq reset to 0.
  */
 
-/* C standard library */
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -42,7 +42,7 @@
 /* Application */
 #include "ac_meter.h"
 
-/* 初始化明细日志开关：0 = 关闭（默认）；1 = 打印 zero_en 引脚等 */
+/* Verbose init log: 0 = off (default), 1 = print e.g. the zero_en pin */
 #ifndef AC_METER_VERBOSE_LOG
 #define AC_METER_VERBOSE_LOG 0
 #endif

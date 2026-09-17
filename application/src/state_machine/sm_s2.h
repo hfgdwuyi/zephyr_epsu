@@ -1,54 +1,52 @@
 /*!
  * @file sm_s2.h
- * @brief S2 模式状态机 —— 依据 S1_MU_SYS_ctr_logic.md §5/§6
+ * @brief S2 state machine - per "S2 SOLO 逻辑功能测试.md" / "S2 Classis 逻辑功能测试.md"
  *
- * S2 有 solo / classic 两种子模式（pj4 选择），状态骨架与 S1 完全同构：
- *   T0 上电待机 / T1 市电掉电(OR)关机 / T2 系统开机 / T3 开机后市电掉电(OR)
- *   / T4 正常关机 / 硬件复位 / 软件复位
+ * S2 has a solo / classic sub-mode (pj4) and the same state skeleton as S1:
+ *   T0 standby / T1 off (mains lost) / T2 run / T3 UPS / T4 shutdown
+ *   / hardware reset / software reset
  *
- * 判定只看市电 ME_BOX_ERROR；**只有 T2 判断 trolley 连接**（动态开关
- * LED_TROLLEY_CONNECTED / TROLLEY_ENABLE_DRV），其它状态都不考虑 trolley。
+ * Only mains (ME_BOX_ERROR) drives transitions. Trolley is followed in T0/T2/T3/T4.
  *
- * Solo / classic 的差异：模式指示灯（S2_SYS ± S2_SOLO_SYS）与 T3(OR) 的
- * 继电器集合（Solo 多 K5/K8_2）。
+ *   T0 STANDBY      : K3,K10 + MAINS_CONNECTED_MCU/IS_PC (+trolley LEDs/DRV)
+ *   T1 OFF_NO_MAINS : all relays/LEDs/drivers off (wait for the supply to drop)
+ *   T2 RUN          : solo    K3,K4,K6,K7,K8_1,K8_2,K9,K10,K11,K12,K13, K5 with trolley
+ *                     classic K3,K4,K7,K8_1,K8_2,K9,K10,K11,K12,K13,    K5 with trolley
+ *   T3 UPS          : K2,K8_1,K8_2,K9,K10,K11,K12,K13, K5 with trolley
+ *                     (mains restored -> straight back to T2)
+ *   T4 SHUTDOWN     : K3,K10 + IS_PC_ON -> K9,K11, APP_HOST_ON -> K5
+ *   RESET           : all off
+ *   SW_RESET        : key released after >= 5 s -> all off, then T0/T1
  *
- *   T0 STANDBY      上电待机        ：K3,K13
- *   T1 OFF_NO_MAINS 市电掉电/OR关机 ：K3,K13
- *   T2 RUN          系统开机        ：K3,K4,K5,K6,K7,K8_1,K9,K11,K12,K13
- *   T3 RUN_OR       开机后市电掉电  ：Solo K2,K5,K8_1,K8_2,K9,K10,K11,K12,K13
- *                                    Chassis K2,K8_1,K9,K10,K11,K12,K13
- *   T4 SHUTDOWN     正常关机        ：K3,K13 + IS_PC→K9, APP_HOST→K5,K11
- *   RESET                           ：全断（硬件复位）
- *   SW_RESET 软件复位               ：长按 ≥ 5s 松手 → 先全断（含 K3/K10）→ 再进 T0/T1
- *
- * 开关键（SYSTEM_ON_OFF）：0.5s ≤ 按住 < 5s = 正常开机/关机（释放时生效）；
- * ≥ 5s 且本次按下未触发过 short = 软件复位。
+ * On/off key (SYSTEM_ON_OFF): 0.5 s <= hold < 5 s = normal on/off (on release);
+ * hold >= 5 s = software reset.
  */
 /*----------------------------------------------------------------------------*/
 #ifndef SM_S2_H
 #define SM_S2_H
 
+/* Standard library */
 #include <stdbool.h>
 #include <stdint.h>
 
 typedef enum {
-	SM_S2_STANDBY = 0,      /* 待机（md 的 T0）                          */
-	SM_S2_OFF_NO_MAINS,     /* 市电掉电 / OR 关机（md 的 T1）            */
-	SM_S2_RUN,              /* 系统开机（md 的 T2，唯一判断 trolley）    */
-	SM_S2_RUN_OR,           /* 开机后市电掉电 OR（md 的 T3）             */
-	SM_S2_SHUTDOWN,         /* 正常关机（md 的 T4）                      */
-	SM_S2_RESET,            /* 硬件复位                                  */
-	SM_S2_SW_RESET,         /* 软件复位（先全断，再回 T0/T1）*/
+	SM_S2_STANDBY = 0,      /* standby (md T0)                      */
+	SM_S2_OFF_NO_MAINS,     /* mains lost / UPS shutdown (md T1)    */
+	SM_S2_RUN,              /* powered on (md T2)                   */
+	SM_S2_UPS,           /* powered on, mains lost, UPS mode (md T3) */
+	SM_S2_SHUTDOWN,         /* normal shutdown (md T4)              */
+	SM_S2_RESET,            /* hardware reset                       */
+	SM_S2_SW_RESET,         /* software reset (all off, then T0/T1) */
 	SM_S2_STATE_COUNT
 } smS2State_t;
 
-/*! 进入 S2 系统：按市电在场与否直接进 T0/T1，由该子状态设置管脚。 */
+/*! Enter the S2 system: goes straight to T0/T1 depending on mains presence. */
 void smS2Enter(void);
 
 /*!
- * @brief S2 系统每个 tick 的推进
- * @param din 当前 DIN 位图快照（bspDinGetBitmap()）
- * @return 当前状态
+ * @brief Advance the S2 system by one tick
+ * @param din current DIN bitmap snapshot (bspDinGetBitmap())
+ * @return current state
  */
 smS2State_t smS2Tick(uint32_t din);
 

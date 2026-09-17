@@ -1,23 +1,25 @@
 /*!
  * @file tmp75.c
- * @brief TMP75 I2C 温度传感器驱动实现（见 tmp75.h 的硬件说明）
+ * @brief TMP75 I2C temperature sensor driver (see tmp75.h for hardware)
  */
 /*----------------------------------------------------------------------------*/
+
+/* Standard library */
+#include <errno.h>
 
 /* Zephyr */
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/sys/printk.h>
-#include <errno.h>
 
-/* 本模块 */
+/* Application */
 #include "tmp75.h"
 
-/* TMP75 挂在 I2C1（SCL=PB8 / SDA=PB9），与 identity EEPROM 共用总线 */
+/* TMP75 on I2C1 (PB8/PB9), shared with the identity EEPROM */
 #define TMP75_BUS_NODE  DT_NODELABEL(i2c1)
 
-/* 单次 I2C 传输超时（ms）——总线被其他从机拉低时不至于卡死线程 */
+/* I2C transfer timeout (ms) so a stuck bus does not block the thread */
 #define TMP75_XFER_TIMEOUT_MS  50
 
 static const struct device *tmp75_bus;
@@ -38,8 +40,7 @@ int tmp75Init(void)
 		return -ENODEV;
 	}
 
-	/* 配置寄存器为 16-bit，MSB 先：{高字节, 低字节}
-	 * 12-bit 分辨率 + 连续转换 = bits[6:5] = 11 → 低字节 0x60 */
+	/* Config register is 16-bit MSB-first; 12-bit + continuous -> 0x60 */
 	uint8_t cfg[2] = { 0x00u, TMP75_CONFIG_12BIT };
 	int rc = i2c_burst_write(tmp75_bus, TMP75_I2C_ADDR,
 				 TMP75_REG_CONFIG, cfg, sizeof(cfg));
@@ -49,10 +50,9 @@ int tmp75Init(void)
 		return rc;
 	}
 
-	/* 试读一次，确认器件在线。
-	 * 注：这里只用很短的等待——40 ms 级的阻塞会拖长启动流程，
-	 * 可能撞上 WWDG 窗口（见 bsp_wtdg.c 的 WDT_MAX_WINDOW 说明）。
-	 * 首次读到的可能是上一次转换结果，属正常。 */
+	/* Read once to confirm the device is present. Keep the wait short: a 40 ms
+	 * blocking call could hit the WWDG window (see bsp_wtdg.c). The first value
+	 * may come from the previous conversion, which is normal. */
 	k_msleep(5);
 
 	int32_t milliDegC = 0;
@@ -111,8 +111,7 @@ int tmp75Read(int32_t *milliDegC)
 		return rc;
 	}
 
-	/* raw 为 12-bit 左对齐数据：每 LSB = 1/256 °C
-	 * → 毫摄氏度 = raw * 1000 / 256（整数运算，无浮点） */
+	/* raw is 12-bit left aligned: LSB = 1/256 degC -> raw * 1000 / 256 */
 	*milliDegC = ((int32_t)raw * 1000) / 256;
 	return 0;
 }

@@ -10,6 +10,7 @@
 #ifndef BSP_PWM_H
 #define BSP_PWM_H
 
+/* Standard library */
 #include <stdint.h>
 
 void bspPwmInit(void);

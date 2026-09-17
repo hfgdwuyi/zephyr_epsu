@@ -10,15 +10,16 @@
 #ifndef BSP_LED_H
 #define BSP_LED_H
 
+/* Standard library */
 #include <stdint.h>
 
-/*! 产品板 PC8/9/10 三色灯编号：
- * 0 = 绿(PC10, OK/正常)、1 = 红(PC9, FAULT/故障)、2 = 黄(PC8, WARN/告警) */
-#define SYSTEM_OK_LED_NUM    (0)   /* 绿 PC10 */
-#define SYSTEM_FAULT_LED_NUM (1)   /* 红 PC9  */
-#define SYSTEM_WARN_LED_NUM  (2)   /* 黄 PC8  */
+/*! Board tri-color LEDs (PC8/9/10):
+ * 0 = green (PC10, OK), 1 = red (PC9, FAULT), 2 = yellow (PC8, WARN) */
+#define SYSTEM_OK_LED_NUM    (0)   /* green  PC10 */
+#define SYSTEM_FAULT_LED_NUM (1)   /* red    PC9  */
+#define SYSTEM_WARN_LED_NUM  (2)   /* yellow PC8  */
 
-/* 兼容旧名 */
+/* Legacy aliases */
 #define SYSTEM_ERROR_LED_NUM SYSTEM_FAULT_LED_NUM
 #define CAN_ERROR_LED_NUM    SYSTEM_FAULT_LED_NUM
 #define CAN_STATUS_LED_NUM   SYSTEM_OK_LED_NUM
