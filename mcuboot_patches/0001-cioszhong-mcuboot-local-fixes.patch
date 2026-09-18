@@ -101,7 +101,7 @@ index 3cf868c0..902b9d9e 100644
          }
  
 diff --git a/boot/zephyr/main.c b/boot/zephyr/main.c
-index 90678743..ca22cf95 100644
+index 90678743..9d1771f1 100644
 --- a/boot/zephyr/main.c
 +++ b/boot/zephyr/main.c
 @@ -30,9 +30,7 @@
@@ -114,7 +114,39 @@ index 90678743..ca22cf95 100644
  
  #if defined(CONFIG_CPU_CORTEX_M)
  #include <cmsis_core.h>
-@@ -535,6 +533,18 @@ int main(void)
+@@ -49,6 +47,31 @@
+ #include "bootutil/mcuboot_status.h"
+ #include "flash_map_backend/flash_map_backend.h"
+ 
++/*
++ * CiosZhong: the flash layout is fixed -
++ *   boot   128 KB @ 0x000000   slot0  512 KB @ 0x020000   slot1  512 KB @ 0x100000
++ *
++ * An overwrite-only upgrade ERASES the whole primary slot before copying the
++ * secondary image into it (see boot_copy_image() in bootutil/src/loader.c). If
++ * the devicetree of THIS build put slot0 anywhere else - in the worst case at
++ * 0x000000, where the bootloader itself runs - MCUboot would erase its own code
++ * and die, leaving the board unbootable and unreachable over the serial port
++ * that is used for upgrades. Refuse to build such a bootloader.
++ */
++BUILD_ASSERT(DT_REG_ADDR(DT_NODELABEL(slot0_partition)) == 0x020000,
++             "MCUboot: slot0_partition is not at 0x020000");
++BUILD_ASSERT(DT_REG_SIZE(DT_NODELABEL(slot0_partition)) == 0x80000,
++             "MCUboot: slot0_partition is not 512 KB");
++BUILD_ASSERT(DT_REG_ADDR(DT_NODELABEL(slot1_partition)) == 0x100000,
++             "MCUboot: slot1_partition is not at 0x100000");
++BUILD_ASSERT(DT_REG_SIZE(DT_NODELABEL(slot1_partition)) == 0x80000,
++             "MCUboot: slot1_partition is not 512 KB");
++BUILD_ASSERT(DT_REG_SIZE(DT_NODELABEL(boot_partition)) == 0x20000,
++             "MCUboot: boot_partition is not 128 KB");
++BUILD_ASSERT(DT_REG_ADDR(DT_NODELABEL(slot0_partition)) >=
++             DT_REG_SIZE(DT_NODELABEL(boot_partition)),
++             "MCUboot: slot0_partition overlaps the bootloader");
++
+ #if defined(CONFIG_MCUBOOT_UUID_VID) || defined(CONFIG_MCUBOOT_UUID_CID)
+ #include "bootutil/mcuboot_uuid.h"
+ #endif /* CONFIG_MCUBOOT_UUID_VID || CONFIG_MCUBOOT_UUID_CID */
+@@ -535,6 +558,18 @@ int main(void)
      BOOT_LOG_INF("Starting Direct-XIP bootloader");
  #endif
  
