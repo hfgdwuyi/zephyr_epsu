@@ -43,6 +43,46 @@ NODE_RE = re.compile(
     re.S,
 )
 
+# Every child of a `partitions` node, in devicetree order. `_PARTITION_ID` (what
+# FIXED_PARTITION_ID() expands to) is assigned by this order, so a stray or
+# duplicated node shifts every id after it - which is how slot1 can end up
+# pointing at the 128 KB boot partition.
+PART_RE = re.compile(
+    r"(\w+):\s*partition@([0-9a-fA-F]+)\s*\{(?:(?!\};).)*?"
+    r"reg\s*=\s*<\s*0x([0-9a-fA-F]+)\s+0x([0-9a-fA-F]+)\s*>",
+    re.S,
+)
+
+
+def partitions_node(dts_path, flash_label):
+    """Return the children of the `partitions` node under a flash node."""
+    text = pathlib.Path(dts_path).read_text(encoding="utf-8", errors="replace")
+    m = re.search(rf"{flash_label}\s*:\s*\w+@[0-9a-fA-F]+\s*\{{(.*?)\n\t\}};", text, re.S)
+    if not m:
+        return None
+    block = m.group(1)
+    m2 = re.search(r"partitions\s*\{(.*?)\n\t\t\};", block, re.S)
+    if not m2:
+        return None
+    return PART_RE.findall(m2.group(1))
+
+
+def report_table(path, label):
+    """Print every partition of the internal flash with its generated id."""
+    rows = partitions_node(path, "flash0")
+    if rows is None:
+        return
+    print(f"  {label}: internal flash partition table (id order = _PARTITION_ID)")
+    for idx, (lbl, unit, off, size) in enumerate(rows):
+        mark = ""
+        for name, (want_off, want_size) in EXPECTED.items():
+            if lbl == name and (int(off, 16), int(size, 16)) == (want_off, want_size):
+                mark = "  <- " + name
+        print(f"    id {idx}: {lbl:16} @0x{int(off, 16):06X} size 0x{int(size, 16):X}{mark}")
+    if len(rows) != len(EXPECTED):
+        print(f"    WARNING: {len(rows)} nodes, expected {len(EXPECTED)} "
+              f"(an extra node shifts every _PARTITION_ID after it)")
+
 
 def parse_partitions(dts_path):
     text = pathlib.Path(dts_path).read_text(encoding="utf-8", errors="replace")
@@ -109,6 +149,7 @@ def main() -> int:
     errors = []
     print("layout check (flash base 0x%08X):" % FLASH_BASE)
     check_dts(args.app, "app", errors)
+    report_table(args.app, "app")
     check_dts(args.boot, "boot", errors)
     check_boot_config(args.boot_config, errors)
 
