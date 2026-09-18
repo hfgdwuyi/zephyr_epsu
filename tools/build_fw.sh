@@ -167,6 +167,18 @@ if [ "$DO_APP" = 1 ]; then
 		build/zephyr/zephyr.signed.bin "$APP_VERSION"
 fi
 
+# ------------------------------------------------------------------ layout
+# A serial DFU erases "slot1" as seen by the app's devicetree, and MCUboot
+# copies "slot1" as seen by its own devicetree. If either build disagrees with
+# the intended layout, an upgrade can erase the wrong region - in the worst
+# case the bootloader. Always verify both before flashing.
+echo
+if [ -f build/zephyr/zephyr.dts ] || [ -f build-mcuboot/zephyr/zephyr.dts ]; then
+	echo "== layout check =="
+	"$PYTHON" "$PROJ/tools/check_build_layout.py" || \
+		fail "partition layout mismatch - do NOT flash this build"
+fi
+
 echo
 echo "== artifacts =="
 [ -f build-mcuboot/zephyr/zephyr.bin ]  && echo "  boot : build-mcuboot/zephyr/zephyr.bin   -> flash @ 0x08000000 (ST-Link)"

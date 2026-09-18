@@ -358,6 +358,7 @@ port: /dev/cu.usbserial-120   rounds: 1
 | 失败现象 | 原因 |
 |---|---|
 | `[FAIL] app did not enter DFU mode` | 串口/波特率不对，或 app 没在跑（停在 MCUboot） |
+| `rebooting` 后死机 / 串口再无输出 | **boot 区被擦空**（见 §6.5），需 ST-Link 重烧 |
 | `[FAIL] bad size response` | 上传的不是签名镜像（用了 `zephyr.bin`），或长度非法 |
 | `[FAIL] block 0x… failed repeatedly` | 串口丢字节（换线/降速/关掉占用串口的程序） |
 | `rebooting` 后版本没变 | 镜像密钥不对，或 boot 与 app 分区布局不一致 |
@@ -367,7 +368,9 @@ port: /dev/cu.usbserial-120   rounds: 1
 
 ## 6. 交付前校验清单
 
-- [ ] `./tools/build_fw.sh --all` 输出 `OK … version=<Kconfig 版本>`，无 ERROR
+- [ ] `./tools/build_fw.sh --all` 输出 `OK … version=<Kconfig 版本>` 且
+      `OK: bootloader and app agree with the expected partition layout`，无 ERROR
+- [ ] 升级时串口回 `DFU ok, slot1 @0x100000 size 512K erased`（地址必须是 0x100000）
 - [ ] `build/zephyr/zephyr.signed.bin` 存在（**不是** `zephyr.bin`）
 - [ ] `git -C <mcuboot> apply --reverse --check mcuboot_patches/0001-*.patch` 成功（补丁已应用）
 - [ ] bootloader 与 app 使用**同一** `root-rsa-2048.pem`
@@ -379,7 +382,82 @@ port: /dev/cu.usbserial-120   rounds: 1
 自动校验：
 ```sh
 python3 tools/check_signed_image.py build/zephyr/zephyr.signed.bin 0.2.4
+python3 tools/check_build_layout.py        # boot/app 分区视图是否一致
 ```
+
+---
+
+## 6.5 板子变砖恢复（boot 区被擦空）
+
+### 症状
+
+- 串口完全无输出，或升级时报 `app did not enter DFU mode`
+- 复位后不启动，openocd 读到 `current mode: Handler HardFault, pc: 0xfffffffe`
+
+### 诊断（只读，不写 flash）
+
+```sh
+openocd -f board/st_nucleo_h745zi.cfg \
+  -c "reset_config srst_only" -c "adapter speed 950" -c "init" \
+  -c "targets stm32h7x.cpu0" -c "reset halt" \
+  -c "mdw 0x08000000 2"    `# boot 向量：应为 24007780 08001449` \
+  -c "mdw 0x08020000 6"    `# slot0 头：magic 应为 96f3b83d` \
+  -c "mdw 0x08100000 6" \
+  -c "shutdown" 2>&1 | tail -20
+```
+
+判据：
+
+| `0x08000000` 读到的值 | 含义 |
+|---|---|
+| `24007780 08001449` | MCUboot 正常 |
+| `ffffffff ffffffff` | **boot 被擦空 → 需要恢复** |
+| 其他 | 被别的东西覆盖 |
+
+### 恢复步骤
+
+```sh
+openocd -f board/st_nucleo_h745zi.cfg \
+  -c "reset_config srst_only" -c "adapter speed 950" -c "init" \
+  -c "targets stm32h7x.cpu0" -c "reset halt" \
+  -c "stm32h7x mass_erase 0" -c "stm32h7x mass_erase 1" \
+  -c "program build-mcuboot/zephyr/zephyr.bin 0x08000000 verify" \
+  -c "program build/zephyr/zephyr.signed.bin  0x08020000 verify" \
+  -c "reset run" -c "shutdown"
+```
+
+或直接用脚本：`./flash_recover_mcuboot.sh`（它会重试并校验）。
+
+### 为什么会发生
+
+串口 DFU **本身只会擦 slot1**（`cmdDfuEnter` → `flash_area_erase(slot1)`，
+512 KB @ 0x08100000），代码里没有任何路径会写 `0x08000000`。
+
+但如果某个构建的 flash map 把 `slot1_partition` 解析成了别的位置，
+`dfu` 就会去擦那个位置。观测到的被擦区域是 **0x08000000 起正好 128 KB**
+—— 恰好等于 `boot_partition` 的大小，也就是“slot1 被解析成了 boot 分区”
+这种错误映射的特征。
+
+可能来源（都在**另一台设备的构建配置**里，不在代码里）：
+
+1. MCUboot 构建时没带 `mcuboot_swap_offset.conf` / `mcuboot_wdi.overlay`，
+   或用错 `BOARD_ROOT`，导致它自己的 slot0/slot1 视图与 app 不一致；
+   升级时 MCUboot 会先擦除它认为的 primary slot，擦错就等于擦掉自己。
+2. app 构建时 board dts 与预期不一致，使 `FIXED_PARTITION_ID(slot1_partition)`
+   指到了 boot 分区。
+
+### 已加入的防护
+
+| 防护 | 位置 |
+|---|---|
+| **编译期断言**：slot1 不得与 boot 分区重叠 | `uart_cmd.c` `BUILD_ASSERT(...)` |
+| **运行期拒绝**：`dfu` 前若 slot1 落在 flash 起始处，直接拒绝擦除并回 `ERR dfu: slot1 maps to flash start` | `cmdDfuEnter()` |
+| **把真实地址打进日志**：`DFU ok, slot1 @0x100000 size 512K erased, send: size <hex>` | `cmdDfuEnter()` |
+| **构建布局校验**：对比 boot/app 两个 `zephyr.dts` 的分区 + MCUboot 模式，不一致就让构建失败 | `tools/check_build_layout.py`（已接入 `build_fw.sh`） |
+
+> 所以在另一台设备上重建后，先看 `./tools/build_fw.sh` 是否输出
+> `OK: bootloader and app agree with the expected partition layout`，
+> 再看升级时串口里 `slot1 @0x...` 的地址对不对。
 
 ---
 
@@ -415,6 +493,7 @@ python3 tools/check_signed_image.py build/zephyr/zephyr.signed.bin 0.2.4
 |---|---|
 | `tools/build_fw.sh` | **一键构建 boot + app + 签名 + 自检**（本文核心） |
 | `tools/check_signed_image.py` | 校验签名镜像（magic / header / 版本 / 大小） |
+| `tools/check_build_layout.py` | 校验 boot/app 分区视图一致 + MCUboot 升级模式 |
 | `tools/psu_dfu.py` | 串口升级命令行工具 |
 | `tools/psu_dfu_gui.py` | 串口升级图形界面 |
 | `tools/flash_diag.sh` | SWD 连接诊断 |

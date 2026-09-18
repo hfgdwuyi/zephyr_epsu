@@ -204,14 +204,14 @@ static void s2OutputRun(uint32_t din)
 
 /* UPS mode (md T3: mains lost after power-on). Same for solo and classic:
  *   relays  K2, K8_1, K8_2, K9~K13, with K5 following the trolley
- *   LEDs    S2_SYS(+SOLO) / PWR24 / CP24 / PAC230V (+ trolley)
+ *   LEDs    S2_SYS(+SOLO) / SYSTEM / PWR24 / CP24 / PAC230V (+ trolley)
  *   drivers MAINS_CONNECTED_MCU/IS_PC (+ trolley)
- * No LED_SYSTEM_ON and no IS_PC/APP_HOST site drivers in md T3. */
+ * No IS_PC/APP_HOST site drivers in T3. */
 static void s2OutputUps(uint32_t din)
 {
 	const bool trolley = isTrolleyConnectedDebounced();
-	uint64_t led = s2ModeLed() | LED_GRID_PWR_IN | LED_PWR24V_ON | LED_CP24V_ON |
-		       LED_PAC230V_ON;
+	uint64_t led = s2ModeLed() | LED_GRID_PWR_IN | LED_SYS_ON | LED_PWR24V_ON |
+		       LED_CP24V_ON | LED_PAC230V_ON;
 	uint64_t drv = DRV_MAINS_CONNECTED_MCU | DRV_MAINS_CONNECTED_IS_PC;
 
 	if (trolley) {

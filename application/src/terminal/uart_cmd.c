@@ -31,10 +31,12 @@
 /* Zephyr */
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
+#include <zephyr/devicetree.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/reboot.h>
+#include <zephyr/sys/util.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/dfu/mcuboot.h>
 
@@ -43,6 +45,7 @@
 #include "bsp_dio.h"
 #include "bsp_aout.h"
 #include "bsp_pwm.h"
+#include "bsp_wtdg.h"
 
 /* Application */
 #include "uart_cmd.h"
@@ -51,6 +54,7 @@
 #include "ac_meter.h"
 #include "tmp75.h"
 #include "indicator.h"
+#include "max6703a.h"
 
 /* ==================== Constants ==================== */
 
@@ -576,6 +580,13 @@ static void cmdI2cRead(const char *args)
  * and copies it over slot0, so the host writes from offset 0. */
 #define DFU_SECONDARY_IMG_OFFSET 0x0U
 
+/* `dfu` erases the whole slot1 before uploading. If the flash map made slot1
+ * start at the beginning of flash, the bootloader itself (and often the
+ * bootloader we are running from) would be erased. Catch that at build time. */
+BUILD_ASSERT(DT_REG_ADDR(DT_NODELABEL(slot1_partition)) >=
+	     DT_REG_SIZE(DT_NODELABEL(boot_partition)),
+	     "slot1_partition overlaps the MCUboot boot partition");
+
 static struct {
 	bool     active;
 	uint32_t total;
@@ -620,9 +631,39 @@ bool uartCmdDfuActive(void)
 	return dfu.active;
 }
 
+/* Erase slot1 in chunks, feeding both watchdogs in between.
+ *
+ * A single flash_area_erase() of the whole 512 KB slot can outlive the feeders
+ * (internal WWDG ~250 ms fed every 50 ms, external MAX6703A 1.6 s fed every
+ * 500 ms) if those threads cannot get scheduled while the erase runs. An
+ * interrupted erase is the dangerous case: the sector ends up blank while the
+ * image was never written, which is how a board loses its firmware.
+ * One H7 flash sector per chunk keeps each erase far below both timeouts. */
+#define DFU_ERASE_CHUNK (128U * 1024U)
+
+static void dfuFeedWatchdogs(void)
+{
+	bspWtdgFeed();     /* internal WWDG */
+	max6703aFeed();    /* external MAX6703A (WDI) */
+}
+
+static int dfuEraseSlot1(void)
+{
+	for (uint32_t off = 0; off < dfu.fa->fa_size; off += DFU_ERASE_CHUNK) {
+		const uint32_t len = MIN(DFU_ERASE_CHUNK, dfu.fa->fa_size - off);
+		const int rc = flash_area_erase(dfu.fa, (off_t)off, len);
+
+		if (rc != 0) {
+			return rc;
+		}
+		dfuFeedWatchdogs();
+	}
+	return 0;
+}
+
 static void cmdDfuEnter(void)
 {
-	char buf[64];
+	char buf[96];
 	int rc;
 
 	dfuReset();
@@ -631,14 +672,37 @@ static void cmdDfuEnter(void)
 		uartTxStr("ERR dfu: open slot1 fail\r\n");
 		return;
 	}
-	rc = flash_area_erase(dfu.fa, 0, dfu.fa->fa_size);
+	/* The opened area must match what the devicetree describes. If the flash map
+	 * and the devicetree ever disagree (for example colliding partition indices
+	 * coming from two `fixed-partitions` nodes), `dfu` would erase a different
+	 * region - in the worst case the bootloader at 0x08000000, leaving the board
+	 * unbootable and unreachable over serial. Refuse instead. */
+	if (dfu.fa->fa_off != (off_t)DT_REG_ADDR(DT_NODELABEL(slot1_partition)) ||
+	    dfu.fa->fa_size != (size_t)DT_REG_SIZE(DT_NODELABEL(slot1_partition))) {
+		snprintk(buf, sizeof(buf),
+			 "ERR dfu: slot1 map 0x%lX/%luK != dts 0x%lX/%luK, erase refused\r\n",
+			 (unsigned long)dfu.fa->fa_off,
+			 (unsigned long)(dfu.fa->fa_size / 1024U),
+			 (unsigned long)DT_REG_ADDR(DT_NODELABEL(slot1_partition)),
+			 (unsigned long)(DT_REG_SIZE(DT_NODELABEL(slot1_partition)) / 1024U));
+		uartTxStr(buf);
+		flash_area_close(dfu.fa);
+		dfuReset();
+		return;
+	}
+	rc = dfuEraseSlot1();
 	if (rc != 0) {
 		uartTxStr("ERR dfu: erase slot1 fail\r\n");
+		flash_area_close(dfu.fa);
 		dfuReset();
 		return;
 	}
 	dfu.active = true;
-	snprintk(buf, sizeof(buf), "DFU ok, slot1 erased, send: size <hex>\r\n");
+	/* Report the area actually erased so a wrong layout is visible in the host log */
+	snprintk(buf, sizeof(buf),
+		 "DFU ok, slot1 @0x%lX size %luK erased, send: size <hex>\r\n",
+		 (unsigned long)dfu.fa->fa_off,
+		 (unsigned long)(dfu.fa->fa_size / 1024U));
 	uartTxStr(buf);
 }
 
@@ -704,6 +768,7 @@ static void dfuData(const char *args)
 		return;
 	}
 	dfu.received += (uint32_t)n;
+	dfuFeedWatchdogs();   /* a slow flash write must not trip a watchdog timer */
 
 	if (dfu.received >= dfu.total) {
 		/* done -> verify -> request upgrade -> reset */

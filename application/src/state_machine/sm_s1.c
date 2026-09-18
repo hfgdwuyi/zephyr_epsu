@@ -276,7 +276,7 @@ static void s1OutputRun(uint32_t din)
  * the conditional outputs (same one-way latch as T0/T4):
  *   IS_PC_ON    high -> K9 | K11 + DRV_IS_PC_SITE ; low -> all three off
  *   APP_HOST_ON high -> K13      + DRV_APP_HOST   ; low -> both off
- * md T3 lists no LED_SYSTEM_ON. */
+ * LED_SYSTEM_ON is enabled in T3 as well (same as T2). */
 static void s1OutputUps(uint32_t din)
 {
 	uint64_t relay = S1_UPS_RELAY;                   /* K2 | K10 */
@@ -295,8 +295,9 @@ static void s1OutputUps(uint32_t din)
 
 	doutWrite(SM_RELAY_ALL, relay);
 	s1RelayLog("T3", relay);
-	doutWrite(SM_LED_ALL, LED_UPS_IN | LED_S1_SYS_ON | LED_PWR24V_ON |
-			     LED_CP24V_ON | LED_PAC230V_ON | LED_TROLLEY_CONNECTED);
+	doutWrite(SM_LED_ALL, LED_UPS_IN | LED_S1_SYS_ON | LED_SYS_ON |
+			     LED_PWR24V_ON | LED_CP24V_ON | LED_PAC230V_ON |
+			     LED_TROLLEY_CONNECTED);
 	doutWrite(SM_DRV_ALL, drv);
 	indicatorSetMode(INDICATOR_ON);   /* UPS mode -> solid on */
 }
