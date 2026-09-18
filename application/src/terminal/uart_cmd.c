@@ -580,9 +580,19 @@ static void cmdI2cRead(const char *args)
  * and copies it over slot0, so the host writes from offset 0. */
 #define DFU_SECONDARY_IMG_OFFSET 0x0U
 
-/* `dfu` erases the whole slot1 before uploading. If the flash map made slot1
- * start at the beginning of flash, the bootloader itself (and often the
- * bootloader we are running from) would be erased. Catch that at build time. */
+/* `dfu` erases the whole staging slot before uploading. These are the two values
+ * the bootloader and the DFU host tool both assume. A build whose devicetree or
+ * flash map disagrees with them must never be able to erase a different region -
+ * in the worst case the bootloader at 0x08000000, which bricks the board and
+ * makes it unreachable over serial. So the slot is pinned both at build time and
+ * at run time, independently of what the flash map resolves to. */
+#define DFU_SLOT1_OFFSET  0x100000U   /* slot1 @ 0x08100000 */
+#define DFU_SLOT1_SIZE    0x80000U    /* 512 KB */
+
+BUILD_ASSERT(DT_REG_ADDR(DT_NODELABEL(slot1_partition)) == DFU_SLOT1_OFFSET,
+	     "slot1_partition is not at 0x100000 in this devicetree");
+BUILD_ASSERT(DT_REG_SIZE(DT_NODELABEL(slot1_partition)) == DFU_SLOT1_SIZE,
+	     "slot1_partition is not 512 KB in this devicetree");
 BUILD_ASSERT(DT_REG_ADDR(DT_NODELABEL(slot1_partition)) >=
 	     DT_REG_SIZE(DT_NODELABEL(boot_partition)),
 	     "slot1_partition overlaps the MCUboot boot partition");
@@ -672,19 +682,17 @@ static void cmdDfuEnter(void)
 		uartTxStr("ERR dfu: open slot1 fail\r\n");
 		return;
 	}
-	/* The opened area must match what the devicetree describes. If the flash map
-	 * and the devicetree ever disagree (for example colliding partition indices
-	 * coming from two `fixed-partitions` nodes), `dfu` would erase a different
-	 * region - in the worst case the bootloader at 0x08000000, leaving the board
-	 * unbootable and unreachable over serial. Refuse instead. */
-	if (dfu.fa->fa_off != (off_t)DT_REG_ADDR(DT_NODELABEL(slot1_partition)) ||
-	    dfu.fa->fa_size != (size_t)DT_REG_SIZE(DT_NODELABEL(slot1_partition))) {
+	/* Hard boundary, deliberately independent of the devicetree: `dfu` runs on the
+	 * board, so no build configuration may be able to make it erase the region
+	 * that holds the bootloader or the running image. */
+	if (dfu.fa->fa_off != (off_t)DFU_SLOT1_OFFSET ||
+	    dfu.fa->fa_size != (size_t)DFU_SLOT1_SIZE) {
 		snprintk(buf, sizeof(buf),
-			 "ERR dfu: slot1 map 0x%lX/%luK != dts 0x%lX/%luK, erase refused\r\n",
+			 "ERR dfu: slot1 map 0x%lX/%luK != expected 0x%lX/%luK, erase refused\r\n",
 			 (unsigned long)dfu.fa->fa_off,
 			 (unsigned long)(dfu.fa->fa_size / 1024U),
-			 (unsigned long)DT_REG_ADDR(DT_NODELABEL(slot1_partition)),
-			 (unsigned long)(DT_REG_SIZE(DT_NODELABEL(slot1_partition)) / 1024U));
+			 (unsigned long)DFU_SLOT1_OFFSET,
+			 (unsigned long)(DFU_SLOT1_SIZE / 1024U));
 		uartTxStr(buf);
 		flash_area_close(dfu.fa);
 		dfuReset();
