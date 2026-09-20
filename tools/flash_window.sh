@@ -11,9 +11,10 @@
 #     "Failed to read memory"，只有调试域可用 —— 即芯片被摁在复位里。）
 #
 # 本脚本怎么救：
-#   ① 反复抢复位间隙（每次一个独立 openocd 会话）：
-#        init → halt → 把 tools/wdi_feeder（164 字节固化程序）载入 RAM
-#        → 设 SP/PC → resume
+#   ① 抢复位间隙：**在一个 openocd 会话内用 Tcl 循环连续重试**
+#        halt → load_image(wdi_feeder) → 设 SP/PC → resume，
+#      任何一步被复位打断就立刻重试。
+#      （不能靠反复重启 openocd 去抢：它启动本身要 1~2s，而电源窗口只有 ~1.6s）
 #      该固件把 PH9 配成 TIM12_CH2 的 ~50 Hz PWM。定时器是硬件外设，
 #      **之后即使 openocd 把内核 halt 住去烧 flash，PH9 仍被硬件持续翻转**，
 #      openocd 的 H7 配置只冻结 WWDG/WDGLSD、不冻结 TIM12，所以看门狗被稳住。
@@ -30,10 +31,16 @@
 #   固件，每个窗口只够烧一部分）；本脚本先用喂狗固件把复位彻底稳住，因此能
 #   一次烧完并自检。
 #
-# 用法：
-#   ./tools/flash_window.sh            # 抢窗口最多 90 秒
-#   ./tools/flash_window.sh 180        # 抢窗口最多 180 秒
-#   （板子若还有电：运行脚本后断电 ≥10 s 再上电，窗口更干净）
+# 用法（推荐配合"反复断电上电"一起用）：
+#   1) 先运行脚本，让它一直抢：
+#        HALT_TRIES=200 HALT_WAIT_MS=500 ./tools/flash_window.sh 600
+#      （HALT_TRIES=单会话内重试次数，HALT_WAIT_MS=每次 halt 等待毫秒；
+#        一次会话可以跨越多次断电上电，所以这两个值大一点更容易撞上窗口）
+#   2) 脚本跑着的时候，反复给板子断电（≥10 s）再上电 —— 每次上电后的
+#      头 ~1.6 s 是"看门狗还没开始拉复位"的窗口，MCU 此时是能被 halt 的。
+#   3) 抢到后脚本会自动：载入喂狗固件 → 自检 3 秒 → 烧 boot + app → reset run。
+#
+# 快速试跑：./tools/flash_window.sh 60
 set -u
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
@@ -57,7 +64,12 @@ die() { echo "!!! $*" >&2; exit 1; }
 # 卡死的 openocd 会独占 ST-Link，导致之后每个 openocd 都永远阻塞，
 # 所以每次调用都必须有超时，且脚本退出时必须确保它被杀掉。
 OCD_PID=
-cleanup() { [ -n "$OCD_PID" ] && kill -9 "$OCD_PID" 2>/dev/null; OCD_PID=; }
+TCL_HALT=
+cleanup() {
+	[ -n "$OCD_PID" ] && kill -9 "$OCD_PID" 2>/dev/null
+	[ -n "$TCL_HALT" ] && rm -f "$TCL_HALT"
+	OCD_PID=; TCL_HALT=
+}
 trap cleanup EXIT INT TERM
 
 oc() {                          # $@ = openocd 的 -c 参数；输出进 $LOG
@@ -127,14 +139,32 @@ echo
 echo "===== 阶段 1：抢复位窗口并运行喂狗固件（最多 ${WINDOW_SEC}s）====="
 echo "（板子还有电的话：现在断电 ≥10s 再上电，能显著提高成功率）"
 
+# 抢窗口用的 Tcl：会话内连续重试 halt→载入→运行，任一步被打断就重来
+HALT_TRIES=${HALT_TRIES:-50}      # 单会话内重试次数
+HALT_WAIT_MS=${HALT_WAIT_MS:-300} # 每次 halt 的等待毫秒数
+TCL_HALT=$(mktemp /tmp/cios_halt.XXXXXX) || die "mktemp 失败"
+cat >"$TCL_HALT" <<EOF
+# 由 tools/flash_window.sh 生成：在复位循环里抢窗口并把喂狗固件跑起来
+set tries $HALT_TRIES
+set done 0
+for {set i 0} {\$i < \$tries} {incr i} {
+	if {[catch {halt $HALT_WAIT_MS} err]} { sleep 30 ; continue }
+	if {[catch {load_image $FEEDER $FEEDER_RAM bin} err]} { sleep 30 ; continue }
+	if {[catch {verify_image $FEEDER $FEEDER_RAM bin} err]} { sleep 30 ; continue }
+	if {[catch {reg sp $FEEDER_SP} err]} { sleep 30 ; continue }
+	if {[catch {reg pc $FEEDER_PC} err]} { sleep 30 ; continue }
+	if {[catch {resume} err]} { sleep 30 ; continue }
+	set done 1
+	break
+}
+if {\$done == 0} { error "未能抢到复位窗口（\$tries 次重试全部失败）" }
+EOF
+
 deadline=$(( $(date +%s) + WINDOW_SEC ))
 try=0; feeder_ok=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
 	try=$((try + 1))
-	if oc -c "init" -c "halt" \
-	      -c "load_image $FEEDER $FEEDER_RAM bin" \
-	      -c "verify_image $FEEDER $FEEDER_RAM bin" \
-	      -c "reg sp $FEEDER_SP" -c "reg pc $FEEDER_PC" -c "resume" && oc_ok; then
+	if oc -f "$TCL_HALT" && oc_ok; then
 		printf "\r  第 %d 次尝试：抢到 halt，喂狗固件已载入并运行        \n" "$try"
 		feeder_ok=1
 		break
