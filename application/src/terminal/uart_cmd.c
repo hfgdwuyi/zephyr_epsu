@@ -298,7 +298,7 @@ static void cmdPwm(const char *args)
 	if (tok == NULL) { goto err; }
 	duty = strtol(tok, NULL, 0);
 
-	if (ch < 0 || ch >= 2 || duty < 0 || duty > 100) {
+	if (ch < 0 || ch >= (long)bspPwmGetCount() || duty < 0 || duty > 100) {
 		goto err;
 	}
 	bspPwmSetDutyCycle((uint8_t)ch, (uint32_t)duty);
@@ -306,7 +306,7 @@ static void cmdPwm(const char *args)
 	uartTxStr("OK\r\n");
 	return;
 err:
-	uartTxStr("ERR usage: pwm <ch 0|1> <duty 0..100>\r\n");
+	uartTxStr("ERR usage: pwm <ch> <duty 0..100>\r\n");
 }
 
 static void cmdPwmOff(const char *args)
@@ -318,14 +318,14 @@ static void cmdPwmOff(const char *args)
 		goto err;
 	}
 	ch = strtol(args, &end, 0);
-	if (end == args || ch < 0 || ch >= 2) {
+	if (end == args || ch < 0 || ch >= (long)bspPwmGetCount()) {
 		goto err;
 	}
 	bspPwmStop((uint8_t)ch);
 	uartTxStr("OK\r\n");
 	return;
 err:
-	uartTxStr("ERR usage: pwmoff <ch 0|1>\r\n");
+	uartTxStr("ERR usage: pwmoff <ch>\r\n");
 }
 
 /* ---- Status query (for the host UI) ---- */
@@ -351,11 +351,26 @@ static void cmdGetDac(void)
 
 static void cmdGetPwm(void)
 {
-	char buf[48];
+	char buf[96];
+	size_t off = 0;
+	const uint8_t count = bspPwmGetCount();
 
-	snprintk(buf, sizeof(buf), "pwm0=%u pwm1=%u\r\n",
-		 (unsigned)bspPwmGetDutyCycle(FAN_PWM1),
-		 (unsigned)bspPwmGetDutyCycle(FAN_PWM2));
+	for (uint8_t i = 0; i < count; i++) {
+		if (off >= sizeof(buf) - 16U) {
+			break;
+		}
+		const int w = snprintk(buf + off, sizeof(buf) - off, "%spwm%u=%u",
+				       (i == 0U) ? "" : " ", (unsigned)i,
+				       (unsigned)bspPwmGetDutyCycle(i));
+		if (w < 0) {
+			break;
+		}
+		off += (size_t)w;
+	}
+	if (off > sizeof(buf) - 2U) {
+		off = sizeof(buf) - 2U;
+	}
+	snprintk(buf + off, sizeof(buf) - off, "\r\n");
 	uartTxStr(buf);
 }
 

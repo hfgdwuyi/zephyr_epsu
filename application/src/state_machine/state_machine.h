@@ -13,9 +13,16 @@
  *    1    1    x    invalid
  *
  * NOTE: solo (pj4) is only meaningful under S2; an active pj4 vetoes S1 (avoids S1/solo coupling).
+ *       Solo is latched together with the main mode (not followed live).
  *
- * Main mode is latched once after power-on (see state_machine.c::stateMachineTick).
- * Later DIP changes do not re-evaluate or switch the system; to re-select, reset.
+ * The DIP pattern is sampled once per power-on/reset and then latched (see
+ * state_machine.c::stateMachineTick). While the unit is powered on, a DIP change
+ * keeps the current mode (no live switch); a new pattern only takes effect after
+ * a reset / power cycle.
+ *
+ * An invalid/conflicting pattern latches the error state: no relay/LED/driver is
+ * driven and the status indicator breathes at the on/off-key feedback rate
+ * (double frequency) until a reset / power cycle re-samples the DIP.
  *
  * Full S1 implementation: sm_s1.c/h (T0~T4 + RESET).
  * Full S2 implementation: sm_s2.c/h (T0~T4 + RESET; sub-mode solo/classic via pj4).
@@ -126,6 +133,10 @@ static inline bool isTrolleyConnected(uint32_t din)
  *  sm_s1/sm_s2 must use this instead of the raw isTrolleyConnected(din). */
 bool isTrolleyConnectedDebounced(void);
 
+/*! Latched solo sub-mode (pj4): sampled and locked together with the main mode
+ *  (state_machine.c); sm_s2 must use this instead of the raw DIN_SOLO bit. */
+bool isSoloConfigLatched(void);
+
 static inline bool isOnOffActive(uint32_t din)
 {
 	return (din & BIT(DIN_SYSTEM_ON_OFF)) != 0U;
@@ -145,6 +156,12 @@ static inline bool isAppHostOn(uint32_t din)
 {
 	return (din & BIT(DIN_APP_HOST_ON)) != 0U;
 }
+
+/* ==================== Fan PWM ==================== */
+/* The fans run only while the unit is powered on (T2 RUN / T3 UPS) and are
+ * stopped in every other state, including standby (T0) and shutdown (T4).
+ * Duty cycle in percent while running. */
+#define SM_FAN_PWM_DUTY   50U
 
 /* ==================== 24V output OK (AIN_ADC_PDC0 / PA6) ==================== */
 /* Precondition for power-on / normal shutdown: 24V output OK (scaled mV).

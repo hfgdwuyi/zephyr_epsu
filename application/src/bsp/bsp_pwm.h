@@ -14,6 +14,10 @@
 #include <stdint.h>
 
 void bspPwmInit(void);
+
+/* Number of PWM channels described by `pwms` in the devicetree */
+uint8_t bspPwmGetCount(void);
+
 void bspPwmStart(uint8_t pwmNum);
 void bspPwmStop(uint8_t pwmNum);
 

@@ -1,10 +1,12 @@
 /*!
  * @file
- * @brief Fan PWM control (Zephyr port) — cios-zhong
+ * @brief PWM outputs (Zephyr port) - cios-zhong
  *
- * Drives the fan PWM channels (TIM2/PJ15, TIM8/PI15) via the Zephyr PWM
- * driver. Carrier frequency and duty cycle are set per channel; the fan
- * speed policy itself lives in the state machine.
+ * Channels are described by `pwms` in the `zephyr,user` node (order = channel
+ * number); the carrier period comes from that entry, and `pwm-default-duty`
+ * gives the boot-time duty cycle in percent for each channel. Adding a channel
+ * therefore only needs a `pwms` entry (+ its pinctrl) and a matching
+ * `pwm-default-duty` value - no code change.
  */
 /*----------------------------------------------------------------------------*/
 
@@ -26,6 +28,21 @@
 /* PWM is fixed on this platform (H745) — pwms always present. */
 #define ZEPHYR_USER_NODE DT_PATH(zephyr_user)
 #define PWM_OUT_COUNT DT_PROP_LEN(ZEPHYR_USER_NODE, pwms)
+
+/* pwm-default-duty: one percentage per `pwms` entry. The table is sized from the
+ * devicetree property itself, and a channel without an entry falls back to 0 %
+ * with a warning at init (see initOne) - so forgetting an entry is visible in
+ * the boot log instead of shifting the other channels' duties. */
+#if DT_NODE_HAS_PROP(ZEPHYR_USER_NODE, pwm_default_duty)
+#define PWM_DUTY_ELEM(node_id, prop, idx) DT_PROP_BY_IDX(node_id, prop, idx),
+static const uint8_t pwm_default_duty[] = {
+	DT_FOREACH_PROP_ELEM(ZEPHYR_USER_NODE, pwm_default_duty, PWM_DUTY_ELEM)
+};
+#define PWM_DUTY_TBL_LEN ARRAY_SIZE(pwm_default_duty)
+#else
+static const uint8_t pwm_default_duty[1] = { 0U };
+#define PWM_DUTY_TBL_LEN 0U
+#endif
 
 typedef struct {
     bool valid;
@@ -60,7 +77,24 @@ static void initOne(uint8_t idx, const struct pwm_dt_spec *s)
 
     pwm_out[idx].spec = *s;
     pwm_out[idx].valid = true;
-    (void)pwm_set_dt(&pwm_out[idx].spec, pwm_out[idx].spec.period, 0U);
+
+    /* Apply the boot-time duty from the devicetree, keeping the carrier period
+     * that the `pwms` entry already configured (25 kHz on the current board). */
+    if (idx >= PWM_DUTY_TBL_LEN) {
+        printk("bsp_pwm: no pwm-default-duty entry for channel %u, using 0%%\n",
+               (unsigned)idx);
+    }
+    const uint32_t want = (idx < PWM_DUTY_TBL_LEN) ? pwm_default_duty[idx] : 0U;
+    const uint32_t duty = (want > DUTY_MAX) ? DUTY_MAX : want;
+    const uint32_t pulse = (uint32_t)(((uint64_t)pwm_out[idx].spec.period * duty) / DUTY_MAX);
+
+    pwm_out[idx].last_duty = duty;
+    (void)pwm_set_dt(&pwm_out[idx].spec, pwm_out[idx].spec.period, pulse);
+}
+
+uint8_t bspPwmGetCount(void)
+{
+    return (uint8_t)PWM_OUT_COUNT;
 }
 
 void bspPwmInit(void)

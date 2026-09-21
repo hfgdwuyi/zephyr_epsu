@@ -114,8 +114,10 @@
 /* ==================== Fan PWM index (via bsp_pwm) ==================== */
 
 enum {
-	FAN_PWM1 = 0,  /* PJ15 — fan1_pwm */
-	FAN_PWM2 = 1,  /* PI15 — fan2_pwm */
+	FAN_PWM1 = 0,  /* TIM8_CH2 on PJ6  — fan1_pwm (pwms[0]) */
+	FAN_PWM2 = 1,  /* TIM4_CH4 on PD15 — fan2_pwm (pwms[1]) */
+	/* Channels 2.. are described by `pwms` in app.overlay; use
+	 * bspPwmGetCount() for the upper bound. */
 };
 
 /* ==================== Public types ==================== */

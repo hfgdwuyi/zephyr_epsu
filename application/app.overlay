@@ -204,6 +204,12 @@
         pwms =
             <&pwm_fan1 2 PWM_USEC(40) PWM_POLARITY_NORMAL>,   /* 40 us = 25 kHz fan carrier */
             <&pwm_fan2 4 PWM_USEC(40) PWM_POLARITY_NORMAL>;
+
+        /* Boot-time duty cycle per PWM channel, in percent, in `pwms` order.
+         * Must have exactly one entry per pwms entry (a build-time assert in
+         * bsp_pwm.c enforces it). Every channel keeps the 25 kHz carrier that
+         * `pwms` sets; only the duty is taken from here. */
+        pwm-default-duty = <0 0>;
     };
 };
 

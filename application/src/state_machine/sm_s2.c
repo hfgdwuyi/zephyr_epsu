@@ -205,14 +205,15 @@ static void s2OutputRun(uint32_t din)
 /* UPS mode (md T3: mains lost after power-on). Same for solo and classic:
  *   relays  K2, K8_1, K8_2, K9~K13, with K5 following the trolley
  *   LEDs    S2_SYS(+SOLO) / SYSTEM / PWR24 / CP24 / PAC230V (+ trolley)
- *   drivers MAINS_CONNECTED_MCU/IS_PC (+ trolley)
- * No IS_PC/APP_HOST site drivers in T3. */
+ *   drivers none, except the trolley signals when connected - the
+ *           MAINS_CONNECTED_MCU / MAINS_CONNECTED_IS_PC drivers are NOT
+ *           enabled in UPS mode (T3); no IS_PC/APP_HOST site drivers either. */
 static void s2OutputUps(uint32_t din)
 {
 	const bool trolley = isTrolleyConnectedDebounced();
 	uint64_t led = s2ModeLed() | LED_GRID_PWR_IN | LED_SYS_ON | LED_PWR24V_ON |
 		       LED_CP24V_ON | LED_PAC230V_ON;
-	uint64_t drv = DRV_MAINS_CONNECTED_MCU | DRV_MAINS_CONNECTED_IS_PC;
+	uint64_t drv = 0;   /* no MAINS_CONNECTED_* drivers in UPS mode (T3) */
 
 	if (trolley) {
 		led |= LED_TROLLEY_CONNECTED;
@@ -396,8 +397,9 @@ void smS2Enter(void)
 	s2_onoff_reset_armed = false;
 	s2_onoff_acted      = false;
 
-	/* Initialise the sub-mode (pj4) and print it once */
-	s2_solo = (din & BIT(DIN_SOLO_SYSTEM_CONFIG)) != 0U;
+	/* Sub-mode (pj4): latched by the top-level state machine together with the
+	 * main mode; it is not followed live (see state_machine.c). */
+	s2_solo = isSoloConfigLatched();
 	printk("S2: mode -> %s\n", s2_solo ? "solo" : "classic");
 
 	/* Enter the correct initial state directly: mains OK -> T0, else T1 */
@@ -456,14 +458,7 @@ smS2State_t smS2Tick(uint32_t din)
 		}
 	}
 
-	/* ---- Sub-mode (pj4): set = solo, clear = classic ---- */
-	const bool solo = (din & BIT(DIN_SOLO_SYSTEM_CONFIG)) != 0U;
-
-	if (solo != s2_solo) {
-		s2_solo = solo;
-		printk("S2: mode -> %s\n", solo ? "solo" : "classic");
-		s2Output(s2_state, din);      /* update mode LEDs / relays immediately */
-	}
+	/* ---- Sub-mode (pj4) is latched with the main mode: no live update here ---- */
 
 	/* ---- 1) Hardware reset first: SYSTEM_RESET rising edge -> full re-init ---- */
 	if (reset_rise) {
@@ -530,13 +525,20 @@ smS2State_t smS2Tick(uint32_t din)
 		}
 		break;
 
-	case SM_S2_UPS:   /* T3 UPS mode */
+	case SM_S2_UPS:   /* T3 UPS mode (steady state) */
+		/* Only two exits:
+		 *   mains restored  -> T2 (back to running)
+		 *   valid power-off -> T1, NOT T4. T4 closes the standby loop again
+		 *     (S2_SHUTDOWN_RELAY = K3|K10), which is right when shutting down
+		 *     with mains present but wrong here: without mains the unit has to
+		 *     lose power, so everything must be closed (md: "UPS mode power-off
+		 *     -> close every relay / signal / efuse"). Same as S1. */
 		if (mains) {
 			s2EnterState(SM_S2_RUN, din);
 		}
 		else if (onoff_2s && !s2_onoff_acted && s2Check24V("power-off")) {
 			s2_onoff_acted = true;                   /* this press already acted */
-			s2EnterState(SM_S2_SHUTDOWN, din);       /* power-off -> T4 */
+			s2EnterState(SM_S2_OFF_NO_MAINS, din);   /* power-off -> T1 (all off) */
 		}
 		break;
 
