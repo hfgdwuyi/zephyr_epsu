@@ -9,7 +9,7 @@
  * Same skeleton as S1: T0~T4 + hardware/software reset; transitions by mains only;
  * on/off key: release after 500 ms..5 s = on/off, release after >= 5 s = SW reset.
  *
- * Trolley is followed in T0/T2/T4 (LED_TROLLEY_CONNECTED / TROLLEY_ENABLE_DRV /
+ * Trolley is followed in T2/T3 (LED_TROLLEY_CONNECTED / TROLLEY_ENABLE_DRV /
  * TRL_MU_*). Pin definitions come from state_machine.h, shared with S1.
  */
 /*----------------------------------------------------------------------------*/
@@ -132,15 +132,12 @@ static bool s2Check24V(const char *stage)
  * the trolley signals follow the 2 s debounced trolley state. */
 static void s2OutputStandby(uint32_t din)
 {
-	const bool trolley = isTrolleyConnectedDebounced();
 	uint64_t led = s2ModeLed() | LED_GRID_PWR_IN | LED_PWR24V_ON | LED_CP24V_ON |
 		       LED_PAC230V_ON;
 	uint64_t drv = DRV_MAINS_CONNECTED_MCU | DRV_MAINS_CONNECTED_IS_PC;
 
-	if (trolley) {
-		led |= LED_TROLLEY_CONNECTED;
-		drv |= DRV_TROLLEY_EN | DRV_TRL_MU_MCU | DRV_TRL_MU_IS_PC;
-	}
+	/* Trolley LED/drivers are only output while powered on (T2/T3); they are
+	 * not driven in standby (T0). */
 
 	doutWrite(SM_RELAY_ALL, S2_STANDBY_RELAY);
 	s2RelayLog("T0", S2_STANDBY_RELAY);
@@ -261,26 +258,19 @@ static void s2ReportShutdownInputs(uint32_t din)
 }
 
 /* SHUTDOWN (md T4): base K3,K10 (K13 off) plus dynamic bits (refreshed every ms)
- *   trolley connected -> LED_TROLLEY_CONNECTED + TROLLEY_EN + TRL_MU_MCU/IS_PC
  *   IS_PC_ON    high -> K9       (DRV_IS_PC_SITE is only on in the running states)
- *   APP_HOST_ON high -> K5 | K11 (DRV_APP_HOST    is only on in the running states)*/
+ *   APP_HOST_ON high -> K5 | K11 (DRV_APP_HOST    is only on in the running states)
+ *   trolley LED/drivers are NOT driven in T4 (only in the powered-on T2/T3) */
 static void s2OutputShutdown(uint32_t din)
 {
-	const bool trolley = isTrolleyConnectedDebounced();
 	uint64_t relay = S2_SHUTDOWN_RELAY;                     /* K3 | K10 (K13 off) */
 	uint64_t led   = LED_GRID_PWR_IN | LED_PWR24V_ON | LED_CP24V_ON | LED_PAC230V_ON;
 	uint64_t drv   = DRV_MAINS_CONNECTED_MCU | DRV_MAINS_CONNECTED_IS_PC;
 
 	s2ReportShutdownInputs(din);
 
-	if (trolley) {
-		led |= LED_TROLLEY_CONNECTED;
-		drv |= DRV_TROLLEY_EN | DRV_TRL_MU_MCU | DRV_TRL_MU_IS_PC;
-	}
-	else {
-		led &= ~LED_TROLLEY_CONNECTED;
-		drv &= ~(DRV_TROLLEY_EN | DRV_TRL_MU_MCU | DRV_TRL_MU_IS_PC);
-	}
+	/* Trolley LED/drivers are only output while powered on (T2/T3); they are
+	 * not driven in shutdown (T4). */
 
 	/* First call after entering T4: clear the latch and re-sample the two inputs. */
 	if (!s2_t4_active) {
@@ -561,10 +551,10 @@ smS2State_t smS2Tick(uint32_t din)
 	/* While the on/off key is held: indicator breathes at double frequency */
 	indicatorSetBreathFast(onoff);
 
-	/* Global indicators: PD10 = S2 system; PD5 = solo; PD6 = trolley connected */
+	/* Global indicators: PD10 = S2 system; PD5 = solo.
+	 * The trolley LED (PD6) is driven per-state (only in T2/T3 now). */
 	bspDoutSetBitmap(BIT64(DOUT_LED_S2_SYS_ON), true);
 	bspDoutSetBitmap(BIT64(DOUT_LED_S2_SOLO_SYS), s2_solo);
-	bspDoutSetBitmap(BIT64(DOUT_LED_TROLLEY_CONNECTED), isTrolleyConnectedDebounced());
 
 	s2_prev_din = din;
 	return s2_state;

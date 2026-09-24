@@ -176,7 +176,6 @@ static bool s1Check24V(const char *stage)
  *           drivers themselves are only enabled from T2/T3 on */
 static void s1OutputStandby(uint32_t din)
 {
-	const bool trolley = isTrolleyConnectedDebounced();
 	uint64_t relay = S1_STANDBY_RELAY;                  /* K3 | K10 */
 	uint64_t led   = LED_GRID_PWR_IN | LED_S1_SYS_ON | LED_PWR24V_ON |
 			 LED_CP24V_ON | LED_PAC230V_ON;
@@ -191,10 +190,8 @@ static void s1OutputStandby(uint32_t din)
 		relay |= K13;
 	}
 
-	if (trolley) {
-		led |= LED_TROLLEY_CONNECTED;
-		drv |= DRV_TROLLEY_EN | DRV_TRL_MU_MCU | DRV_TRL_MU_IS_PC;
-	}
+	/* Trolley LED/drivers are only output while powered on (T2/T3); they are
+	 * not driven in standby (T0). */
 
 	doutWrite(SM_RELAY_ALL, relay);
 	s1RelayLog("T0", relay);
@@ -279,8 +276,11 @@ static void s1OutputRun(uint32_t din)
  * LED_SYSTEM_ON is enabled in T3 as well (same as T2). */
 static void s1OutputUps(uint32_t din)
 {
+	const bool trolley = isTrolleyConnectedDebounced();
 	uint64_t relay = S1_UPS_RELAY;                   /* K2 | K10 */
 	uint64_t drv   = 0;
+	uint64_t led   = LED_UPS_IN | LED_S1_SYS_ON | LED_SYS_ON | LED_PWR24V_ON |
+			 LED_CP24V_ON | LED_PAC230V_ON;
 
 	s1UpdateOdLatch(din);
 
@@ -293,11 +293,15 @@ static void s1OutputUps(uint32_t din)
 		drv   |= DRV_APP_HOST;
 	}
 
+	/* Powered-on state: trolley LED/drivers follow the (debounced) trolley. */
+	if (trolley) {
+		led |= LED_TROLLEY_CONNECTED;
+		drv |= DRV_TROLLEY_EN | DRV_TRL_MU_MCU | DRV_TRL_MU_IS_PC;
+	}
+
 	doutWrite(SM_RELAY_ALL, relay);
 	s1RelayLog("T3", relay);
-	doutWrite(SM_LED_ALL, LED_UPS_IN | LED_S1_SYS_ON | LED_SYS_ON |
-			     LED_PWR24V_ON | LED_CP24V_ON | LED_PAC230V_ON |
-			     LED_TROLLEY_CONNECTED);
+	doutWrite(SM_LED_ALL, led);
 	doutWrite(SM_DRV_ALL, drv);
 	indicatorSetMode(INDICATOR_ON);   /* UPS mode -> solid on */
 }
@@ -329,26 +333,19 @@ static void s1ReportShutdownInputs(uint32_t din)
 }
 
 /* SHUTDOWN (md T4): base K3,K10 (K13 off) plus dynamic bits (refreshed every ms)
- *   trolley connected -> LED_TROLLEY_CONNECTED + TROLLEY_EN + TRL_MU_MCU/IS_PC
  *   IS_PC_ON    high -> K9 | K11   (DRV_IS_PC_SITE is only on in the running states)
- *   APP_HOST_ON high -> K13        (DRV_APP_HOST    is only on in the running states)*/
+ *   APP_HOST_ON high -> K13        (DRV_APP_HOST    is only on in the running states)
+ *   trolley LED/drivers are NOT driven in T4 (only in the powered-on T2/T3) */
 static void s1OutputShutdown(uint32_t din)
 {
-	const bool trolley = isTrolleyConnectedDebounced();
 	uint64_t relay = S1_SHUTDOWN_RELAY;                     /* K3 | K10 (K13 off) */
 	uint64_t led   = LED_GRID_PWR_IN | LED_PWR24V_ON | LED_CP24V_ON | LED_PAC230V_ON;
 	uint64_t drv   = DRV_MAINS_CONNECTED_MCU | DRV_MAINS_CONNECTED_IS_PC;
 
 	s1ReportShutdownInputs(din);
 
-	if (trolley) {
-		led |= LED_TROLLEY_CONNECTED;
-		drv |= DRV_TROLLEY_EN | DRV_TRL_MU_MCU | DRV_TRL_MU_IS_PC;
-	}
-	else {
-		led &= ~LED_TROLLEY_CONNECTED;
-		drv &= ~(DRV_TROLLEY_EN | DRV_TRL_MU_MCU | DRV_TRL_MU_IS_PC);
-	}
+	/* Trolley LED/drivers are only output while powered on (T2/T3); they are
+	 * not driven in shutdown (T4). */
 
 	s1UpdateOdLatch(din);
 
@@ -612,9 +609,9 @@ smS1State_t smS1Tick(uint32_t din)
 	/* While the on/off key is held: indicator breathes at double frequency */
 	indicatorSetBreathFast(onoff);
 
-	/* Global indicators: PD9 = S1 system (always on in S1); PD6 = trolley connected */
+	/* Global indicators: PD9 = S1 system (always on in S1).
+	 * The trolley LED (PD6) is driven per-state (only in T2/T3 now). */
 	bspDoutSetBitmap(BIT64(DOUT_LED_S1_SYS_ON), true);
-	bspDoutSetBitmap(BIT64(DOUT_LED_TROLLEY_CONNECTED), isTrolleyConnectedDebounced());
 
 	s1_prev_din = din;
 	return s1_state;

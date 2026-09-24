@@ -22,7 +22,8 @@
  *
  * An invalid/conflicting pattern latches the error state: no relay/LED/driver is
  * driven and the status indicator breathes at the on/off-key feedback rate
- * (double frequency) until a reset / power cycle re-samples the DIP.
+ * (double frequency). A SYSTEM_RESET, a >=5 s on/off-key hold (software reset,
+ * acts on release) or a power cycle re-samples the DIP.
  *
  * Full S1 implementation: sm_s1.c/h (T0~T4 + RESET).
  * Full S2 implementation: sm_s2.c/h (T0~T4 + RESET; sub-mode solo/classic via pj4).

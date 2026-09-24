@@ -77,9 +77,17 @@
 	status = "disabled";
 };
 
-/* I2C1 on PB8/PB9 (EEPROM 24C04 @0x50, WP on PB7) */
+/* I2C1 on PB8/PB9 (TMP75 temperature sensor @0x48) */
 &i2c1 {
 	pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb9>;
+	pinctrl-names = "default";
+	status = "okay";
+	clock-frequency = <I2C_BITRATE_FAST>;
+};
+
+/* I2C3 on PH7/PH8 (identity EEPROM M24512 @0x50, WP tied to GND) */
+&i2c3 {
+	pinctrl-0 = <&i2c3_scl_ph7 &i2c3_sda_ph8>;
 	pinctrl-names = "default";
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;

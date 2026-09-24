@@ -63,6 +63,50 @@ static bool g_prev_reset;
 /* Previous sub-state: entering T4 (shutdown) re-arms the main-mode decision */
 static int g_prev_state = -1;
 
+/* Config-error SW reset: a >= 5 s on/off key hold (on release) re-arms the DIP
+ * decision, matching the S1/S2 software-reset semantics. */
+#define ERR_ONOFF_RESET_MS 5000
+
+static bool    g_err_onoff_pressed;
+static int64_t g_err_onoff_start_ms;
+static bool    g_err_onoff_reset_armed;
+
+static void configErrorOnOffTick(uint32_t din)
+{
+	if (!g_system_locked) {
+		g_err_onoff_pressed     = false;
+		g_err_onoff_reset_armed = false;
+		return;
+	}
+
+	const bool    onoff = isOnOffActive(din);
+	const int64_t now   = k_uptime_get();
+
+	if (onoff && !g_err_onoff_pressed) {          /* low->high: pressed */
+		g_err_onoff_pressed     = true;
+		g_err_onoff_start_ms    = now;
+		g_err_onoff_reset_armed = false;
+	} else if (onoff && g_err_onoff_pressed) {
+		if ((now - g_err_onoff_start_ms) >= ERR_ONOFF_RESET_MS) {
+			g_err_onoff_reset_armed = true;   /* held 5 s: reset armed */
+		}
+	} else if (!onoff && g_err_onoff_pressed) {   /* high->low: released */
+		g_err_onoff_pressed = false;
+		if (g_err_onoff_reset_armed) {
+			g_err_onoff_reset_armed = false;
+
+			/* Software reset: unlock and re-sample the DIP pattern. */
+			g_system_locked  = false;
+			g_pending        = SYSTEM_NONE;
+			g_pending_timing = false;
+			g_prev_state     = -1;
+			if (!terminalIsQuiet()) {
+				printk("STATEMACHINE: config-error SW reset -> re-detect\n");
+			}
+		}
+	}
+}
+
 /* Trolley debounce state */
 static bool    g_trolley_conn;      /* debounced connected state */
 static bool    g_trolley_timing;
@@ -241,6 +285,10 @@ void stateMachineTick(void)
 		doutWrite(SM_RELAY_ALL, 0);
 		doutWrite(SM_LED_ALL, 0);
 		doutWrite(SM_DRV_ALL, 0);
+
+		/* A >= 5 s on/off hold is a software reset (re-samples the DIP). */
+		configErrorOnOffTick(din);
+
 		if (g_system_locked) {
 			/* Latched config error: breathe at the on/off-key feedback rate
 			 * (double frequency), so it is clearly distinct from the normal

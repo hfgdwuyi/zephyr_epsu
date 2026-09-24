@@ -6,7 +6,8 @@
  *   T0 standby / T1 off (mains lost) / T2 run / T3 UPS / T4 shutdown
  *   / hardware reset / software reset
  *
- * Only mains (ME_BOX_ERROR) drives transitions. Trolley is followed in T0/T2/T3/T4.
+ * Only mains (ME_BOX_ERROR) drives transitions. Trolley is followed in T2/T3
+ * (powered-on states); it is not driven in standby (T0) or shutdown (T4).
  *
  *   T0 STANDBY      : K3,K10 + MAINS_CONNECTED_MCU/IS_PC (+trolley LEDs/DRV)
  *   T1 OFF_NO_MAINS : all relays/LEDs/drivers off (wait for the supply to drop)

@@ -213,22 +213,11 @@
     };
 };
 
-/* ---- 24C04 I2C EEPROM（512×8）@ I2C1 + PB7 = WP ----
- * I2C1 pins are PB8 (SCL) / PB9 (SDA). WP is managed by the at2x driver
- * (released before a write, restored after; high = write protected).
- * Note: on the dev board PB7 is also LPUART1 RX - disable &lpuart1 when
- * testing the EEPROM. A2 is unconnected -> base address 0x50. */
-&i2c1 {
+/* ---- I2C3 (PH7=SCL / PH8=SDA) hosts the TPS25762 USB-C/PD controller ----
+ * MCU is the I2C master, the TPS25762 is the slave. No device-tree child
+ * node yet (host-interface driver to be added). */
+&i2c3 {
     clock-frequency = <I2C_BITRATE_FAST>;
-    identity_eeprom: eeprom@50 {
-        compatible = "atmel,at24";
-        reg = <0x50>;
-        size = <512>;
-        pagesize = <16>;
-        address-width = <8>;
-        timeout = <5>;
-        wp-gpios = <&gpiob 7 GPIO_ACTIVE_HIGH>;
-    };
 };
 
 /* ---- External 64 Mbit QSPI NOR = IS25LP064 (ISSI, SFDP/JEDEC, 4K sectors)

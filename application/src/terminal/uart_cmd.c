@@ -156,8 +156,8 @@ static void cmdHelp(void)
 		  "  getdin                  - read DIN bitmap\r\n"
 		  "  ain [raw]               - read all ADC channels (all by default)\r\n"
 		  "  temp                    - read TMP75 temperature (I2C1 0x48)\r\n"
-		  "  i2cscan                 - scan I2C1 bus for device addresses\r\n"
-		  "  i2cread <a> [reg] [len] - read I2C1 slave (hex addr/reg/len)\r\n");
+		  "  i2cscan [bus]           - scan I2C (bus 1|3, default both)\r\n"
+		  "  i2cread <bus> <a> [reg] [len] - read I2C slave (bus 1|3, hex addr/reg/len)\r\n");
 }
 
 static void cmdInfo(void)
@@ -469,21 +469,41 @@ static void cmdAin(const char *args)
 	}
 }
 
-/* ---- i2cscan: probe all slave addresses on I2C1 ---- */
-static void cmdI2cScan(void)
+/* ---- I2C bus selector: 1 = I2C1 (TMP75), 3 = I2C3 (TPS25762) ---- */
+static const struct device *i2cBusByNum(long bus)
 {
+	if (bus == 1) {
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay)
-	const struct device *bus = DEVICE_DT_GET(DT_NODELABEL(i2c1));
+		return DEVICE_DT_GET(DT_NODELABEL(i2c1));
+#endif
+	} else if (bus == 3) {
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c3), okay)
+		return DEVICE_DT_GET(DT_NODELABEL(i2c3));
+#endif
+	}
+	return NULL;
+}
+
+static const char *i2cBusName(long bus)
+{
+	return (bus == 1) ? "i2c1" : "i2c3";
+}
+
+/* ---- i2cscan [bus]: probe slave addresses on one bus, or both if omitted ---- */
+static void i2cScanOne(const struct device *bus, const char *name)
+{
 	char buf[64];
 	uint8_t dummy = 0;
 	int found = 0;
 
-	if (!device_is_ready(bus)) {
-		uartTxStr("ERR i2c1 not ready\r\n");
+	if (bus == NULL || !device_is_ready(bus)) {
+		snprintk(buf, sizeof(buf), "scan %s: not ready\r\n", name);
+		uartTxStr(buf);
 		return;
 	}
 
-	uartTxStr("scan i2c1 (7-bit addr 0x08..0x77):\r\n");
+	snprintk(buf, sizeof(buf), "scan %s (7-bit addr 0x08..0x77):\r\n", name);
+	uartTxStr(buf);
 
 	for (uint16_t addr = 0x08; addr <= 0x77; addr++) {
 		/* Zero-length write = START + address + STOP (standard quick command),
@@ -497,33 +517,59 @@ static void cmdI2cScan(void)
 
 	snprintk(buf, sizeof(buf), "total %d device(s)\r\n", found);
 	uartTxStr(buf);
-#else
-	uartTxStr("ERR i2c1 disabled\r\n");
-#endif
 }
 
-/* ---- i2cread <addr> [reg] [len]: read I2C1 slave registers ----
- *   i2cread 0x52            -> plain 2-byte read (command-style device)
- *   i2cread 0x52 0x00 4     -> read 4 bytes from register 0x00
- * All arguments are hex; len defaults to 2, max 32. */
+static void cmdI2cScan(const char *args)
+{
+	char *save = NULL, *tok;
+	long bus = 0;
+
+	if (args != NULL) {
+		tok = strtok_r((char *)args, " \t", &save);
+		if (tok != NULL) {
+			bus = strtol(tok, NULL, 0);
+		}
+	}
+
+	if (bus == 0) {                 /* no arg: scan both buses */
+		i2cScanOne(i2cBusByNum(1), "i2c1");
+		i2cScanOne(i2cBusByNum(3), "i2c3 (TPS25762)");
+	} else if (bus == 1 || bus == 3) {
+		i2cScanOne(i2cBusByNum(bus), i2cBusName(bus));
+	} else {
+		uartTxStr("ERR bus must be 1 or 3\r\n");
+	}
+}
+
+/* ---- i2cread <bus> <addr> [reg] [len]: read an I2C slave ----
+ *   bus 1 = I2C1 (TMP75), 3 = I2C3 (TPS25762)
+ *   i2cread 3 0x50          -> plain read (command-style device)
+ *   i2cread 3 0x50 0x00 4   -> read 4 bytes from register 0x00
+ * All arguments are hex except the bus number; len defaults to 2, max 32. */
 static void cmdI2cRead(const char *args)
 {
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay)
-	const struct device *bus = DEVICE_DT_GET(DT_NODELABEL(i2c1));
 	char *save = NULL, *tok;
 	char line[160];
 	uint8_t buf[32];
-	long addr, reg = -1, len = 2;
+	long bus, addr, reg = -1, len = 2;
+	const struct device *dev;
 	int rc, n = 0;
 
 	if (args == NULL) {
-		uartTxStr("ERR usage: i2cread <addr> [reg] [len]\r\n");
+		uartTxStr("ERR usage: i2cread <bus 1|3> <addr> [reg] [len]\r\n");
 		return;
 	}
 
 	tok = strtok_r((char *)args, " \t", &save);
 	if (tok == NULL) {
-		uartTxStr("ERR usage: i2cread <addr> [reg] [len]\r\n");
+		uartTxStr("ERR usage: i2cread <bus 1|3> <addr> [reg] [len]\r\n");
+		return;
+	}
+	bus = strtol(tok, NULL, 0);
+
+	tok = strtok_r(NULL, " \t", &save);
+	if (tok == NULL) {
+		uartTxStr("ERR usage: i2cread <bus 1|3> <addr> [reg] [len]\r\n");
 		return;
 	}
 	addr = strtol(tok, NULL, 0);
@@ -541,25 +587,31 @@ static void cmdI2cRead(const char *args)
 		return;
 	}
 
-	if (!device_is_ready(bus)) {
-		uartTxStr("ERR i2c1 not ready\r\n");
+	dev = i2cBusByNum(bus);
+	if (dev == NULL) {
+		uartTxStr("ERR bus must be 1 or 3\r\n");
+		return;
+	}
+	if (!device_is_ready(dev)) {
+		uartTxStr("ERR bus not ready\r\n");
 		return;
 	}
 
 	if (reg >= 0) {
-		rc = i2c_burst_read(bus, (uint8_t)addr, (uint8_t)reg,
+		rc = i2c_burst_read(dev, (uint8_t)addr, (uint8_t)reg,
 				    buf, (uint32_t)len);
 	} else {
-		rc = i2c_read(bus, buf, (uint32_t)len, (uint8_t)addr);
+		rc = i2c_read(dev, buf, (uint32_t)len, (uint8_t)addr);
 	}
 
 	if (rc != 0) {
-		snprintk(line, sizeof(line), "ERR read 0x%02lX rc=%d\r\n", addr, rc);
+		snprintk(line, sizeof(line), "ERR read bus%ld 0x%02lX rc=%d\r\n",
+			 bus, addr, rc);
 		uartTxStr(line);
 		return;
 	}
 
-	n = snprintk(line, sizeof(line), "0x%02lX", addr);
+	n = snprintk(line, sizeof(line), "bus%ld 0x%02lX", bus, addr);
 	if (reg >= 0) {
 		n += snprintk(line + n, sizeof(line) - n, "[0x%02lX]", reg);
 	}
@@ -569,9 +621,6 @@ static void cmdI2cRead(const char *args)
 	}
 	snprintk(line + n, sizeof(line) - n, "\r\n");
 	uartTxStr(line);
-#else
-	uartTxStr("ERR i2c1 disabled\r\n");
-#endif
 }
 
 /* ==================== Line parsing and dispatch ==================== */
@@ -886,7 +935,7 @@ static void uartCmdExecute(char *cmdline)
 	} else if (strcmp(cmd, "ain") == 0) {
 		cmdAin(args);
 	} else if (strcmp(cmd, "i2cscan") == 0) {
-		cmdI2cScan();
+		cmdI2cScan(args);
 	} else if (strcmp(cmd, "i2cread") == 0) {
 		cmdI2cRead(args);
 	} else {

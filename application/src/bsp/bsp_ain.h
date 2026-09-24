@@ -25,14 +25,14 @@ enum {
 	AIN_ADC_5V0,            /*  4: PF14  — 5V monitor, direct            */
 	AIN_ADC_TEMP1,          /*  5: PA3   — NTC sensor 1 (no divider)    */
 	AIN_ADC_TEMP2,          /*  6: PA4   — NTC sensor 2 (no divider)    */
-	AIN_ADC_PDC0,           /*  7: PA6   — PSU output, 47k:4.7k divider */
+	AIN_ADC_PDC0,           /*  7: PA6   — 24V rail, op-amp ×10         */
 	AIN_ADC_PDC4,           /*  8: PA0_C — PSU output, 47k:4.7k divider */
 	AIN_ADC_PDC2,           /*  9: PB0   — PSU output, 47k:4.7k divider */
 	AIN_ADC_PDC3,           /* 10: PB1   — PSU output, 47k:4.7k divider */
 	AIN_ADC_3V3,            /* 11: PC0   — 3.3V monitor, direct         */
 	AIN_ADC_PDC1,           /* 12: PC2   — PSU output, 47k:4.7k divider */
 	AIN_ADC_VIN,            /* 13: PC2_C — mains AC, direct ADC3_INP0   */
-	AIN_ADC_PDC0_ALT,       /* 14: PC3_C — second PDC0, 47k:4.7k divider */
+	AIN_ADC_PDC0_ALT,       /* 14: PC3_C — second 24V, op-amp ×10      */
 };
 
 /* ==================== API ==================== */

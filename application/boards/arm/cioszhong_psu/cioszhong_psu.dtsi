@@ -55,6 +55,18 @@
 	fdcan1_tx_ph13: fdcan1_tx_ph13 {
 		pinmux = <STM32_PINMUX('H', 13, AF9)>;
 	};
+
+	/* I2C3 on PH7 (SCL) / PH8 (SDA), AF4 - identity EEPROM M24512.
+	 * Not shipped in stm32h745zitx-pinctrl.dtsi, so defined here. */
+	i2c3_scl_ph7: i2c3_scl_ph7 {
+		pinmux = <STM32_PINMUX('H', 7, AF4)>;
+		bias-pull-up;
+	};
+
+	i2c3_sda_ph8: i2c3_sda_ph8 {
+		pinmux = <STM32_PINMUX('H', 8, AF4)>;
+		bias-pull-up;
+	};
 };
 
 &rcc {
