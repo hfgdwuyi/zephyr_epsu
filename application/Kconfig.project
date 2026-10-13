@@ -2,7 +2,7 @@
 
 config CIOS_ZHONG_FW_VERSION
 	string "Firmware version"
-	default "0.2.10"
+	default "0.3.0"
 	help
 	  Firmware version string in MAJOR.MINOR.PATCH format.
 	  Displayed on boot and available via status queries.
@@ -23,3 +23,11 @@ config CIOS_ZHONG_BRINGUP
 	  disabling the state machine, WWDG and other subsystems so a fresh
 	  board can be verified without the risk of watchdog deadlock.
 	  Set to n for the full PSU application.
+
+config CIOS_ZHONG_CANOPEN_NODE_ID
+	int "CANopen node ID"
+	range 1 127
+	default 1
+	help
+	  CANopen 节点号（1..127）。0 保留给广播，128..255 非法。
+	  由 getNodeId() 提供给协议栈（application/src/main/usr_301.c）。

@@ -1,0 +1,156 @@
+
+; This EDS file was created by the CANopen Design Tool 2.3.18.0.
+; port GmbH Halle/Saale Germany, http://www.port.de, mailto:service@port.de
+
+[FileInfo]
+FileName=newProject_line0.eds
+FileVersion=1
+FileRevision=1
+EDSVersion=4.0
+Description=CANopen device using port's CANopen library
+CreationTime=10:29AM
+CreationDate=02-26-2020
+CreatedBy=z003c6xf
+ModificationTime=04:48PM
+ModificationDate=04-09-2020
+ModifiedBy=z003c6xf
+
+[DeviceInfo]
+VendorName=Siemens Healthcare
+VendorNumber=0x53
+ProductName=CANopen device
+ProductNumber=0x0
+RevisionNumber=0x01
+OrderCode=
+BaudRate_10=0
+BaudRate_20=0
+BaudRate_50=0
+BaudRate_125=0
+BaudRate_250=0
+BaudRate_500=0
+BaudRate_800=0
+BaudRate_1000=0
+DynamicChannelsSupported=0
+GroupMessaging=0
+LSS_Supported=0
+Granularity=0
+SimpleBootUpSlave=1
+SimpleBootUpMaster=0
+NrOfRXPDO=0
+NrOfTXPDO=0
+
+[Comments]
+Lines=0
+
+[DummyUsage]
+Dummy0001=0
+Dummy0002=0
+Dummy0003=0
+Dummy0004=0
+Dummy0005=1
+Dummy0006=1
+Dummy0007=1
+
+[MandatoryObjects]
+SupportedObjects=3
+1=0x1000
+2=0x1001
+3=0x1018
+
+[OptionalObjects]
+SupportedObjects=4
+1=0x1008
+2=0x1009
+3=0x100A
+4=0x1017
+
+[ManufacturerObjects]
+SupportedObjects=0
+
+[1000]
+ParameterName=Device Type
+ObjectType=0x07
+DataType=0x0007
+AccessType=const
+DefaultValue=0x00000000
+PDOMapping=0
+
+[1001]
+ParameterName=Error Register
+ObjectType=0x07
+DataType=0x0005
+AccessType=ro
+PDOMapping=0
+
+[1008]
+ParameterName=Manufacturer Device Name
+ObjectType=0x07
+DataType=0x0009
+AccessType=const
+PDOMapping=0
+
+[1009]
+ParameterName=Manufacturer Hardware Version
+ObjectType=0x07
+DataType=0x0009
+AccessType=const
+PDOMapping=0
+
+[100A]
+ParameterName=Manufacturer Software Version
+ObjectType=0x07
+DataType=0x0009
+AccessType=const
+PDOMapping=0
+
+[1017]
+ParameterName=Producer Heartbeat Time
+ObjectType=0x07
+DataType=0x0006
+AccessType=rw
+DefaultValue=0x00000BB8
+PDOMapping=0
+
+[1018]
+SubNumber=5
+ParameterName=Identity Object
+ObjectType=0x09
+
+[1018sub0]
+ParameterName=number of entries
+ObjectType=0x07
+DataType=0x0005
+AccessType=ro
+DefaultValue=0x4
+PDOMapping=0
+
+[1018sub1]
+ParameterName=Vendor Id
+ObjectType=0x07
+DataType=0x0007
+AccessType=ro
+DefaultValue=0x53
+PDOMapping=0
+
+[1018sub2]
+ParameterName=Product Code
+ObjectType=0x07
+DataType=0x0007
+AccessType=ro
+DefaultValue=0x0
+PDOMapping=0
+
+[1018sub3]
+ParameterName=Revision number
+ObjectType=0x07
+DataType=0x0007
+AccessType=ro
+PDOMapping=0
+
+[1018sub4]
+ParameterName=Serial number
+ObjectType=0x07
+DataType=0x0007
+AccessType=ro
+PDOMapping=0
+

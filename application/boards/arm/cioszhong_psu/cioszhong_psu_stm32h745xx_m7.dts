@@ -94,21 +94,58 @@
 };
 
 /*
- * CAN per product pin_config.xlsx:
- *   CAN1: PH13 (can1_tx) / PH14 (can1_rx)   -> FDCAN1
- *   CAN2: PB13 (can2_tx) / PB5  (can2_rx)   -> FDCAN2
- * HSE-derived clock is used by default (no explicit clocks property).
+ * CAN per product pin_config.xlsx / 实测接线：
+ *   CAN2: PB13 (can2_tx) / PB5  (can2_rx)   -> FDCAN2  ← 产品实际使用的这路
+ *   CAN1: PH13 (can1_tx) / PH14 (can1_rx)   -> FDCAN1  ← 当前使用(zephyr,canbus)
+ *
+ * 注意：本板没有外部晶振（&clk_hse status = disabled），而 H7 的
+ * D2CCIP1R.FDCANSEL 复位默认是 HSE → 控制器会拿不到内核时钟、
+ * can_start() 返回 -EAGAIN。内核时钟切到 PLL1Q 的动作在
+ * application/src/main/main.c 的 canopenInit() 里用 LL_RCC 完成
+ * （Zephyr 的 H7 时钟驱动不会写这个 mux）。
  */
 &fdcan1 {
+	clocks = <&rcc STM32_CLOCK(APB1_2, 8)>,
+		 <&rcc STM32_SRC_PLL1_Q FDCAN_SEL(1)>;
 	pinctrl-0 = <&fdcan1_rx_ph14 &fdcan1_tx_ph13>;
 	pinctrl-names = "default";
 	status = "okay";
 };
 
+/* CAN 活动指示灯（pin_config.xlsx：CAN1 = PH15/PH12，CAN2 = PH11/PH10）。
+ * 固件在发送/接收时翻转它们，台架上可直观判断总线上到底有没有动作。
+ * 用自定义 compatible（无需 LED 子系统驱动），驱动里用 GPIO_DT_SPEC_GET 取用。*/
+/ {
+	can_activity_leds {
+		/* 用标准 gpio-leds binding，这样 gpios 会被正确解析成 phandle-array；
+		 * 不需要打开 CONFIG_LED —— 驱动里直接用 GPIO_DT_SPEC_GET 手动翻转。*/
+		compatible = "gpio-leds";
+
+		can2_tx_led: can2_tx_led {
+			gpios = <&gpioh 11 GPIO_ACTIVE_HIGH>;
+		};
+
+		can2_rx_led: can2_rx_led {
+			gpios = <&gpioh 10 GPIO_ACTIVE_HIGH>;
+		};
+
+		can1_tx_led: can1_tx_led {
+			gpios = <&gpioh 15 GPIO_ACTIVE_HIGH>;
+		};
+
+		can1_rx_led: can1_rx_led {
+			gpios = <&gpioh 12 GPIO_ACTIVE_HIGH>;
+		};
+	};
+};
+
 &fdcan2 {
+	/* 本板实际接线在 CAN1(PH13/PH14)；CAN2 保留但不启用 */
+	status = "disabled";
+	clocks = <&rcc STM32_CLOCK(APB1_2, 8)>,
+		 <&rcc STM32_SRC_PLL1_Q FDCAN_SEL(1)>;
 	pinctrl-0 = <&fdcan2_rx_pb5 &fdcan2_tx_pb13>;
 	pinctrl-names = "default";
-	status = "okay";
 };
 
 /* ==================== MCUboot dual-slot flash layout ====================

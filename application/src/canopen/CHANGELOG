@@ -1,0 +1,224 @@
+CHANGELOG CANopen Library V4.5
+=======================================================================================
+
+CANopen Library 4.5.14 - *2017-10-27*
+---------------------------------------------------------------------------------------
+**New**
+* Option CO_CONFIG_SDO_EXPEDITED_NO_VALID_SIZE_BIT allows to send expedited SDO transfers
+  without the size bit set
+    * setting is per SDO: adjust the SDO_T member expedited_sdo_with_valid_size_bit
+    * this setting allows SDO communication to CANopen implemtations that did not check
+      expedited SDOs for size, it should be considered experimental
+* added examples m33 and s33
+    * the examples show usage of the user message system to implement an addtional small
+      protocol
+    * implemented example protocol is the energy management of profile 447
+    * also showcased is the CobId distribution of profile 447
+    * example is based on socketCAN, but can be easily changed
+* segmented SDO domain write transfers using an intermediate buffer on the SDO server side
+  can now be delayed everytime the buffer is full
+    * this is useful when the domain needs to passed on through a slower process, ie. an
+      I2C or SPI further transfer
+    * enabled by define CO_CONFIG_DOMAIN_INDICATION_DEFERRABLE
+    * the sdoDomainInd(..) function gains additional parameters, see the usr_301.c template
+    * finishSdoDomainInd(..) will resume SDO processing
+**Changes**
+* it is now possible to preselect the SDO communication line when using redundancy
+    * requires option CO_CONFIG_REDUNDANCY_ALLOW_SDO_LINE_SELECT
+    * this option will allow setting the SDO_T type's commLine variable
+    * this option will disable the automatic switch of sdo commLine should a commLine fail,
+      the application has to take over this part
+**Minor**
+**Fixed**
+    * a number of C++ build errors
+
+CANopen Library 4.5.13 - *2017-08-25*
+---------------------------------------------------------------------------------------
+**New**
+* the library can now report any received message to the application
+    * enabled via define CO_CONFIG_USER_MESSAGE_TEST
+    * the application can then suppress further handling of a message by the library
+* the library can now report the time until the next internal event
+    * could be used to better time the call of FlushMbox on threaded systems
+    * note: FlushMbox should still be called promtly on receiving a message
+    * function is called co_getNextInternalEventTime(..)
+**Changes**
+* dynamic services setup now uses calloc instead of malloc to ensure NULLed variable
+  initialization
+* when using dynamic services setup on singleline more internal functions use values
+  derived from arguments of initDynamicServices, where applicable
+    * this was already the case on multiline
+* added option CO_CONFIG_LSS_FASTSCANDATA_REPORT_FULL_ARRAY to LSS
+    * this will give a pointer to the full identity information array instead of the
+      start of line specific information
+    * only noticeable on multiline
+    * old behavior unchanged
+* added option CO_CONFIG_SUPPRESS_BOOTUP to start up
+    * this will suppress sending any boot up, but the device will start otherwise normal
+    * this option is NOT according to the CANopen standard and WILL FAIL any conformance 
+      test
+* added option CO_CONFIG_BLOCKTRANSFER_INHIBITED_SEND to blocktransfer
+    * this will inhibit data segments of the blocktransfer, spreading them over time
+    * value in CO_CONFIG_BLOCKTRANSFER_INHIBITED_SEND is used as a default value, this
+      can be adjusted per SDO
+    * only data segments in blocktransfer are affected
+**Minor**
+* added template for coProtocolErrorInd
+* added templates for coUserVirtualTpdoInd, coUserVirtualRpdoInd
+**Fixed**
+* the library can now handle 64bit variable conversion on big endian systems
+* the lss template for usr_305.c has a proper default case
+
+CANopen Library 4.5.12 - *2017-03-13*
+---------------------------------------------------------------------------------------
+**New**
+* the library can now report any heartbeat to the application
+    * enabled via define CO_CONFIG_REPORT_ANY_HB
+    * uses indication coUserHbReceived(..) (see examples/template/usr_301.c)
+**Changes**
+* LSS slaves will now react to requests while in OPERATIONAL state
+    * previously any requests in while OPERATIONAL state would be ignored
+    * old behaviour can be reenabled by setting
+        #define CO_CONFIG_LSS_NO_REACTION_IN_OPERATIONAL 1
+* added an automatic SDO abort in case the SDO client cannot start the SDO timeout monitoring
+    * previously this would fail silenty and had to be solved by application
+**Fixed**
+* when using fast sort, removeNodeReq(..) will now also resort it's internal list
+* many small changes due to static code checks via lint
+* in the template for usr_301.c the indication mGuardErrorInd(..) is now included
+  for any device that is using define (CONFIG_MASTER), so it can report received BootUp
+  messages
+
+CANopen Library 4.5.11 - *2016-11-18*
+---------------------------------------------------------------------------------------
+**New**
+* includes and source were changed to UTF-8, including the templates
+* devices with CO_CONFIG_SELFSTARTING_SLAVE can change bit 3 of 1f80h
+    * this allows (re-)configuration of selfstarting slave behavior at runtime
+* all SDO abort codes defined in CiA 301 available for applications
+**Changes**
+* PDO mapping sizes are now exact like defined in CiA 301
+    * previously size less than object size would be accepted.
+    * This new behaviour can be disabled with the define CO_CONFIG_NO_MAPPING_LOWER_SIZE_CHECK.
+**Fixed**
+* CRC will work in block transfer, even if segments in a block were missed and are retransmitted
+* a few fixes for compiler warnings in Renesas Compilers
+
+CANopen Library 4.5.10 - *2016-06-30*
+---------------------------------------------------------------------------------------
+**New**
+* support for selfstarting slaves via object 0x1f80
+    * requires define CO_CONFIG_SELFSTARTING_SLAVE
+    * requires value 0x8 in object 0x1f80
+**Changes**
+* objects in device profile area can be virtual
+* segment size of SDO blocktransfer can be changed on an SDO Client/Server basis
+
+
+CANopen Library 4.5.9 - *2016-02-16*
+---------------------------------------------------------------------------------------
+
+**Changes:**
+* added library checks for restricted CobIds according to CiA301
+    * can be disabled by
+        #define CO_CONFIG_DONT_CHECK_RESTRICTED_COBID 1
+* added public declarations for segmented transfer functions for SDO
+* added utility function coSetNodeOPERATIONAL(...) to set a node operational
+* added optional indication functions for reset behaviour
+* fix: corrected SDO abort code in SDO upload
+* change: testSdoValue() is also available when using SDO blocktransfer
+* change: setting HB will disable a running nodeGuarding
+* new example: s23 SDO domain transfer
+
+
+CANopen Library 4.5.8 - *2015-11-03*
+---------------------------------------------------------------------------------------
+
+**Changes:**
+* removed additional warnings in SDO blocktransfer
+
+
+CANopen Library 4.5.7 - *2015-10-26*
+---------------------------------------------------------------------------------------
+
+**Changes:**
+* Added new functions for getting the state of a LED
+* Added option to transfer strings without transfering full length as given by OD
+* Added option to transfer domains with dynamic ending, controlled by user application
+* Added support for SDO abort code 06040047h (CO_E_INTERNAL_INCOMP)
+
+
+CANopen Library 4.5.6 - *2015-08-03*
+---------------------------------------------------------------------------------------
+
+**Changes:**
+* Added new request function to write an SDO as segmented transfer, even if
+  blocktransfer is configured - writeSdoSegReq.
+* Added new request function to read with an SDO as segmented transfer, even if
+  blocktransfer is configured - readSdoSegReq.
+* Added support for INTEGER64.
+* Added new function to get the actual LSS-state of the local LSS-slave.
+
+
+
+CANopen Library 4.5.5 - *2015-07-14*
+---------------------------------------------------------------------------------------
+
+**Changes:**
+* Added new indication which get called if an virtual object is mapped to an PDO, to
+  gain access to the PDO payload.
+* Extended the object specific callback type structure with a pointer to the object
+  and the object size.
+* Fixed missing pointer cast to avoid warnings.
+* Corrected documentation and comments in code.
+
+
+
+CANopen Library 4.5.4 - *2015-04-24*
+---------------------------------------------------------------------------------------
+
+**Changes:**
+* Added new object callback call if the sdo aborts for some reason.
+* Added objects callback calls for mpdo.
+* Added function putObjPtr for faster access if there is a known object pointer.
+* Minor fixes to avoid compiler warnings.
+
+
+
+CANopen Library 4.5.3 - *2014-09-29*
+---------------------------------------------------------------------------------------
+
+**Changes:**
+* Changed the nmt startup manager to fix compile problem from 4.5.2 multiline version.
+
+
+
+CANopen Library 4.5.2 - *2014-08-12*
+---------------------------------------------------------------------------------------
+
+**Changes:**
+* Changed the nmt startup manager to only configure the SDOs if needed.
+* Changed the nmt startup manager to only search the needed objects once.
+* New indication for the nmt startup manager to retry if a device aborts object
+  0x1000 read.
+* Some changes to make the initialization of the stack faster
+* Fixed a issue with the getObjPtrAtIndex function to return the correct pointer.
+* Added an indication in the nmt startup manager to change the sdo timeout for
+  every SDO request.
+
+
+CANopen Library 4.5.1 - *2014-04-30*
+---------------------------------------------------------------------------------------
+
+**Changes:**
+* Changed object attributes to UNSIGNED16 from V4.4 UNSIGNED8.
+* Added optionial function pointers for objects, to spped up application response time.
+* Speed optimization for object access, so boot up and SDO gained better reaction time.
+* Added new API function getObjStoreEnableReq, which return if an object is supposed to
+  be stored in non-volatile memory.
+* Fixed serveral MISRA C issues.
+* Removed serveral compiler warnings.
+* Removed automatic emergency sending due to too short or too long PDOs.
+* Fixed MPDO issue, where the stack send empty MPDOs if PDO Eventtimer is enabled this.
+* Added **LSS** package to standard delivery of the *CANopen Library*
+

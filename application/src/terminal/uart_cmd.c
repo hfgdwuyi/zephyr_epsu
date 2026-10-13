@@ -33,6 +33,7 @@
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/uart.h>
+#include <zephyr/drivers/can.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/reboot.h>
@@ -53,6 +54,7 @@
 #include "sensor.h"
 #include "ac_meter.h"
 #include "tmp75.h"
+#include "canopen_status.h"
 #include "indicator.h"
 #include "max6703a.h"
 
@@ -157,7 +159,8 @@ static void cmdHelp(void)
 		  "  ain [raw]               - read all ADC channels (all by default)\r\n"
 		  "  temp                    - read TMP75 temperature (I2C1 0x48)\r\n"
 		  "  i2cscan [bus]           - scan I2C (bus 1|3, default both)\r\n"
-		  "  i2cread <bus> <a> [reg] [len] - read I2C slave (bus 1|3, hex addr/reg/len)\r\n");
+		  "  i2cread <bus> <a> [reg] [len] - read I2C slave (bus 1|3, hex addr/reg/len)\r\n"
+		  "  can [loopback|normal]   - CANopen status / switch bus mode\r\n");
 }
 
 static void cmdInfo(void)
@@ -383,6 +386,68 @@ static void cmdGetDin(void)
 }
 
 /* ---- temp: read the TMP75 (I2C1, 0x48) ---- */
+/* can — CANopen 节点状态、总线健康与心跳自证。
+ * 回环模式（can loopback）下 rxhb 计数增长即证明
+ * 节点确实在发送 boot-up/心跳帧。 */
+static void cmdCan(const char *args)
+{
+	/* CANopen 节点状态在总线上的取值（co_type.h NODE_STATE_T）：
+	 * 1 = INITIALISING, 4 = STOPPED, 5 = OPERATIONAL, 127 = PRE-OPERATIONAL */
+	static const char *const nmtName[] = {
+		[1] = "INITIALISING", [4] = "STOPPED", [5] = "OPERATIONAL",
+		[127] = "PRE-OPERATIONAL"
+	};
+	/* 顺序必须与 Zephyr 的 enum can_state 一致：
+	 * 0 ERROR_ACTIVE / 1 ERROR_WARNING / 2 ERROR_PASSIVE / 3 BUS_OFF / 4 STOPPED */
+	static const char *const busName[] = {
+		"error-active", "error-warning", "error-passive",
+		"bus-off", "stopped"
+	};
+	char buf[256];
+	enum can_state state = CAN_STATE_ERROR_ACTIVE;
+	struct can_bus_err_cnt err = { 0, 0 };
+	const struct device *can = DEVICE_DT_GET(DT_CHOSEN(zephyr_canbus));
+	const uint8_t nmt = canopenNmtState;
+	const char *nmtTxt = (nmt < ARRAY_SIZE(nmtName) && nmtName[nmt] != NULL)
+			     ? nmtName[nmt] : "UNKNOWN";
+
+	/* can loopback / can normal —— 运行时切换控制器模式（台架自检用） */
+	if (args != NULL) {
+		if (strstr(args, "loopback") != NULL) {
+			canopenSetLoopback(true);
+			uartTxStr("OK CAN mode = loopback (internal)\r\n");
+			return;
+		}
+		if (strstr(args, "normal") != NULL) {
+			canopenSetLoopback(false);
+			uartTxStr("OK CAN mode = normal\r\n");
+			return;
+		}
+	}
+
+	if (device_is_ready(can)) {
+		(void)can_get_state(can, &state, &err);
+	}
+
+	snprintk(buf, sizeof(buf),
+		 "--- CANopen ---\r\n"
+		 "node=%u  bitrate=500000  mode=%s\r\n"
+		 "nmt=%s (raw=%u)\r\n"
+		 "bus=%s  txerr=%u  rxerr=%u\r\n"
+		 "hb=1000ms  txreq=%u  txdone=%u  txfail=%u  txrej=%u  rxhb=%u\r\n",
+		 (unsigned)CONFIG_CIOS_ZHONG_CANOPEN_NODE_ID,
+		 canopenGetLoopback() ? "loopback" : "normal",
+		 nmtTxt, (unsigned)nmt,
+		 ((unsigned)state < ARRAY_SIZE(busName)) ? busName[state] : "?",
+		 (unsigned)err.tx_err_cnt, (unsigned)err.rx_err_cnt,
+		 (unsigned)canopenGetTxAttempts(),
+		 (unsigned)canopenGetTxDone(),
+		 (unsigned)canopenGetTxFail(),
+		 (unsigned)canopenGetTxReject(),
+		 (unsigned)canopenGetHeartbeatRxCount());
+	uartTxStr(buf);
+}
+
 static void cmdTemp(void)
 {
 	char buf[64];
@@ -698,6 +763,8 @@ static void dfuReset(void)
 	dfu.total = 0;
 	dfu.received = 0;
 	dfu.fa = NULL;
+	/* 升级结束/中止：恢复 CANopen 收发与分发 */
+	canopenResume();
 }
 
 bool uartCmdDfuActive(void)
@@ -741,6 +808,9 @@ static void cmdDfuEnter(void)
 	int rc;
 
 	dfuReset();
+	/* 升级期间挂起 CANopen：总线上没有主站时会反复重发/进入 bus-off，
+	 * 且 1 ms 定时器持续唤醒分发线程，会干扰 DFU 的串口时序。*/
+	canopenSuspend();
 	rc = flash_area_open(FIXED_PARTITION_ID(slot1_partition), &dfu.fa);
 	if (rc != 0) {
 		uartTxStr("ERR dfu: open slot1 fail\r\n");
@@ -932,6 +1002,8 @@ static void uartCmdExecute(char *cmdline)
 		cmdGetDin();
 	} else if (strcmp(cmd, "temp") == 0) {
 		cmdTemp();
+	} else if (strcmp(cmd, "can") == 0) {
+		cmdCan(args);
 	} else if (strcmp(cmd, "ain") == 0) {
 		cmdAin(args);
 	} else if (strcmp(cmd, "i2cscan") == 0) {
